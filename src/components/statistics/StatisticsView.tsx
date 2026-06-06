@@ -232,9 +232,10 @@ function FocusTimeChart({ data, projects, period }: { data: FocusTimeData[]; pro
               <YAxis domain={[0, 'auto']} allowDecimals={false} tick={{ fontSize: 10 }} stroke="var(--color-ink-3)" unit="h" />
               <Tooltip
                 contentStyle={{ background: 'var(--color-paper)', border: '1px solid var(--color-border)', borderRadius: 8, fontSize: 11 }}
-                formatter={(v: number) => {
-                  const h = Math.floor(Math.abs(v));
-                  const m = Math.round((Math.abs(v) - h) * 60);
+                formatter={(v) => {
+                  const n = Number(v) || 0;
+                  const h = Math.floor(Math.abs(n));
+                  const m = Math.round((Math.abs(n) - h) * 60);
                   return [`${String(h).padStart(2, '0')}H ${String(m).padStart(2, '0')}M`];
                 }}
               />

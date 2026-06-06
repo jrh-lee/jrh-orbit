@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { check } from '@tauri-apps/plugin-updater';
-import { relaunch } from '@tauri-apps/plugin-shell';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 
 export function UpdateChecker() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
@@ -40,7 +40,7 @@ export function UpdateChecker() {
           setProgress('Restarting...');
         }
       });
-      await relaunch();
+      await getCurrentWindow().close();
     } catch {
       setInstalling(false);
       setProgress('Update failed');

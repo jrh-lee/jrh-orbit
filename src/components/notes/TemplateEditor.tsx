@@ -199,7 +199,7 @@ export function TemplateEditor({ onClose, onTemplatesChanged }: Props) {
     const typeId = `custom-${id.slice(7)}`;
     const newTemplate: CustomTemplate = {
       id,
-      noteType: typeId,
+      noteType: typeId as NoteType,
       label: 'New Template',
       icon: '📝',
       body: '\n## Section 1\n<!-- 이 섹션에 대한 가이드 텍스트 -->\n\n## Section 2\n<!-- 섹션이 비어 있을 때 표시되는 안내문 -->\n\n',

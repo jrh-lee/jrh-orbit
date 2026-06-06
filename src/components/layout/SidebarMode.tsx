@@ -1059,11 +1059,10 @@ function SidebarSubtaskEditor({ subtask, onUpdate, onDelete, onClose }: {
   );
 }
 
-function SidebarTaskEditor({ task, onUpdate, onDelete, onClose }: {
+function SidebarTaskEditor({ task, onUpdate, onDelete }: {
   task: Task;
   onUpdate: (changes: Partial<Task>) => void;
   onDelete: () => void;
-  onClose: () => void;
 }) {
   const [title, setTitle] = useState(task.title);
   const [newSubtask, setNewSubtask] = useState('');
@@ -1120,10 +1119,7 @@ function SidebarTaskEditor({ task, onUpdate, onDelete, onClose }: {
                 const updated = task.subtasks!.map(s => s.id === st.id ? { ...s, done: !s.done, status: (!s.done ? 'done' : 'todo') as TaskStatus } : s);
                 onUpdate({ subtasks: updated });
               }}
-              onEdit={(newTitle) => {
-                const updated = task.subtasks!.map(s => s.id === st.id ? { ...s, title: newTitle } : s);
-                onUpdate({ subtasks: updated });
-              }}
+              onTitleClick={() => {}}
               onDelete={() => onUpdate({ subtasks: task.subtasks!.filter(s => s.id !== st.id) })}
             />
           ))}

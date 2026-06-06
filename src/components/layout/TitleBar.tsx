@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect } from 'react';
+import { useRef, useCallback } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useAppStore } from '../../stores/useAppStore';
 import { useWorkhourTimerStore } from '../../stores/useWorkhourTimerStore';
@@ -26,7 +26,7 @@ function OpacitySlider({ compact }: { compact?: boolean }) {
   const { window: winCfg, setWindow } = useConfigStore();
   const key = `opacity_${mode}` as const;
   const value = winCfg[key];
-  const saveTimer = useRef<ReturnType<typeof setTimeout>>();
+  const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const trackRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
 
