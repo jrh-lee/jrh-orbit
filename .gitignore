@@ -12,14 +12,22 @@ dist
 dist-ssr
 *.local
 
-# Reference images
+# Reference / unused assets
 *.JPG
 Va11_Ref.png
 hyp_va-11-hall-a_featured.jpg.png
+templates-v4.md
+src/assets/react.svg
+src/assets/vite.svg
+src/assets/hero.png
 
 # Rust / Tauri
 src-tauri/target
 src-tauri/gen
+src-tauri/icons/android
+src-tauri/icons/ios
+src-tauri/icons/icon-1024.png
+src-tauri/icons/icon.png
 
 # Editor directories and files
 .vscode/*
