@@ -11,7 +11,7 @@ import { splitFrontmatter, joinFrontmatter, parseFrontmatterFields, updateFrontm
 import { FOLDERS } from '../../lib/constants';
 import { normalizeProject, NOTE_TYPE_ICONS, NOTE_TYPE_ABBREV } from '../../types/note';
 import { updateNoteLinks, removeNoteLinks } from '../../lib/linkGraph';
-import { insertNoteToDailyLog, updateDailyLogNoteRow, syncNoteCheckboxesWithTodos } from '../../lib/dailyLogHelper';
+import { insertNoteToDailyLog, updateDailyLogNoteRow, removeNoteFromDailyLog, syncNoteCheckboxesWithTodos } from '../../lib/dailyLogHelper';
 import { readJsonFile } from '../../lib/fileSystem';
 import { todayKey } from '../../lib/dateUtils';
 import { FILES } from '../../lib/constants';
@@ -761,7 +761,10 @@ export function NoteListView() {
     try {
       const deletedNote = notes.find(n => n.path === path);
       await invoke('delete_note', { path });
-      if (deletedNote?.id) removeNoteLinks(dataDir, deletedNote.id).catch(() => {});
+      if (deletedNote?.id) {
+        removeNoteLinks(dataDir, deletedNote.id).catch(() => {});
+        removeNoteFromDailyLog(dataDir, deletedNote.id).catch(() => {});
+      }
       if (activeNote === path) {
         setActiveNote(null);
         setActiveNoteId('');

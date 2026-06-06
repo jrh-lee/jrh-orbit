@@ -999,6 +999,39 @@ export async function updateDailyLogNoteRow(
   window.dispatchEvent(new CustomEvent("daily-log-updated"));
 }
 
+export async function removeNoteFromDailyLog(
+  dataDir: string,
+  noteId: string,
+): Promise<void> {
+  const dateKey = format(new Date(), "yyyy-MM-dd");
+  const dailyPath = await join(dataDir, FOLDERS.daily, `${dateKey}.md`);
+
+  let raw: string;
+  try {
+    raw = await invoke<string>("read_note", { path: dailyPath });
+  } catch {
+    return;
+  }
+
+  const { frontmatter, body } = splitFrontmatter(raw);
+  const lines = body.split("\n");
+  let removed = false;
+
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (lines[i].includes(`note://${noteId}`) || lines[i].includes(`[[${noteId}]]`)) {
+      lines.splice(i, 1);
+      removed = true;
+    }
+  }
+
+  if (!removed) return;
+  await invoke("write_note", {
+    path: dailyPath,
+    content: joinFrontmatter(frontmatter, lines.join("\n")),
+  });
+  window.dispatchEvent(new CustomEvent("daily-log-updated"));
+}
+
 export async function insertTodoToDailyLog(
   dataDir: string,
   taskId: string,
