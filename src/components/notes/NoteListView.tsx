@@ -1,0 +1,1477 @@
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { join } from '@tauri-apps/api/path';
+import { save } from '@tauri-apps/plugin-dialog';
+import { useAppStore } from '../../stores/useAppStore';
+import { useProjectStore } from '../../stores/useProjectStore';
+import { NoteEditor } from '../editor/NoteEditor';
+import { BacklinkPanel } from './BacklinkPanel';
+import { ResizeHandle } from '../ui/ResizeHandle';
+import { splitFrontmatter, joinFrontmatter, parseFrontmatterFields, updateFrontmatterField, buildFrontmatter, formatFrontmatterValue } from '../../lib/frontmatter';
+import { FOLDERS } from '../../lib/constants';
+import { normalizeProject, NOTE_TYPE_ICONS, NOTE_TYPE_ABBREV } from '../../types/note';
+import { updateNoteLinks, removeNoteLinks } from '../../lib/linkGraph';
+import { insertNoteToDailyLog, updateDailyLogNoteRow, syncNoteCheckboxesWithTodos } from '../../lib/dailyLogHelper';
+import { readJsonFile } from '../../lib/fileSystem';
+import { todayKey } from '../../lib/dateUtils';
+import { FILES } from '../../lib/constants';
+import { writeJsonFile } from '../../lib/fileSystem';
+import type { TodosFile } from '../../types/task';
+import type { TopicsFile, TopicEntry } from '../../types/dataFiles';
+import { AutoSuggestionBanner } from './AutoSuggestionBanner';
+import { TemplateEditor, loadTemplates, buildTypeIconMap, buildTypeAbbrevMap } from './TemplateEditor';
+import type { CustomTemplate } from './TemplateEditor';
+import { extractGuideMap } from '../editor/extensions/SectionGuide';
+import { useConfigStore } from '../../stores/useConfigStore';
+import { Dropdown } from '../ui/Dropdown';
+import type { NoteType, NoteStatus } from '../../types/note';
+
+const NOTELIST_MIN = 160;
+const NOTELIST_MAX = 400;
+
+interface NoteEntry {
+  path: string;
+  filename: string;
+  id: string;
+  title: string;
+  noteType: NoteType | string;
+  updated: string;
+  created: string;
+  project: string[];
+  topic: string;
+  subsystem: string[];
+  tags: string[];
+  status: NoteStatus;
+}
+
+interface NoteMeta {
+  title: string;
+  project: string[];
+  topic: string;
+  subsystem: string[];
+  tags: string[];
+  status: NoteStatus;
+}
+
+interface NoteTemplate {
+  id: string;
+  noteType: NoteType;
+  label: string;
+  icon: string;
+  title: string;
+  body: string;
+}
+
+const NOTE_TEMPLATES: NoteTemplate[] = [
+  {
+    id: 'quick-memo', noteType: 'quick-memo', label: 'Quick Memo', icon: '💬',
+    title: '', body: `\n<!-- 형식 자유. 떠오른 것을 그대로 적으세요 -->\n<!-- 나중에 정리가 필요하면 Analysis/Design/Study Note로 승격 가능 -->\n- \n`,
+  },
+  {
+    id: 'analysis-note', noteType: 'analysis-note', label: 'Analysis Note', icon: '📊',
+    title: '', body: [
+      '',
+      '## 목적',
+      '<!-- 이 분석을 왜 하는가 + 무엇을 확인하려 하는가. 2-3문장 -->',
+      '- **배경**: ',
+      '- **확인 사항**: ',
+      '',
+      '',
+      '## 분석 조건',
+      '',
+      '### 공통 조건 (Base)',
+      '<!-- 모든 케이스에서 동일한 조건. 한 번만 기록 -->',
+      '',
+      '| 파라미터 | 값 | 비고 |',
+      '|---|---|---|',
+      '| 시뮬레이션 도구 |  |  |',
+      '| 궤도 |  |  |',
+      '| 자세 초기값 |  |  |',
+      '| 센서 모델 |  |  |',
+      '| 시뮬레이션 시간 |  |  |',
+      '| 적분기 |  |  |',
+      '',
+      '### 가변 조건 (Sweep)',
+      '<!-- 케이스마다 바꾼 변수만 나열 -->',
+      '',
+      '| Case | 변수명 | 변수명2 | 비고 |',
+      '|---|---|---|---|',
+      '| A |  |  | 기존 설정 |',
+      '| B |  |  |  |',
+      '',
+      '',
+      '## 결과',
+      '',
+      '### Case A — ',
+      '<!-- 핵심 케이스만 상세 기록. 나머지는 요약 테이블로 -->',
+      '- ',
+      '',
+      '### 요약 테이블',
+      '',
+      '| Case | 메트릭1 | 메트릭2 | 판정 |',
+      '|---|---|---|---|',
+      '| A |  |  |  |',
+      '| B |  |  |  |',
+      '',
+      '',
+      '## 결론',
+      '<!-- 반드시 번호 매기기. 3개 권장 -->',
+      '1. **핵심 결론**: ',
+      '2. **원인 분석**: ',
+      '3. **후속 방향**: ',
+      '',
+      '',
+      '## 코드 / 파일 참조',
+      '- **메인 스크립트**: ',
+      '- **결과 데이터**: ',
+      '- **MATLAB 버전**: ',
+      '',
+      '',
+      '## 후속 과제',
+      '<!-- ⚡ 여기의 - [ ] 항목은 자동으로 TODO에 등록됩니다 -->',
+      '- [ ] ',
+      '',
+    ].join('\n'),
+  },
+  {
+    id: 'test-log', noteType: 'test-log', label: 'Test Log', icon: '🔧',
+    title: '', body: [
+      '',
+      '## 시험 목적',
+      '- **시험 이유**: ',
+      '- **기대 결과**: ',
+      '- **판정 기준 요약**: ',
+      '',
+      '',
+      '## 시험 장비 / 환경',
+      '',
+      '| 항목 | 상세 |',
+      '|---|---|',
+      '| DUT |  |',
+      '| 전원 공급기 |  |',
+      '| 데이터 수집 |  |',
+      '| 측정 장비 |  |',
+      '| 온도 |  |',
+      '| 시험 일시 |  |',
+      '',
+      '',
+      '## 시험 절차',
+      '<!-- 다른 사람이 이 절차만 보고 동일 시험을 재현할 수 있어야 함 -->',
+      '1. ',
+      '2. ',
+      '3. ',
+      '4. ',
+      '',
+      '',
+      '## 측정 데이터',
+      '',
+      '| 측정 항목 | 목표 값 | 실측 값 | 오차 | 판정 |',
+      '|---|---|---|---|---|',
+      '|  |  |  |  | ✅ / ❌ |',
+      '',
+      '',
+      '## 판정 기준 및 종합 판정',
+      '',
+      '| 항목 | 기준 | 결과 | 판정 |',
+      '|---|---|---|---|',
+      '|  |  |  | ✅ PASS / ❌ FAIL |',
+      '',
+      '### 🟢 종합: PASS / 🔴 종합: FAIL / 🟡 종합: CONDITIONAL',
+      '',
+      '',
+      '## 이상 소견 / 특이사항',
+      '<!-- 시험은 통과했지만 주의해야 할 것 -->',
+      '- **관측 내용**: ',
+      '- **추정 원인**: ',
+      '- **조치 필요 여부**: ',
+      '',
+      '',
+      '## 첨부 파일',
+      '- **시험 데이터**: ',
+      '- **사진/영상**: ',
+      '- **시험 절차서**: ',
+      '',
+      '',
+      '## 후속 조치',
+      '<!-- ⚡ 여기의 - [ ] 항목은 자동으로 TODO에 등록됩니다 -->',
+      '- [ ] ',
+      '',
+    ].join('\n'),
+  },
+  {
+    id: 'design-note', noteType: 'design-note', label: 'Design Note', icon: '📐',
+    title: '', body: [
+      '',
+      '## 의사결정 요약',
+      '<!-- 한 문장으로. "X를 Y로 결정했다" 형식 -->',
+      '- ',
+      '',
+      '',
+      '## 배경 / 문제',
+      '<!-- 왜 이 결정이 필요했는가 -->',
+      '- **현재 상황**: ',
+      '- **문제점**: ',
+      '- **제약 조건**: ',
+      '',
+      '',
+      '## 검토한 대안',
+      '<!-- 최소 2개 이상. 선택된 대안에 ✅ 표시 -->',
+      '',
+      '| 대안 | 장점 | 단점 | 비고 |',
+      '|---|---|---|---|',
+      '| **선택** |  |  | 선정 ✅ |',
+      '| 대안 2 |  |  |  |',
+      '| 대안 3 |  |  |  |',
+      '',
+      '',
+      '## 선정 근거',
+      '<!-- 번호 매기기 필수. "왜 이것을 골랐는가"에 대한 답 -->',
+      '1. ',
+      '2. ',
+      '3. ',
+      '',
+      '',
+      '## 리스크 & 완화 방안',
+      '- **리스크 1**: ',
+      '  → 완화: ',
+      '- **리스크 2**: ',
+      '  → 완화: ',
+      '',
+      '',
+      '## 결론 & 후속',
+      '- **최종 결정**: ',
+      '- **검증 계획**: ',
+      '- **공유 대상**: ',
+      '',
+    ].join('\n'),
+  },
+  {
+    id: 'study-note', noteType: 'study-note', label: 'Study Note', icon: '📚',
+    title: '', body: [
+      '',
+      '## 주제',
+      '- ',
+      '- ',
+      '',
+      '',
+      '## 출처',
+      '',
+      '| 유형 | 상세 |',
+      '|---|---|',
+      '| 논문 |  |',
+      '| 웹 |  |',
+      '| 교육 |  |',
+      '| 도서 |  |',
+      '',
+      '',
+      '## 핵심 내용',
+      '<!-- 배운 것을 나만의 언어로 정리. 복붙이 아니라 이해한 내용 -->',
+      '',
+      '### 주요 개념',
+      '- **개념 1**: ',
+      '- **개념 2**: ',
+      '',
+      '### 수식 / 알고리즘',
+      '<!-- 해당 시에만 작성 -->',
+      '',
+      '### 한계 / 주의사항',
+      '- ',
+      '',
+      '',
+      '## 내 프로젝트 적용 가능성',
+      '<!-- 가장 중요한 섹션. "그래서 나한테 뭐가 쓸모 있는데?" -->',
+      '- **적용 아이디어**: ',
+      '- **예상 효과**: ',
+      '- **필요 조건**: ',
+      '',
+      '',
+      '## 추가 조사 필요',
+      '- [ ] ',
+      '',
+      '',
+      '## 요약 (한 줄)',
+      '<!-- 나중에 목록에서 이 노트를 다시 찾을 때 보이는 한 줄 -->',
+      '- ',
+      '',
+    ].join('\n'),
+  },
+  {
+    id: 'blank', noteType: 'blank', label: 'Blank', icon: '📝',
+    title: 'Untitled', body: '\n',
+  },
+];
+
+function generateNoteId(noteType: string, existingNotes: NoteEntry[], abbrevMap?: Record<string, string>): string {
+  const today = todayKey();
+  const abbrev = abbrevMap?.[noteType] ?? NOTE_TYPE_ABBREV[noteType as NoteType] ?? (noteType.replace(/[- ]/g, '').slice(0, 8).toLowerCase() || 'note');
+  const prefix = `${today}-${abbrev}-`;
+  let seq = 1;
+  for (const n of existingNotes) {
+    if (n.id?.startsWith(prefix)) {
+      const num = parseInt(n.id.slice(prefix.length), 10);
+      if (!isNaN(num) && num >= seq) seq = num + 1;
+    }
+  }
+  return `${prefix}${String(seq).padStart(3, '0')}`;
+}
+
+function makeFrontmatter(noteType: NoteType, title: string, noteId: string): string {
+  const iso = new Date().toISOString();
+  const today = todayKey();
+  return buildFrontmatter({
+    id: noteId,
+    type: noteType,
+    title: title,
+    date: today,
+    project: [],
+    topic: '',
+    tags: [],
+    related: [`${today}-daily`],
+    status: 'draft',
+    created: iso,
+    updated: iso,
+  });
+}
+
+function formatRelativeTime(iso: string): string {
+  if (!iso) return '';
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
+}
+
+function extractTitle(raw: string, filename: string): string {
+  const match = raw.match(/^---\n[\s\S]*?title:\s*"?([^"\n]+)"?\s*\n[\s\S]*?---/);
+  if (match) return match[1];
+  const h1 = raw.match(/^#\s+(.+)/m);
+  if (h1) return h1[1];
+  return filename.replace('.md', '');
+}
+
+export function NoteListView() {
+  const { dataDir, pendingNotePath, clearPendingNote, pendingTagFilter, clearPendingTagFilter, setActiveProject } = useAppStore();
+  const { projects } = useProjectStore();
+  const [notes, setNotes] = useState<NoteEntry[]>([]);
+  const [activeNote, setActiveNote] = useState<string | null>(null);
+  const [activeNoteId, setActiveNoteId] = useState('');
+  const [body, setBody] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [meta, setMeta] = useState<NoteMeta>({ title: '', project: [], topic: '', subsystem: [], tags: [], status: 'draft' });
+  const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
+  const [tagInput, setTagInput] = useState('');
+  const [tagHighlight, setTagHighlight] = useState(0);
+  const [renamingNote, setRenamingNote] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; path: string } | null>(null);
+  const [listWidth, setListWidth] = useState(240);
+  const [conflictNote, setConflictNote] = useState(false);
+  const [showTemplateMenu, setShowTemplateMenu] = useState(false);
+  const [filterProject, setFilterProject] = useState('');
+  const [filterTag, setFilterTag] = useState('');
+  const [sortBy, setSortBy] = useState<'updated' | 'title' | 'created'>('updated');
+  const [knownTags, setKnownTags] = useState<{ name: string; count: number }[]>([]);
+  const [tagDropdownOpen, setTagDropdownOpen] = useState(false);
+  const [linksPanelOpen, setLinksPanelOpen] = useState(false);
+  const [topics, setTopics] = useState<TopicEntry[]>([]);
+  const [topicDropdownOpen, setTopicDropdownOpen] = useState(false);
+  const [showNewTopicInput, setShowNewTopicInput] = useState(false);
+  const [newTopicName, setNewTopicName] = useState('');
+  const [showTemplateEditor, setShowTemplateEditor] = useState(false);
+  const [customTemplates, setCustomTemplates] = useState<CustomTemplate[]>([]);
+  const fmRef = useRef('');
+  const lastWriteTime = useRef(0);
+  const prevBodyRef = useRef('');
+
+  const handleListResize = useCallback((delta: number) => {
+    setListWidth((w) => Math.min(NOTELIST_MAX, Math.max(NOTELIST_MIN, w + delta)));
+  }, []);
+
+  const allTags = useMemo(() => {
+    const set = new Set<string>();
+    notes.forEach(n => n.tags.forEach(t => set.add(t)));
+    return [...set].sort();
+  }, [notes]);
+
+  const tagSuggestions = useMemo(() => {
+    const q = tagInput.trim().toLowerCase();
+    if (!q) return [];
+    return knownTags.filter(t => t.name.includes(q) && !meta.tags.includes(t.name)).slice(0, 8);
+  }, [tagInput, knownTags, meta.tags]);
+
+  const allProjects = useMemo(() => {
+    const set = new Set<string>();
+    notes.forEach(n => n.project.forEach(p => set.add(p)));
+    return [...set].sort();
+  }, [notes]);
+
+  const filteredNotes = useMemo(() => {
+    let list = notes;
+    if (filterProject) list = list.filter(n => n.project.includes(filterProject));
+    if (filterTag) list = list.filter(n => n.tags.includes(filterTag));
+    return [...list].sort((a, b) => {
+      if (sortBy === 'title') return a.title.localeCompare(b.title);
+      if (sortBy === 'created') return (b.created || '').localeCompare(a.created || '');
+      return (b.updated || b.filename).localeCompare(a.updated || a.filename);
+    });
+  }, [notes, filterProject, filterTag, sortBy]);
+
+  useEffect(() => {
+    if (!dataDir) return;
+    loadNotes();
+    loadTopics();
+    loadCustomTemplates();
+  }, [dataDir]);
+
+  async function loadKnownTags(noteEntries?: NoteEntry[]) {
+    if (!dataDir) return;
+    const tagMap = new Map<string, number>();
+    const entries = noteEntries ?? notes;
+    for (const n of entries) {
+      if (Array.isArray(n.tags)) {
+        for (const t of n.tags) {
+          if (t) tagMap.set(t, (tagMap.get(t) ?? 0) + 1);
+        }
+      }
+    }
+    const todosData = await readJsonFile<TodosFile>(dataDir, FILES.todos);
+    if (todosData?.todos) {
+      for (const task of todosData.todos) {
+        task.tags?.forEach(t => { if (t) tagMap.set(t, (tagMap.get(t) ?? 0) + 1); });
+        task.subtasks?.forEach(st => st.tags?.forEach(t => { if (t) tagMap.set(t, (tagMap.get(t) ?? 0) + 1); }));
+      }
+    }
+    setKnownTags(
+      [...tagMap.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([name, count]) => ({ name, count })),
+    );
+  }
+
+  async function loadTopics() {
+    if (!dataDir) return;
+    const data = await readJsonFile<TopicsFile>(dataDir, FILES.topics);
+    if (data?.topics) {
+      setTopics(data.topics.sort((a, b) => b.last_used.localeCompare(a.last_used)));
+    }
+  }
+
+  async function updateTopicsFile(name: string, noteProject: string[], noteSubsystem: string[]) {
+    if (!dataDir) return;
+    const data = await readJsonFile<TopicsFile>(dataDir, FILES.topics) ?? { topics: [] };
+    const existing = data.topics.find(t => t.name === name);
+    if (existing) {
+      existing.note_count += 1;
+      existing.last_used = todayKey();
+    } else {
+      data.topics.push({
+        name,
+        project: noteProject[0] ?? '',
+        subsystem: noteSubsystem[0] ?? '',
+        created: todayKey(),
+        note_count: 1,
+        last_used: todayKey(),
+        keywords: [],
+      });
+    }
+    await writeJsonFile(dataDir, FILES.topics, data);
+    setTopics(data.topics.sort((a, b) => b.last_used.localeCompare(a.last_used)));
+  }
+
+  async function loadCustomTemplates() {
+    if (!dataDir) return;
+    const t = await loadTemplates(dataDir);
+    setCustomTemplates(t);
+  }
+
+  const activeTemplates: NoteTemplate[] = useMemo(() => {
+    if (customTemplates.length > 0) {
+      return customTemplates.map(t => ({ id: t.id, noteType: t.noteType, label: t.label, icon: t.icon, title: '', body: t.body }));
+    }
+    return NOTE_TEMPLATES;
+  }, [customTemplates]);
+
+  const typeIconMap = useMemo(() => {
+    if (customTemplates.length > 0) return buildTypeIconMap(customTemplates);
+    return {} as Record<string, string>;
+  }, [customTemplates]);
+
+  const typeAbbrevMap = useMemo(() => {
+    if (customTemplates.length > 0) return buildTypeAbbrevMap(customTemplates);
+    return NOTE_TYPE_ABBREV as Record<string, string>;
+  }, [customTemplates]);
+
+  const sectionGuidesEnabled = useConfigStore((s) => s.editor.section_guides);
+
+  const activeGuideMap = useMemo(() => {
+    if (!sectionGuidesEnabled) return undefined;
+    const noteType = notes.find(n => n.path === activeNote)?.noteType;
+    if (!noteType) return undefined;
+    const merged: Record<string, string> = {};
+    for (const t of activeTemplates) {
+      if (t.noteType === noteType && t.body) {
+        Object.assign(merged, extractGuideMap(t.body));
+      }
+    }
+    return Object.keys(merged).length > 0 ? merged : undefined;
+  }, [sectionGuidesEnabled, activeNote, notes, activeTemplates]);
+
+  useEffect(() => {
+    if (!pendingNotePath || notes.length === 0) return;
+    handleSelectNote(pendingNotePath);
+    clearPendingNote();
+  }, [pendingNotePath, notes]);
+
+  useEffect(() => {
+    if (!pendingTagFilter) return;
+    setFilterTag(pendingTagFilter);
+    clearPendingTagFilter();
+  }, [pendingTagFilter]);
+
+  useEffect(() => {
+    function handleClick() { setContextMenu(null); setTagDropdownOpen(false); setTopicDropdownOpen(false); setShowTemplateMenu(false); }
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, []);
+
+  useEffect(() => {
+    const handler = () => loadKnownTags();
+    window.addEventListener('tasks-changed', handler);
+    return () => {
+      window.removeEventListener('tasks-changed', handler);
+    };
+  }, [dataDir]);
+
+  useEffect(() => {
+    const handler = () => {
+      if (activeNote && Date.now() - lastWriteTime.current > 2000) {
+        setConflictNote(true);
+      }
+      loadNotes();
+    };
+    window.addEventListener('notes-changed', handler);
+    return () => window.removeEventListener('notes-changed', handler);
+  }, [dataDir, activeNote]);
+
+  async function loadNotes() {
+    if (!dataDir) return;
+    try {
+      const dir = await join(dataDir, FOLDERS.research);
+      const files = await invoke<string[]>('list_notes', { dir });
+
+      const entries: NoteEntry[] = await Promise.all(
+        files.map(async (f) => {
+          const filename = f.split('/').pop() ?? f;
+          let title = filename.replace('.md', '');
+          let id = '';
+          let noteType: string = 'analysis-note';
+          let updated = '';
+          let created = '';
+          let project: string[] = [];
+          let topic = '';
+          let subsystem: string[] = [];
+          let tags: string[] = [];
+          let status: NoteStatus = 'draft';
+          try {
+            const raw = await invoke<string>('read_note', { path: f });
+            title = extractTitle(raw, filename);
+            const fields = parseFrontmatterFields(splitFrontmatter(raw).frontmatter);
+            id = fields.id ?? '';
+            noteType = fields.type ?? 'analysis-note';
+            updated = fields.updated ?? '';
+            created = fields.created ?? '';
+            project = normalizeProject(fields.project);
+            topic = fields.topic ?? fields.experiment ?? '';
+            subsystem = Array.isArray(fields.subsystem) ? fields.subsystem : [];
+            tags = Array.isArray(fields.tags) ? fields.tags : [];
+            status = fields.status ?? 'draft';
+          } catch {}
+          return { path: f, filename, id, noteType, title, updated, created, project, topic, subsystem, tags, status };
+        }),
+      );
+
+      entries.sort((a, b) => (b.updated || b.filename).localeCompare(a.updated || a.filename));
+      setNotes(entries);
+      loadKnownTags(entries);
+    } catch {
+      setNotes([]);
+    }
+  }
+
+  async function handleSelectNote(fullPath: string) {
+    setConflictNote(false);
+    try {
+      const raw = await invoke<string>('read_note', { path: fullPath });
+      const { frontmatter, body: b } = splitFrontmatter(raw);
+      fmRef.current = frontmatter;
+      prevBodyRef.current = b;
+      setBody(b);
+      setActiveNote(fullPath);
+
+      const fields = parseFrontmatterFields(frontmatter);
+      const noteProject = normalizeProject(fields.project);
+      setActiveNoteId(fields.id ?? '');
+      setMeta({
+        title: fields.title ?? 'Untitled',
+        project: noteProject,
+        topic: fields.topic ?? fields.experiment ?? '',
+        subsystem: Array.isArray(fields.subsystem) ? fields.subsystem : [],
+        tags: fields.tags ?? [],
+        status: fields.status ?? 'draft',
+      });
+      setTagInput('');
+      if (noteProject.length > 0) setActiveProject(noteProject[0]);
+    } catch {
+      setBody('');
+    }
+  }
+
+  function updateMeta(field: keyof NoteMeta, value: string | string[]) {
+    const updated = { ...meta, [field]: value };
+    setMeta(updated);
+
+    let fm = fmRef.current;
+    if (field === 'title') {
+      fm = updateFrontmatterField(fm, 'title', formatFrontmatterValue(value));
+    } else if (field === 'project') {
+      fm = updateFrontmatterField(fm, 'project', formatFrontmatterValue(value));
+    } else if (field === 'tags') {
+      fm = updateFrontmatterField(fm, 'tags', formatFrontmatterValue(value));
+    } else if (field === 'subsystem') {
+      fm = updateFrontmatterField(fm, 'subsystem', formatFrontmatterValue(value));
+    } else if (field === 'topic') {
+      fm = updateFrontmatterField(fm, 'topic', formatFrontmatterValue(value));
+    } else if (field === 'status') {
+      fm = updateFrontmatterField(fm, 'status', value as string);
+    }
+    fm = updateFrontmatterField(fm, 'updated', new Date().toISOString());
+    fmRef.current = fm;
+
+    if (activeNote) {
+      lastWriteTime.current = Date.now();
+      invoke('write_note', { path: activeNote, content: joinFrontmatter(fm, body) }).catch(() => {});
+    }
+
+    if (field === 'title') {
+      setNotes(prev => prev.map(n =>
+        n.path === activeNote ? { ...n, title: value as string } : n
+      ));
+    }
+    if (field === 'tags') {
+      window.dispatchEvent(new CustomEvent('tags-changed'));
+    }
+
+    if (dataDir && activeNoteId && (field === 'title' || field === 'project')) {
+      const noteType = notes.find(n => n.path === activeNote)?.noteType ?? 'analysis-note';
+      const t = field === 'title' ? (value as string) : updated.title;
+      const p = field === 'project' ? (value as string[]).join(', ') : updated.project.join(', ');
+      updateDailyLogNoteRow(dataDir, activeNoteId, t, noteType, p).catch(() => {});
+    }
+  }
+
+  function handleAddTag(value?: string) {
+    const raw = (value ?? tagInput).trim();
+    if (!raw) return;
+    const normalized = raw.toLowerCase().replace(/[_\s]+/g, '-').replace(/[^a-z0-9가-힣ㄱ-ㅎㅏ-ㅣ\-]/g, '').replace(/-{2,}/g, '-').replace(/^-|-$/g, '');
+    if (!normalized || meta.tags.includes(normalized)) { setTagInput(''); return; }
+    updateMeta('tags', [...meta.tags, normalized]);
+    setTagInput('');
+    setTagDropdownOpen(false);
+  }
+
+  function handleRemoveTag(tag: string) {
+    updateMeta('tags', meta.tags.filter(t => t !== tag));
+  }
+
+  const handleChange = useCallback(
+    (md: string) => {
+      setBody(md);
+      if (activeNote) {
+        lastWriteTime.current = Date.now();
+        const fields = parseFrontmatterFields(fmRef.current);
+        if (fields.status === 'draft' && md.trim().length > 0) {
+          fmRef.current = updateFrontmatterField(fmRef.current, 'status', 'in-progress');
+          setMeta(prev => ({ ...prev, status: 'in-progress' }));
+        }
+        fmRef.current = updateFrontmatterField(fmRef.current, 'updated', new Date().toISOString());
+        invoke('write_note', { path: activeNote, content: joinFrontmatter(fmRef.current, md) }).catch(() => {});
+
+        if (dataDir && activeNoteId) {
+          const noteType = fields.type ?? 'analysis-note';
+          const proj = normalizeProject(fields.project);
+          syncNoteCheckboxesWithTodos(
+            dataDir, activeNoteId, noteType, prevBodyRef.current, md,
+            proj[0] ?? 'GENERAL', Array.isArray(fields.subsystem) ? fields.subsystem[0] : undefined,
+          ).then(updated => {
+            if (updated) {
+              prevBodyRef.current = updated;
+              setBody(updated);
+              invoke('write_note', { path: activeNote, content: joinFrontmatter(fmRef.current, updated) }).catch(() => {});
+              window.dispatchEvent(new CustomEvent('tasks-changed'));
+            } else {
+              prevBodyRef.current = md;
+            }
+          }).catch(() => { prevBodyRef.current = md; });
+        } else {
+          prevBodyRef.current = md;
+        }
+      }
+    },
+    [activeNote, dataDir, activeNoteId],
+  );
+
+  async function handleCreate(template: NoteTemplate = activeTemplates[0]) {
+    if (!dataDir) return;
+    setError(null);
+    setShowTemplateMenu(false);
+
+    try {
+      const noteId = generateNoteId(template.noteType, notes, typeAbbrevMap);
+      const filename = `${noteId}.md`;
+      const fullPath = await join(dataDir, FOLDERS.research, filename);
+
+      await invoke('ensure_dir', { path: await join(dataDir, FOLDERS.research) });
+
+      const title = template.title || noteId;
+      const today = todayKey();
+      const fm = makeFrontmatter(template.noteType, title, noteId);
+      await invoke('write_note', { path: fullPath, content: fm + template.body });
+      window.dispatchEvent(new CustomEvent('notes-changed'));
+
+      updateNoteLinks(dataDir, noteId, [`${today}-daily`]).catch(() => {});
+      insertNoteToDailyLog(dataDir, noteId, title, template.noteType, '').catch(() => {});
+      await loadNotes();
+
+      fmRef.current = fm;
+      setBody(template.body);
+      setActiveNote(fullPath);
+      setMeta({ title, project: [], topic: '', subsystem: [], tags: [], status: 'draft' });
+      setTagInput('');
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function handleDelete(path: string) {
+    try {
+      const deletedNote = notes.find(n => n.path === path);
+      await invoke('delete_note', { path });
+      if (deletedNote?.id) removeNoteLinks(dataDir, deletedNote.id).catch(() => {});
+      if (activeNote === path) {
+        setActiveNote(null);
+        setActiveNoteId('');
+        setBody('');
+        setMeta({ title: '', project: [], topic: '', subsystem: [], tags: [], status: 'draft' });
+      }
+      await loadNotes();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function handlePromote(sourcePath: string, targetType: NoteType) {
+    if (!dataDir) return;
+    const sourceNote = notes.find(n => n.path === sourcePath);
+    if (!sourceNote) return;
+
+    try {
+      const raw = await invoke<string>('read_note', { path: sourcePath });
+      const { body: sourceBody } = splitFrontmatter(raw);
+
+      const noteId = generateNoteId(targetType, notes, typeAbbrevMap);
+      const filename = `${noteId}.md`;
+      const fullPath = await join(dataDir, FOLDERS.research, filename);
+
+      const template = activeTemplates.find(t => t.noteType === targetType);
+      const title = sourceNote.title || noteId;
+      const today = todayKey();
+      const iso = new Date().toISOString();
+
+      const fm = buildFrontmatter({
+        id: noteId,
+        type: targetType,
+        title,
+        date: today,
+        project: sourceNote.project,
+        topic: sourceNote.topic,
+        subsystem: sourceNote.subsystem,
+        tags: sourceNote.tags,
+        related: [sourceNote.id, `${today}-daily`].filter(Boolean),
+        status: 'draft',
+        created: iso,
+        updated: iso,
+      });
+
+      const newBody = sourceBody || template?.body || '\n';
+      await invoke('write_note', { path: fullPath, content: fm + newBody });
+      window.dispatchEvent(new CustomEvent('notes-changed'));
+
+      let sourceFm = splitFrontmatter(raw).frontmatter;
+      const sourceFields = parseFrontmatterFields(sourceFm);
+      const sourceRelated: string[] = Array.isArray(sourceFields.related) ? sourceFields.related : [];
+      if (!sourceRelated.includes(noteId)) sourceRelated.push(noteId);
+      sourceFm = updateFrontmatterField(sourceFm, 'related', formatFrontmatterValue(sourceRelated));
+      sourceFm = updateFrontmatterField(sourceFm, 'status', 'archived');
+      sourceFm = updateFrontmatterField(sourceFm, 'updated', iso);
+      await invoke('write_note', { path: sourcePath, content: joinFrontmatter(sourceFm, sourceBody) });
+
+      const promotedRelated = [sourceNote.id, `${today}-daily`].filter(Boolean);
+      updateNoteLinks(dataDir, noteId, promotedRelated).catch(() => {});
+      if (sourceNote.id) {
+        const srcRelatedIds = sourceRelated.filter(id => id !== noteId);
+        srcRelatedIds.push(noteId);
+        updateNoteLinks(dataDir, sourceNote.id, srcRelatedIds).catch(() => {});
+      }
+      insertNoteToDailyLog(dataDir, noteId, title, targetType, sourceNote.project.join(', ')).catch(() => {});
+
+      await loadNotes();
+      await handleSelectNote(fullPath);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  function handleContextMenu(e: React.MouseEvent, path: string) {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, path });
+  }
+
+  function startRename(path: string) {
+    const note = notes.find(n => n.path === path);
+    if (!note) return;
+    setRenamingNote(path);
+    setRenameValue(note.title);
+    setContextMenu(null);
+  }
+
+  async function commitRename(path: string) {
+    if (!renameValue.trim()) {
+      setRenamingNote(null);
+      return;
+    }
+
+    try {
+      const raw = await invoke<string>('read_note', { path });
+      let { frontmatter, body: b } = splitFrontmatter(raw);
+      frontmatter = updateFrontmatterField(frontmatter, 'title', `"${renameValue.trim()}"`);
+      frontmatter = updateFrontmatterField(frontmatter, 'updated', new Date().toISOString());
+      await invoke('write_note', { path, content: joinFrontmatter(frontmatter, b) });
+
+      if (activeNote === path) {
+        fmRef.current = frontmatter;
+        setMeta(prev => ({ ...prev, title: renameValue.trim() }));
+      }
+    } catch {}
+
+    setRenamingNote(null);
+    await loadNotes();
+  }
+
+  const handleExportMd = useCallback(async () => {
+    if (!activeNote) return;
+    const content = joinFrontmatter(fmRef.current, body);
+    try {
+      const dest = await save({
+        filters: [{ name: 'Markdown', extensions: ['md'] }],
+        defaultPath: `${meta.title}.md`,
+      });
+      if (dest) await invoke('write_note', { path: dest, content });
+    } catch {}
+  }, [activeNote, meta.title, body]);
+
+  const handlePrint = useCallback(async () => {
+    const editorEl = document.querySelector('.ProseMirror');
+    if (!editorEl || !dataDir) return;
+
+    const clone = editorEl.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
+    clone.querySelectorAll('.image-align-toolbar, .image-resize-handle').forEach(el => el.remove());
+    clone.querySelectorAll('.image-caption-input').forEach(el => {
+      const span = document.createElement('span');
+      span.style.cssText = 'display:block;text-align:center;font-style:italic;font-size:0.85em;color:#666;margin-top:4px;';
+      span.textContent = (el as HTMLInputElement).value;
+      if (span.textContent) el.replaceWith(span);
+      else el.remove();
+    });
+
+    let content = clone.innerHTML;
+    content = content.replace(/https?:\/\/asset\.localhost/g, 'file://');
+    content = content.replace(/asset:\/\/localhost/g, 'file://');
+
+    const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>${esc(meta.title)}</title>
+<style>
+body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;max-width:780px;margin:2cm auto;padding:0 1cm;color:#222;font-size:11pt;line-height:1.65}
+h1{font-size:18pt;font-weight:600;border-bottom:1px solid #ccc;padding-bottom:.5rem;margin-bottom:1rem}
+h2{font-size:14pt;font-weight:600;margin:1.2rem 0 .5rem}
+h3{font-size:12pt;font-weight:600;margin:1rem 0 .5rem}
+table{border-collapse:collapse;width:100%;margin:.75rem 0;page-break-inside:avoid}
+td,th{border:1px solid #bbb;padding:4pt 6pt;font-size:10pt;vertical-align:top}
+th{background:#f0f0f0;font-weight:600;text-align:left}
+img{max-width:100%;height:auto;border-radius:6px}
+blockquote{border-left:3px solid #aaa;padding-left:10pt;color:#555;margin-left:0}
+code{background:#f4f4f4;padding:1pt 3pt;border-radius:2pt;font-size:9pt;font-family:Consolas,monospace}
+pre{background:#f4f4f4;border:1px solid #ddd;padding:8pt;border-radius:4pt;overflow-x:auto;page-break-inside:avoid}
+pre code{background:none;padding:0}
+a{color:#333;text-decoration:underline}
+hr{border:none;border-top:1px solid #ccc;margin:1.5rem 0}
+ul[data-type="taskList"]{list-style:none;padding-left:0}
+ul[data-type="taskList"] li{display:flex;align-items:flex-start;gap:.5rem}
+mark{background:#fff3a8;padding:0 2px;border-radius:2px}
+p{margin:.3rem 0}
+@media print{body{margin:0;padding:1cm}}
+</style></head><body>
+<h1>${esc(meta.title)}</h1>
+${content}
+<script>window.onload=function(){window.print()}<\/script>
+</body></html>`;
+
+    try {
+      const tmpPath = await join(dataDir, 'print-preview.html');
+      await invoke('write_note', { path: tmpPath, content: html });
+      await invoke('open_path', { path: tmpPath });
+    } catch (e) {
+      console.error('Print export failed:', e);
+    }
+  }, [meta.title, dataDir]);
+
+  return (
+    <div className="flex-1 flex min-h-0 min-w-0">
+      <div style={{ width: listWidth }} className="shrink-0 border-r border-border flex flex-col">
+        <div className="px-2.5 py-2 border-b border-border flex items-center justify-between">
+          <span className="text-xs font-medium text-ink-2">Research Notes</span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setShowTemplateEditor(true)}
+              title="Edit Templates"
+              className="p-1 rounded text-ink-3 hover:text-ink hover:bg-paper-soft transition-colors"
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M10 6.5V10a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1h3.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M8.5 1.5l2 2L5 9H3V7l5.5-5.5z" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            <div className="relative">
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowTemplateMenu(!showTemplateMenu); }}
+                className="px-2 py-1 text-xs rounded-lg bg-chrome/30 text-ink hover:bg-chrome/50 transition-colors"
+              >
+                + New
+              </button>
+              {showTemplateMenu && (
+                <div className="absolute right-0 top-full mt-1 z-50 bg-paper border border-border rounded-lg shadow-lg py-1 min-w-[140px]">
+                  {activeTemplates.map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => handleCreate(t)}
+                      className="w-full text-left px-3 py-1.5 text-xs text-ink-2 hover:bg-paper-soft transition-colors"
+                    >
+                      {t.icon} {t.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+        {error && <p className="px-2.5 py-1 text-[10px] text-red-500 break-all">{error}</p>}
+
+        <div className="px-2 py-1.5 border-b border-border/50 space-y-1">
+          <div className="flex gap-1">
+            <Dropdown
+              value={filterProject}
+              onChange={setFilterProject}
+              options={allProjects.map(p => ({ value: p, label: p }))}
+              placeholder="All Projects"
+              compact
+              className="flex-1 min-w-0"
+            />
+            <Dropdown
+              value={filterTag}
+              onChange={setFilterTag}
+              options={allTags.map(t => ({ value: t, label: t }))}
+              placeholder="All Tags"
+              compact
+              className="flex-1 min-w-0"
+            />
+          </div>
+          <div className="flex gap-0.5">
+            {(['updated', 'created', 'title'] as const).map(s => (
+              <button
+                key={s}
+                onClick={() => setSortBy(s)}
+                className={`px-1.5 py-0.5 text-[9px] rounded transition-colors ${
+                  sortBy === s ? 'bg-chrome/30 text-ink font-medium' : 'text-ink-3 hover:bg-paper-soft'
+                }`}
+              >
+                {s === 'updated' ? 'Recent' : s === 'created' ? 'Created' : 'A-Z'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto relative">
+          {filteredNotes.length === 0 && (
+            <p className="text-xs text-ink-3 text-center py-4">
+              {notes.length === 0 ? 'No research notes yet.' : 'No notes match filters.'}
+            </p>
+          )}
+          {filteredNotes.map((note) => (
+            <div key={note.path} className="relative group">
+              {renamingNote === note.path ? (
+                <div className="px-3 py-2 border-b border-border/30">
+                  <input
+                    autoFocus
+                    value={renameValue}
+                    onChange={e => setRenameValue(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') commitRename(note.path);
+                      if (e.key === 'Escape') setRenamingNote(null);
+                    }}
+                    onBlur={() => commitRename(note.path)}
+                    className="w-full text-xs px-2 py-1 rounded border border-chrome bg-paper-soft text-ink focus:outline-none"
+                  />
+                </div>
+              ) : (
+                <button
+                  onClick={() => handleSelectNote(note.path)}
+                  onContextMenu={(e) => handleContextMenu(e, note.path)}
+                  className={`w-full text-left px-2.5 py-2 text-sm border-b border-border/30 transition-colors ${
+                    activeNote === note.path
+                      ? 'bg-chrome/20 text-ink'
+                      : 'text-ink-2 hover:bg-paper-soft'
+                  }`}
+                >
+                  <div className="font-medium text-xs truncate pr-6">
+                    <span className="mr-0.5">{typeIconMap[note.noteType] ?? NOTE_TYPE_ICONS[note.noteType as NoteType] ?? '📝'}</span>
+                    {note.title}
+                  </div>
+                  {note.updated && (
+                    <div className="text-[10px] text-ink-3 mt-0.5 truncate pr-6">
+                      {formatRelativeTime(note.updated)}
+                    </div>
+                  )}
+                </button>
+              )}
+              {renamingNote !== note.path && (
+                <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 flex gap-0.5 transition-opacity">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); startRename(note.path); }}
+                    title="Rename"
+                    className="p-1 rounded text-ink-3 hover:text-ink hover:bg-paper-soft transition-colors"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <path d="M8.5 1.5l2 2L4 10H2v-2l6.5-6.5z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDelete(note.path); }}
+                    title="Delete"
+                    className="p-1 rounded text-ink-3 hover:text-red-400 hover:bg-paper-soft transition-colors"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+                    </svg>
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+
+          {contextMenu && (() => {
+            const ctxNote = notes.find(n => n.path === contextMenu.path);
+            const isQuickMemo = ctxNote?.noteType === 'quick-memo';
+            const promoteTargets: { type: NoteType; label: string; icon: string }[] = [
+              { type: 'analysis-note', label: 'Analysis Note', icon: '📊' },
+              { type: 'design-note', label: 'Design Note', icon: '📐' },
+              { type: 'study-note', label: 'Study Note', icon: '📚' },
+              { type: 'test-log', label: 'Test Log', icon: '🔧' },
+            ];
+            return (
+              <div
+                className="fixed z-50 bg-paper border border-border rounded-lg shadow-lg py-1 min-w-[140px]"
+                style={{ left: contextMenu.x, top: contextMenu.y }}
+              >
+                <button
+                  onClick={() => startRename(contextMenu.path)}
+                  className="w-full text-left px-3 py-1.5 text-xs text-ink hover:bg-paper-soft transition-colors"
+                >
+                  Rename
+                </button>
+                {isQuickMemo && (
+                  <>
+                    <div className="mx-2 my-0.5 border-t border-border/50" />
+                    <div className="px-3 py-1 text-[10px] text-ink-3 uppercase tracking-wider">Promote to</div>
+                    {promoteTargets.map(t => (
+                      <button
+                        key={t.type}
+                        onClick={() => { handlePromote(contextMenu.path, t.type); setContextMenu(null); }}
+                        className="w-full text-left px-3 py-1.5 text-xs text-ink hover:bg-paper-soft transition-colors"
+                      >
+                        {t.icon} {t.label}
+                      </button>
+                    ))}
+                  </>
+                )}
+                <div className="mx-2 my-0.5 border-t border-border/50" />
+                <button
+                  onClick={() => { handleDelete(contextMenu.path); setContextMenu(null); }}
+                  className="w-full text-left px-3 py-1.5 text-xs text-red-500 hover:bg-paper-soft transition-colors"
+                >
+                  Delete
+                </button>
+              </div>
+            );
+          })()}
+        </div>
+      </div>
+
+      <ResizeHandle onResize={handleListResize} />
+
+      <div className="flex-1 flex flex-col min-h-0 min-w-0">
+        {activeNote ? (
+          <>
+            {conflictNote && (
+              <div className="px-4 py-1.5 bg-pastel-cream/50 border-b border-pastel-cream flex items-center justify-between shrink-0">
+                <span className="text-xs text-ink-2">This note was modified externally.</span>
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={() => { handleSelectNote(activeNote); }}
+                    className="px-2 py-0.5 text-[10px] rounded bg-chrome/30 text-ink font-medium hover:bg-chrome/50 transition-colors"
+                  >
+                    Reload
+                  </button>
+                  <button
+                    onClick={() => setConflictNote(false)}
+                    className="px-2 py-0.5 text-[10px] rounded text-ink-3 hover:bg-paper-muted/50 transition-colors"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
+            <div className="px-6 py-3.5 border-b border-border bg-paper shrink-0 space-y-2.5">
+              <div className="flex items-center gap-2">
+                <input
+                  value={meta.title}
+                  onChange={e => updateMeta('title', e.target.value)}
+                  placeholder="Note title"
+                  className="flex-1 text-base font-semibold text-ink bg-paper-soft/40 rounded px-2.5 py-1 border border-transparent outline-none focus:border-border placeholder:text-ink-3"
+                />
+                <button
+                  onClick={() => setLinksPanelOpen(v => !v)}
+                  title={linksPanelOpen ? 'Hide links panel' : 'Show links panel'}
+                  className={`px-1.5 py-0.5 text-[10px] rounded transition-colors shrink-0 ${linksPanelOpen ? 'bg-chrome/20 text-ink' : 'text-ink-3 hover:bg-paper-soft hover:text-ink-2'}`}
+                >
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M7 2L4 2a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1" />
+                    <path d="M9 14h3a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-1" />
+                    <path d="M6 10l4-4" />
+                  </svg>
+                </button>
+                <button
+                  onClick={handleExportMd}
+                  title="Export as Markdown"
+                  className="px-1.5 py-0.5 text-[10px] rounded text-ink-3 hover:bg-paper-soft hover:text-ink-2 transition-colors shrink-0"
+                >
+                  .md
+                </button>
+                <button
+                  onClick={handlePrint}
+                  title="Print / Save as PDF"
+                  className="px-1.5 py-0.5 text-[10px] rounded text-ink-3 hover:bg-paper-soft hover:text-ink-2 transition-colors shrink-0"
+                >
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M4 4V2h8v2" />
+                    <rect x="2" y="6" width="12" height="6" rx="1" />
+                    <path d="M4 12v2h8v-2" />
+                  </svg>
+                </button>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5 relative">
+                  <span className="text-[10px] text-ink-3 uppercase tracking-wider">Project</span>
+                  <input
+                    value={meta.project.join(', ')}
+                    onChange={e => {
+                      const val = e.target.value;
+                      updateMeta('project', val ? val.split(',').map(s => s.trim()).filter(Boolean) : []);
+                      setProjectDropdownOpen(true);
+                    }}
+                    onFocus={() => setProjectDropdownOpen(true)}
+                    onBlur={() => setTimeout(() => setProjectDropdownOpen(false), 150)}
+                    placeholder="—"
+                    className="text-xs text-ink-2 bg-paper-soft/40 rounded px-2 py-1 border border-transparent outline-none focus:border-border w-28 placeholder:text-ink-3"
+                  />
+                  {projectDropdownOpen && (() => {
+                    const q = meta.project.join(' ').toLowerCase();
+                    const filtered = projects.filter(p => !q || p.name.toLowerCase().includes(q));
+                    if (filtered.length === 0) return null;
+                    return (
+                      <div className="absolute top-full left-0 mt-1 z-50 bg-paper border border-border rounded-lg shadow-lg py-1 min-w-[140px] max-h-32 overflow-y-auto">
+                        {filtered.map(p => (
+                          <button
+                            key={p.id}
+                            onMouseDown={e => {
+                              e.preventDefault();
+                              const cur = meta.project;
+                              const next = cur.includes(p.name) ? cur.filter(x => x !== p.name) : [...cur, p.name];
+                              updateMeta('project', next);
+                              setProjectDropdownOpen(false);
+                            }}
+                            className="w-full text-left px-2 py-1 text-xs text-ink-2 hover:bg-paper-soft flex items-center gap-1.5 transition-colors"
+                          >
+                            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
+                            {p.name}
+                            {meta.project.includes(p.name) && <span className="ml-auto text-chrome">✓</span>}
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+                <div className="w-px h-3 bg-border" />
+                <div className="flex items-center gap-1.5 flex-1 min-w-0 relative">
+                  <span className="text-[10px] text-ink-3 uppercase tracking-wider shrink-0">Tags</span>
+                  <div className="flex items-center gap-1 flex-wrap min-w-0">
+                    {meta.tags.map(tag => (
+                      <span
+                        key={tag}
+                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] rounded-full bg-pastel-lavender/30 text-tag-text"
+                      >
+                        {tag}
+                        <button
+                          onClick={() => handleRemoveTag(tag)}
+                          className="text-ink-3 hover:text-ink ml-0.5"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                    <input
+                      value={tagInput}
+                      onChange={e => { setTagInput(e.target.value); setTagDropdownOpen(true); setTagHighlight(0); }}
+                      onFocus={() => setTagDropdownOpen(true)}
+                      onBlur={() => setTimeout(() => setTagDropdownOpen(false), 150)}
+                      onKeyDown={e => {
+                        if (tagDropdownOpen && tagSuggestions.length > 0) {
+                          if (e.key === 'ArrowDown') { e.preventDefault(); setTagHighlight(i => (i + 1) % tagSuggestions.length); return; }
+                          if (e.key === 'ArrowUp') { e.preventDefault(); setTagHighlight(i => (i - 1 + tagSuggestions.length) % tagSuggestions.length); return; }
+                          if ((e.key === 'Enter' || e.key === 'Tab') && tagSuggestions[tagHighlight]) { e.preventDefault(); handleAddTag(tagSuggestions[tagHighlight].name); return; }
+                          if (e.key === 'Escape') { e.preventDefault(); setTagDropdownOpen(false); return; }
+                        }
+                        if (e.key === 'Enter') { e.preventDefault(); handleAddTag(); }
+                        if (e.key === 'Backspace' && !tagInput && meta.tags.length > 0) {
+                          handleRemoveTag(meta.tags[meta.tags.length - 1]);
+                        }
+                      }}
+                      placeholder={meta.tags.length === 0 ? 'Add tag...' : ''}
+                      className="text-[10px] text-ink-2 bg-paper-soft/40 rounded px-2 py-1 border border-transparent outline-none focus:border-border w-20 placeholder:text-ink-3"
+                    />
+                  </div>
+                  {tagDropdownOpen && tagSuggestions.length > 0 && (
+                    <div className="absolute left-0 top-full mt-1 z-50 bg-paper border border-border rounded-lg shadow-lg py-1 min-w-[140px] max-h-32 overflow-y-auto">
+                      {tagSuggestions.map((s, i) => (
+                        <button
+                          key={s.name}
+                          onMouseDown={e => { e.preventDefault(); handleAddTag(s.name); }}
+                          className={`w-full text-left px-2 py-1 text-xs flex items-center justify-between transition-colors ${
+                            i === tagHighlight ? 'bg-chrome/15 text-ink' : 'text-ink-2 hover:bg-paper-soft'
+                          }`}
+                        >
+                          <span>{s.name}</span>
+                          <span className="text-[9px] text-ink-3">{s.count}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5 relative">
+                  <span className="text-[10px] text-ink-3 uppercase tracking-wider">Topic</span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setTopicDropdownOpen(v => !v); setShowNewTopicInput(false); }}
+                    className="text-xs text-ink-2 bg-paper-soft/40 rounded px-2 py-1 border border-transparent hover:border-border w-36 text-left truncate placeholder:text-ink-3"
+                  >
+                    {meta.topic || <span className="text-ink-3">—</span>}
+                  </button>
+                  {topicDropdownOpen && (
+                    <div className="absolute top-full left-0 mt-1 z-50 bg-paper border border-border rounded-lg shadow-lg py-1 min-w-[180px] max-h-48 overflow-y-auto"
+                      onClick={e => e.stopPropagation()}>
+                      {meta.topic && (
+                        <button
+                          onMouseDown={e => { e.preventDefault(); updateMeta('topic', ''); setTopicDropdownOpen(false); }}
+                          className="w-full text-left px-2 py-1 text-xs text-ink-3 hover:bg-paper-soft transition-colors italic"
+                        >
+                          Clear topic
+                        </button>
+                      )}
+                      {topics.filter(t => !meta.project.length || meta.project.includes(t.project) || !t.project).map(t => (
+                        <button
+                          key={t.name}
+                          onMouseDown={e => {
+                            e.preventDefault();
+                            updateMeta('topic', t.name);
+                            updateTopicsFile(t.name, meta.project, meta.subsystem);
+                            setTopicDropdownOpen(false);
+                          }}
+                          className={`w-full text-left px-2 py-1 text-xs hover:bg-paper-soft transition-colors flex items-center justify-between ${
+                            meta.topic === t.name ? 'text-ink font-medium' : 'text-ink-2'
+                          }`}
+                        >
+                          <span className="truncate">{t.name}</span>
+                          <span className="text-[9px] text-ink-3 ml-1 shrink-0">{t.note_count}</span>
+                        </button>
+                      ))}
+                      {topics.filter(t => meta.project.length && t.project && !meta.project.includes(t.project)).length > 0 && (
+                        <>
+                          <div className="mx-2 my-0.5 border-t border-border/50" />
+                          <div className="px-2 py-0.5 text-[9px] text-ink-3">Other projects</div>
+                          {topics.filter(t => meta.project.length > 0 && t.project && !meta.project.includes(t.project)).map(t => (
+                            <button
+                              key={t.name}
+                              onMouseDown={e => {
+                                e.preventDefault();
+                                updateMeta('topic', t.name);
+                                updateTopicsFile(t.name, meta.project, meta.subsystem);
+                                setTopicDropdownOpen(false);
+                              }}
+                              className="w-full text-left px-2 py-1 text-xs text-ink-3 hover:bg-paper-soft transition-colors flex items-center justify-between"
+                            >
+                              <span className="truncate">{t.name}</span>
+                              <span className="text-[9px] text-ink-3 ml-1 shrink-0">{t.project}</span>
+                            </button>
+                          ))}
+                        </>
+                      )}
+                      <div className="mx-2 my-0.5 border-t border-border/50" />
+                      {showNewTopicInput ? (
+                        <div className="px-2 py-1 flex gap-1">
+                          <input
+                            autoFocus
+                            value={newTopicName}
+                            onChange={e => setNewTopicName(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter' && newTopicName.trim()) {
+                                updateMeta('topic', newTopicName.trim());
+                                updateTopicsFile(newTopicName.trim(), meta.project, meta.subsystem);
+                                setNewTopicName('');
+                                setShowNewTopicInput(false);
+                                setTopicDropdownOpen(false);
+                              }
+                              if (e.key === 'Escape') { setShowNewTopicInput(false); setNewTopicName(''); }
+                            }}
+                            placeholder="Topic name..."
+                            className="flex-1 text-xs px-1.5 py-0.5 rounded border border-border bg-paper-soft text-ink focus:outline-none min-w-0"
+                          />
+                        </div>
+                      ) : (
+                        <button
+                          onMouseDown={e => { e.preventDefault(); setShowNewTopicInput(true); }}
+                          className="w-full text-left px-2 py-1 text-xs text-chrome hover:bg-paper-soft transition-colors"
+                        >
+                          + New Topic
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div className="w-px h-3 bg-border" />
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] text-ink-3 uppercase tracking-wider">Status</span>
+                  <Dropdown
+                    value={meta.status ?? 'draft'}
+                    onChange={v => updateMeta('status', v)}
+                    options={[
+                      { value: 'draft', label: 'Draft' },
+                      { value: 'in-progress', label: 'In Progress' },
+                      { value: 'complete', label: 'Complete' },
+                      { value: 'archived', label: 'Archived' },
+                    ]}
+                    placeholder="Status"
+                    compact
+                  />
+                </div>
+              </div>
+            </div>
+            <AutoSuggestionBanner
+              noteType={(() => {
+                const n = notes.find(n => n.path === activeNote);
+                return n?.noteType ?? 'analysis-note';
+              })()}
+              noteId={activeNoteId}
+              status={meta.status}
+              verdict={(() => {
+                const fields = parseFrontmatterFields(fmRef.current);
+                return fields.verdict ?? '';
+              })()}
+              topic={meta.topic}
+              body={body}
+              tags={meta.tags}
+              subsystem={meta.subsystem}
+              project={meta.project}
+              updatedAt={(() => {
+                const fields = parseFrontmatterFields(fmRef.current);
+                return fields.updated ?? '';
+              })()}
+              onUpdateStatus={(s) => updateMeta('status', s)}
+              onPromote={(() => {
+                const n = notes.find(n => n.path === activeNote);
+                return n?.noteType === 'quick-memo'
+                  ? (targetType: NoteType) => { if (activeNote) handlePromote(activeNote, targetType); }
+                  : undefined;
+              })()}
+              onAddTag={(tag) => handleAddTag(tag)}
+              onAddSubsystem={(sub) => {
+                if (!meta.subsystem.includes(sub)) {
+                  updateMeta('subsystem', [...meta.subsystem, sub]);
+                }
+              }}
+              onUpdateBody={(newBody) => handleChange(newBody)}
+              onSetTopic={(t) => {
+                updateMeta('topic', t);
+                updateTopicsFile(t, meta.project, meta.subsystem);
+              }}
+            />
+            <div className="flex flex-1 min-h-0 overflow-hidden">
+              <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+                <NoteEditor
+                  key={activeNote}
+                  content={body}
+                  onChange={handleChange}
+                  placeholder="Start writing..."
+                  sectionGuides={activeGuideMap}
+                />
+              </div>
+              {activeNoteId && (
+                <BacklinkPanel
+                  noteId={activeNoteId}
+                  onNavigate={handleSelectNote}
+                  visible={linksPanelOpen}
+                  onToggle={() => setLinksPanelOpen(false)}
+                />
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-ink-3 text-sm">
+            Click "+ New" to create a note.
+          </div>
+        )}
+      </div>
+      {showTemplateEditor && (
+        <TemplateEditor
+          onClose={() => setShowTemplateEditor(false)}
+          onTemplatesChanged={() => loadCustomTemplates()}
+        />
+      )}
+    </div>
+  );
+}

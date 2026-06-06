@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+    <linearGradient id="orbit1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#4da6ff"/>
+      <stop offset="100%" stop-color="#80d4ff"/>
+    </linearGradient>
+    <linearGradient id="orbit2" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f0d060"/>
+      <stop offset="100%" stop-color="#ffeb99"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="220" fill="url(#bg)"/>
+  <!-- Orbit ring 1 (cyan, tilted) -->
+  <ellipse cx="512" cy="512" rx="340" ry="120" fill="none" stroke="url(#orbit1)" stroke-width="28" transform="rotate(-25, 512, 512)" opacity="0.9"/>
+  <!-- Orbit ring 2 (yellow, tilted opposite) -->
+  <ellipse cx="512" cy="512" rx="340" ry="120" fill="none" stroke="url(#orbit2)" stroke-width="24" transform="rotate(35, 512, 512)" opacity="0.85"/>
+  <!-- Center body (satellite/planet) -->
+  <circle cx="512" cy="512" r="64" fill="#e8e8f0"/>
+  <circle cx="512" cy="512" r="48" fill="#c8c8e0"/>
+  <!-- Orbital dot 1 -->
+  <circle cx="280" cy="390" r="18" fill="#80d4ff"/>
+  <!-- Orbital dot 2 -->
+  <circle cx="740" cy="620" r="14" fill="#ffeb99"/>
+</svg>
