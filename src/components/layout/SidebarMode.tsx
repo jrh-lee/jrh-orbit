@@ -571,7 +571,7 @@ export function SidebarMode() {
                     </div>
                   )}
                   {editingTaskId === t.id && (
-                    <SidebarTaskEditor task={t} onUpdate={(changes) => handleUpdateTask(t.id, changes)} onDelete={() => handleDeleteTask(t.id)} onClose={() => setEditingTaskId(null)} />
+                    <SidebarTaskEditor task={t} onUpdate={(changes) => handleUpdateTask(t.id, changes)} onDelete={() => handleDeleteTask(t.id)} />
                   )}
                 </div>
               ))}
