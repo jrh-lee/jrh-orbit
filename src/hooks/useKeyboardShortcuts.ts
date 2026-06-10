@@ -4,14 +4,14 @@ import { useConfigStore } from '../stores/useConfigStore';
 import { writeJsonFile, readConfig } from '../lib/fileSystem';
 import type { AppView } from '../stores/useAppStore';
 
-const viewShortcuts: Record<string, AppView> = {
-  '1': 'daily',
-  '2': 'notes',
-  '3': 'tasks',
-  '4': 'search',
-  '5': 'statistics',
-  '6': 'graph',
-  '7': 'settings',
+const viewShortcutsByCode: Record<string, AppView> = {
+  'Digit1': 'daily',
+  'Digit2': 'notes',
+  'Digit3': 'tasks',
+  'Digit4': 'search',
+  'Digit5': 'statistics',
+  'Digit6': 'graph',
+  'Digit7': 'settings',
 };
 
 async function persistZoom(dataDir: string, zoom: number) {
@@ -32,39 +32,39 @@ export function useKeyboardShortcuts() {
       const mod = e.metaKey || e.ctrlKey;
       if (!mod) return;
 
-      const key = e.key.toLowerCase();
+      const code = e.code;
 
-      if (viewShortcuts[key]) {
+      if (viewShortcutsByCode[code]) {
         e.preventDefault();
-        setView(viewShortcuts[key]);
+        setView(viewShortcutsByCode[code]);
         return;
       }
 
-      if (key === 'k') {
+      if (code === 'KeyK') {
         e.preventDefault();
         setView('search');
         return;
       }
 
-      if (key === 'n' && !e.shiftKey) {
+      if (code === 'KeyN' && !e.shiftKey) {
         e.preventDefault();
         setView('notes');
         return;
       }
 
-      if (key === 'd') {
+      if (code === 'KeyD') {
         e.preventDefault();
         setView('daily');
         return;
       }
 
-      if (key === 't' && !e.shiftKey) {
+      if (code === 'KeyT' && !e.shiftKey) {
         e.preventDefault();
         setView('tasks');
         return;
       }
 
-      if (key === ',') {
+      if (code === 'Comma') {
         e.preventDefault();
         setView('settings');
         return;
@@ -73,7 +73,7 @@ export function useKeyboardShortcuts() {
       const mode = useAppStore.getState().mode;
       if (mode !== 'expanded') return;
 
-      if (key === '=' || key === '+') {
+      if (code === 'Equal') {
         e.preventDefault();
         const cfg = useConfigStore.getState();
         const next = Math.min(200, cfg.window.zoom_level + 10);
@@ -83,7 +83,7 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      if (key === '-') {
+      if (code === 'Minus') {
         e.preventDefault();
         const cfg = useConfigStore.getState();
         const next = Math.max(50, cfg.window.zoom_level - 10);
@@ -93,7 +93,7 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      if (key === '0') {
+      if (code === 'Digit0') {
         e.preventDefault();
         const cfg = useConfigStore.getState();
         cfg.setWindow({ zoom_level: 100 });

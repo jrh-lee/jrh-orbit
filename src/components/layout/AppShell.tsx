@@ -5,6 +5,7 @@ import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { useFileWatcher } from '../../hooks/useFileWatcher';
 import { readConfig, initDataFiles, ensureDataDir } from '../../lib/fileSystem';
 import { buildIndex } from '../../lib/searchIndex';
+import { debugFts } from '../../lib/db';
 import { autoArchiveQuickMemos } from '../../lib/autoArchive';
 import { processRecurringTodos } from '../../lib/recurringTodos';
 import { useConfigStore } from '../../stores/useConfigStore';
@@ -59,8 +60,9 @@ export function AppShell() {
         .then(() => {
           autoArchiveQuickMemos(dataDir).catch(() => {});
           processRecurringTodos(dataDir).catch(() => {});
+          (window as any).__debugFts = () => debugFts().then(r => { console.table(r); return r; });
         })
-        .catch(() => {});
+        .catch((e) => console.error('[AppShell] init failed:', e));
     }
   }, [dataDir]);
 

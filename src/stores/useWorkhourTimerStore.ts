@@ -1,9 +1,10 @@
 import { create } from 'zustand';
 
 const STORAGE_KEY = 'jrh-orbit-workhour-timer';
+const SAVE_EVERY_TICKS = 30;
 
 interface Saved {
-  elapsed: number;
+  baseElapsed: number;
   running: boolean;
   startedAt: number | null;
   date: string;
@@ -17,11 +18,19 @@ function load(): Saved {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      const s = JSON.parse(raw) as Saved;
-      if (s.date === today()) return s;
+      const s = JSON.parse(raw);
+      if (s.date !== today()) return { baseElapsed: 0, running: false, startedAt: null, date: today() };
+      if (s.baseElapsed !== undefined) return s as Saved;
+      // migrate from old format
+      return {
+        baseElapsed: s.elapsed ?? 0,
+        running: s.running ?? false,
+        startedAt: s.startedAt ?? null,
+        date: s.date,
+      };
     }
   } catch {}
-  return { elapsed: 0, running: false, startedAt: null, date: today() };
+  return { baseElapsed: 0, running: false, startedAt: null, date: today() };
 }
 
 function save(s: Saved) {
@@ -32,6 +41,7 @@ interface WorkhourTimerState {
   elapsed: number;
   running: boolean;
   startedAt: number | null;
+  baseElapsed: number;
 
   start: () => void;
   pause: () => void;
@@ -42,9 +52,11 @@ interface WorkhourTimerState {
 }
 
 let intervalId: ReturnType<typeof setInterval> | undefined;
+let tickCount = 0;
 
 function startInterval() {
   stopInterval();
+  tickCount = 0;
   intervalId = setInterval(() => {
     useWorkhourTimerStore.getState().tick();
   }, 1000);
@@ -58,8 +70,7 @@ function stopInterval() {
 }
 
 const initial = load();
-// If it was running, compute elapsed since startedAt
-let initialElapsed = initial.elapsed;
+let initialElapsed = initial.baseElapsed;
 if (initial.running && initial.startedAt) {
   initialElapsed += Math.floor((Date.now() - initial.startedAt) / 1000);
 }
@@ -72,55 +83,77 @@ export const useWorkhourTimerStore = create<WorkhourTimerState>((set, get) => {
   return {
     elapsed: initialElapsed,
     running: initial.running,
-    startedAt: initial.running ? Date.now() : null,
+    startedAt: initial.running ? initial.startedAt : null,
+    baseElapsed: initial.running ? initial.baseElapsed : initialElapsed,
 
     start: () => {
       const now = Date.now();
+      const { baseElapsed } = get();
       set({ running: true, startedAt: now });
-      save({ elapsed: get().elapsed, running: true, startedAt: now, date: today() });
+      save({ baseElapsed, running: true, startedAt: now, date: today() });
       startInterval();
     },
 
     pause: () => {
       stopInterval();
-      const { elapsed, startedAt } = get();
-      const newElapsed = startedAt ? elapsed + Math.floor((Date.now() - startedAt) / 1000) : elapsed;
-      set({ running: false, elapsed: newElapsed, startedAt: null });
-      save({ elapsed: newElapsed, running: false, startedAt: null, date: today() });
+      const { baseElapsed, startedAt } = get();
+      const session = startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0;
+      const newBase = baseElapsed + session;
+      set({ running: false, elapsed: newBase, baseElapsed: newBase, startedAt: null });
+      save({ baseElapsed: newBase, running: false, startedAt: null, date: today() });
     },
 
     reset: () => {
       stopInterval();
-      set({ elapsed: 0, running: false, startedAt: null });
-      save({ elapsed: 0, running: false, startedAt: null, date: today() });
+      set({ elapsed: 0, running: false, startedAt: null, baseElapsed: 0 });
+      save({ baseElapsed: 0, running: false, startedAt: null, date: today() });
     },
 
     addMinutes: (min: number) => {
       const added = min * 60;
       set(s => {
-        const newElapsed = s.elapsed + added;
-        save({ elapsed: newElapsed, running: s.running, startedAt: s.startedAt, date: today() });
-        return { elapsed: newElapsed };
+        const newBase = s.baseElapsed + added;
+        const session = s.startedAt ? Math.floor((Date.now() - s.startedAt) / 1000) : 0;
+        save({ baseElapsed: newBase, running: s.running, startedAt: s.startedAt, date: today() });
+        return { baseElapsed: newBase, elapsed: newBase + session };
       });
     },
 
     subtractMinutes: (min: number) => {
       const sub = min * 60;
       set(s => {
-        const newElapsed = Math.max(0, s.elapsed - sub);
-        save({ elapsed: newElapsed, running: s.running, startedAt: s.startedAt, date: today() });
-        return { elapsed: newElapsed };
+        const newBase = Math.max(0, s.baseElapsed - sub);
+        const session = s.startedAt ? Math.floor((Date.now() - s.startedAt) / 1000) : 0;
+        const newElapsed = Math.max(0, newBase + session);
+        save({ baseElapsed: newBase, running: s.running, startedAt: s.startedAt, date: today() });
+        return { baseElapsed: newBase, elapsed: newElapsed };
       });
     },
 
     tick: () => {
-      const { startedAt, elapsed } = get();
+      const { startedAt, baseElapsed } = get();
       if (!startedAt) return;
-      const now = Date.now();
-      const total = elapsed + Math.floor((now - startedAt) / 1000);
-      // Don't set elapsed in tick — compute from startedAt for accuracy
-      // But we need to trigger re-render
-      set({ elapsed: total, startedAt: now });
+      const sessionSeconds = Math.floor((Date.now() - startedAt) / 1000);
+      set({ elapsed: baseElapsed + sessionSeconds });
+
+      tickCount++;
+      if (tickCount >= SAVE_EVERY_TICKS) {
+        tickCount = 0;
+        save({ baseElapsed, running: true, startedAt, date: today() });
+      }
     },
   };
 });
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    const { running, startedAt, baseElapsed } = useWorkhourTimerStore.getState();
+    if (!running || !startedAt) return;
+
+    if (document.visibilityState === 'visible') {
+      const sessionSeconds = Math.floor((Date.now() - startedAt) / 1000);
+      useWorkhourTimerStore.setState({ elapsed: baseElapsed + sessionSeconds });
+    }
+    save({ baseElapsed, running: true, startedAt, date: today() });
+  });
+}

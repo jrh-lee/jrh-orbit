@@ -40,7 +40,9 @@ export interface SearchResult {
   updated: string;
 }
 
-export async function indexNote(
+let writeQueue: Promise<void> = Promise.resolve();
+
+export function indexNote(
   path: string,
   id: string,
   title: string,
@@ -54,18 +56,23 @@ export async function indexNote(
   created: string,
   updated: string,
 ): Promise<void> {
-  const database = await getDb();
-  const projectStr = Array.isArray(project) ? project.join(', ') : (project ?? '');
-  const subsystemStr = subsystem.join(', ');
-  const tagsStr = tags.join(', ');
+  const job = writeQueue.then(async () => {
+    const database = await getDb();
+    const projectStr = Array.isArray(project) ? project.join(', ') : (project ?? '');
+    const subsystemStr = subsystem.join(', ');
+    const tagsStr = tags.join(', ');
 
-  await database.execute(`DELETE FROM notes_fts WHERE path = $1`, [path]);
+    console.log(`[indexNote] path=${path}, id=${id}, project="${projectStr}", topic="${topic}"`);
 
-  await database.execute(
-    `INSERT INTO notes_fts (path, id, title, note_type, project, subsystem, topic, tags, status, content, created, updated)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-    [path, id, title, noteType, projectStr, subsystemStr, topic, tagsStr, status, content, created, updated],
-  );
+    await database.execute(`DELETE FROM notes_fts WHERE path = $1`, [path]);
+    await database.execute(
+      `INSERT INTO notes_fts (path, id, title, note_type, project, subsystem, topic, tags, status, content, created, updated)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      [path, id, title, noteType, projectStr, subsystemStr, topic, tagsStr, status, content, created, updated],
+    );
+  });
+  writeQueue = job.catch(() => {});
+  return job;
 }
 
 export async function searchNotes(query: string): Promise<SearchResult[]> {
@@ -114,6 +121,48 @@ export async function clearIndex(): Promise<void> {
   await database.execute(`DELETE FROM notes_fts`);
 }
 
+export interface HubNoteRow {
+  path: string;
+  id: string;
+  title: string;
+  note_type: string;
+  project: string;
+  topic: string;
+  content: string;
+  created: string;
+  updated: string;
+}
+
+export async function findNotesForProject(projectName: string): Promise<HubNoteRow[]> {
+  const database = await getDb();
+  try {
+    const all = await database.select<HubNoteRow[]>(
+      `SELECT path, id, title, note_type, project, topic, content, created, updated FROM notes_fts`,
+    );
+    const rows = all.filter(r => r.project && r.project.includes(projectName));
+    console.log(`[findNotesForProject] "${projectName}": ${all.length} total, ${rows.length} matched`);
+    return rows.sort((a, b) => (b.created || '').localeCompare(a.created || ''));
+  } catch (e) {
+    console.error('[findNotesForProject] query failed:', e);
+    return [];
+  }
+}
+
+export async function findNotesForTopic(topicName: string): Promise<HubNoteRow[]> {
+  const database = await getDb();
+  try {
+    const all = await database.select<HubNoteRow[]>(
+      `SELECT path, id, title, note_type, project, topic, content, created, updated FROM notes_fts`,
+    );
+    const rows = all.filter(r => r.topic === topicName);
+    console.log(`[findNotesForTopic] "${topicName}": ${all.length} total, ${rows.length} matched`);
+    return rows.sort((a, b) => (a.created || '').localeCompare(b.created || ''));
+  } catch (e) {
+    console.error('[findNotesForTopic] query failed:', e);
+    return [];
+  }
+}
+
 export async function findNotesByTopic(topic: string, excludeId?: string): Promise<{ id: string; title: string }[]> {
   const database = await getDb();
   try {
@@ -125,4 +174,11 @@ export async function findNotesByTopic(topic: string, excludeId?: string): Promi
   } catch {
     return [];
   }
+}
+
+export async function debugFts(): Promise<{ path: string; id: string; title: string; project: string; topic: string }[]> {
+  const database = await getDb();
+  return database.select(
+    `SELECT path, id, title, project, topic FROM notes_fts ORDER BY created DESC LIMIT 100`,
+  );
 }

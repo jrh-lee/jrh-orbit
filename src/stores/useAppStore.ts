@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 export type WindowMode = 'dock' | 'sidebar' | 'expanded';
-export type AppView = 'daily' | 'notes' | 'tasks' | 'search' | 'statistics' | 'graph' | 'settings';
+export type AppView = 'daily' | 'notes' | 'tasks' | 'search' | 'statistics' | 'graph' | 'settings' | 'hub';
 export type Theme = 'light' | 'dark' | 'spreadsheet' | 'cyberpunk' | 'forest' | 'ocean' | 'paper' | 'terminal' | 'solarized' | 'buddybuddy';
 
 const STORAGE_KEY = 'jrh-orbit-data-dir';
@@ -15,6 +15,7 @@ interface AppState {
   pendingNotePath: string | null;
   pendingTagFilter: string | null;
   activeProject: string | null;
+  hubTarget: { type: 'project'; name: string } | { type: 'topic'; name: string } | null;
 
   setMode: (mode: WindowMode) => void;
   setView: (view: AppView) => void;
@@ -27,6 +28,9 @@ interface AppState {
   filterByTaskTag: (tag: string) => void;
   clearPendingTagFilter: () => void;
   setActiveProject: (project: string | null) => void;
+  openProjectHub: (projectName: string) => void;
+  openTopicHub: (topicName: string) => void;
+  goHubLanding: () => void;
 }
 
 const savedDir = localStorage.getItem(STORAGE_KEY) || '';
@@ -40,6 +44,7 @@ export const useAppStore = create<AppState>((set) => ({
   pendingNotePath: null,
   pendingTagFilter: null,
   activeProject: null,
+  hubTarget: null,
 
   setMode: (mode) => set({ mode }),
   setView: (view) => set({ view }),
@@ -59,4 +64,7 @@ export const useAppStore = create<AppState>((set) => ({
   filterByTaskTag: (tag) => set({ view: 'tasks', pendingTagFilter: tag }),
   clearPendingTagFilter: () => set({ pendingTagFilter: null }),
   setActiveProject: (project) => set({ activeProject: project }),
+  openProjectHub: (name) => set({ view: 'hub', hubTarget: { type: 'project', name } }),
+  openTopicHub: (name) => set({ view: 'hub', hubTarget: { type: 'topic', name } }),
+  goHubLanding: () => set({ hubTarget: null }),
 }));

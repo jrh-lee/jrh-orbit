@@ -66,7 +66,6 @@
       "allow": [{ "path": "$HOME/**" }, { "path": "$APPDATA/**" }, { "path": "$DOCUMENT/**" }]
     },
     "shell:default",
-    "shell:allow-open",
-    "updater:default"
+    "shell:allow-open"
   ]
 }

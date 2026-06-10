@@ -1,12 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { watch } from '@tauri-apps/plugin-fs';
 import { join } from '@tauri-apps/api/path';
-import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../stores/useAppStore';
 import { FOLDERS, FILES } from '../lib/constants';
-import { indexNote, removeNoteIndex } from '../lib/db';
-import { splitFrontmatter, parseFrontmatterFields } from '../lib/frontmatter';
-import { normalizeProject, normalizeLegacyType } from '../types/note';
+import { removeNoteIndex } from '../lib/db';
+import { reindexNote } from '../lib/searchIndex';
 import { invalidateLinksCache } from '../lib/linkGraph';
 import { invalidateNotesCache } from '../lib/statistics';
 import type { UnwatchFn } from '@tauri-apps/plugin-fs';
@@ -34,32 +32,19 @@ const JSON_FILE_EVENTS: Record<string, SyncEvent> = {
   'topics.json': 'topics-changed',
 };
 
-async function reindexNote(filePath: string, fallbackType: string) {
+async function safeReindexNote(filePath: string, fallbackType: string) {
   try {
-    const raw = await invoke<string>('read_note', { path: filePath });
-    const { frontmatter, body } = splitFrontmatter(raw);
-    const fields = parseFrontmatterFields(frontmatter);
-    const id = fields.id ?? '';
-    const title = fields.title ?? filePath.split('/').pop()?.replace('.md', '') ?? '';
-    const noteType = fields.type ? String(normalizeLegacyType(fields.type)) : fallbackType;
-    const project = normalizeProject(fields.project);
-    const subsystem = Array.isArray(fields.subsystem) ? fields.subsystem : [];
-    const topic = fields.topic ?? fields.experiment ?? '';
-    const tags = Array.isArray(fields.tags) ? fields.tags : [];
-    const status = fields.status ?? '';
-    const created = fields.created ?? '';
-    const updated = fields.updated ?? '';
-    await indexNote(filePath, id, title, noteType, project, subsystem, topic, tags, status, body, created, updated);
+    await reindexNote(filePath, fallbackType);
   } catch {
     await removeNoteIndex(filePath).catch(() => {});
   }
 }
 
 function classifyPath(dataDir: string, fullPath: string): { event: SyncEvent; notePath?: string } | null {
-  const rel = fullPath.startsWith(dataDir) ? fullPath.slice(dataDir.length + 1) : null;
+  const rel = fullPath.startsWith(dataDir) ? fullPath.slice(dataDir.length + 1).replace(/\\/g, '/') : null;
   if (!rel) return null;
 
-  if (rel === FILES.config) return { event: 'config-changed' };
+  if (rel === FILES.config || rel === FILES.config.replace(/\//g, '\\')) return { event: 'config-changed' };
 
   if (rel.startsWith(FOLDERS.data + '/')) {
     if (rel.startsWith(FOLDERS.workhours + '/') && rel.endsWith('.json')) {
@@ -110,7 +95,7 @@ export function useFileWatcher() {
 
               if (classified.notePath) {
                 const fallback = classified.notePath.includes('/daily/') ? 'daily-log' : 'analysis-note';
-                reindexNote(classified.notePath, fallback);
+                safeReindexNote(classified.notePath, fallback);
               }
 
               if (!dispatched.has(classified.event)) {

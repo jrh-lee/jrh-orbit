@@ -365,7 +365,7 @@ export function SettingsView() {
           <details className="group">
             <summary className="text-sm font-medium text-ink-2 cursor-pointer hover:text-ink">Core Features</summary>
             <div className="text-xs text-ink-3 space-y-1.5 mt-2 pl-3 border-l-2 border-border">
-              <p><strong className="text-ink-2">Daily Log (⌘1)</strong> — 매일의 작업, 인사이트, 노트, 내일 계획을 기록합니다. 체크박스를 추가하면 자동으로 TODO 등록되며, Tasks 탭과 양방향으로 동기화됩니다. 미완료 TODO는 다음 날로 자동 이월됩니다. 외부에서 파일 수정 시 충돌 감지 배너가 뜹니다.</p>
+              <p><strong className="text-ink-2">Daily Log (⌘1)</strong> — 매일의 작업, 메모, 노트, 내일 할 일을 기록합니다. 체크박스를 추가하면 자동으로 TODO 등록되며, Tasks 탭과 양방향으로 동기화됩니다. 미완료 TODO는 다음 날로 자동 이월됩니다. 외부에서 파일 수정 시 충돌 감지 배너가 뜹니다.</p>
               <p><strong className="text-ink-2">Notes (⌘2)</strong> — Quick Memo(💬), Analysis Note(📊), Test Log(🔧), Design Note(📐), Study Note(📚), Blank(📝) + 커스텀 템플릿. 타입/상태/프로젝트/태그별 필터링 가능. Quick Memo는 다른 타입으로 승격(Promote) 가능.</p>
               <p><strong className="text-ink-2">Tasks (⌘3)</strong> — TODO 관리: 우선순위(High/Med/Low), 프로젝트 분류, 시작/종료/기한. 상태 순환: ○ Todo → ◐ In Progress → ● Done. Daily Log와 실시간 동기화. 하위 태스크 지원.</p>
               <p><strong className="text-ink-2">Search (⌘4/⌘K)</strong> — 전체 노트 풀텍스트 검색. 하이라이트된 스니펫 + 노트 타입 배지 + 수정일 표시. 결과 클릭 시 해당 노트로 이동.</p>

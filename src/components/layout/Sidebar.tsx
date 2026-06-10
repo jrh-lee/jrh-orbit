@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAppStore, type AppView } from '../../stores/useAppStore';
 import { ProjectManager } from '../projects/ProjectManager';
+import { SidebarProjectTree } from '../hub/SidebarProjectTree';
 import { DDayCounter } from '../productivity/DDayCounter';
 import { TagManager } from '../productivity/TagManager';
 import { WorkhourTimer } from '../productivity/WorkhourTimer';
@@ -37,6 +38,20 @@ const navItems: { view: AppView; label: string; icon: React.ReactNode }[] = [
         <rect x="2" y="3" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.3"/>
         <path d="M6 7l2 2 4-4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
         <path d="M6 12h6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+      </svg>
+    ),
+  },
+  {
+    view: 'hub',
+    label: 'Hub',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
+        <circle cx="9" cy="9" r="3" stroke="currentColor" strokeWidth="1.3"/>
+        <circle cx="3" cy="4" r="1.5" stroke="currentColor" strokeWidth="1.1"/>
+        <circle cx="15" cy="4" r="1.5" stroke="currentColor" strokeWidth="1.1"/>
+        <circle cx="3" cy="14" r="1.5" stroke="currentColor" strokeWidth="1.1"/>
+        <circle cx="15" cy="14" r="1.5" stroke="currentColor" strokeWidth="1.1"/>
+        <path d="M4.3 5.2L7 7.5M13.7 5.2L11 7.5M4.3 12.8L7 10.5M13.7 12.8L11 10.5" stroke="currentColor" strokeWidth="1"/>
       </svg>
     ),
   },
@@ -133,7 +148,8 @@ export function Sidebar() {
             </button>
           }
         >
-          <ProjectManager adding={projectAdding} setAdding={setProjectAdding} />
+          <ProjectManager adding={projectAdding} setAdding={setProjectAdding} hidden={!projectAdding} />
+          <SidebarProjectTree />
         </SidebarSection>
 
         <SidebarSection

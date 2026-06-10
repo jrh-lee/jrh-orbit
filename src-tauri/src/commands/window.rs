@@ -15,6 +15,7 @@ struct WindowState {
     y: f64,
     w: f64,
     h: f64,
+    maximized: bool,
 }
 
 fn saved_states() -> &'static Mutex<HashMap<String, WindowState>> {
@@ -28,6 +29,12 @@ fn current_mode_store() -> &'static Mutex<String> {
 }
 
 fn save_current_state(window: &tauri::WebviewWindow) {
+    let is_maximized = window.is_maximized().unwrap_or(false);
+
+    if is_maximized {
+        let _ = window.unmaximize();
+    }
+
     let (pos, size, scale) = match (
         window.outer_position(),
         window.outer_size(),
@@ -41,6 +48,7 @@ fn save_current_state(window: &tauri::WebviewWindow) {
         y: pos.y as f64 / scale,
         w: size.width as f64 / scale,
         h: size.height as f64 / scale,
+        maximized: is_maximized,
     };
     let cur = current_mode_store().lock().unwrap().clone();
     saved_states().lock().unwrap().insert(cur, state);
@@ -129,6 +137,8 @@ pub fn set_window_mode(app: AppHandle, mode: String, always_on_top: Option<bool>
             }
         }
         "expanded" => {
+            let should_maximize = saved.map(|s| s.maximized).unwrap_or(false);
+
             let (w, h) = if let Some(s) = saved {
                 (s.w, s.h)
             } else {
@@ -143,7 +153,9 @@ pub fn set_window_mode(app: AppHandle, mode: String, always_on_top: Option<bool>
                 .set_always_on_top(aot)
                 .map_err(|e| e.to_string())?;
 
-            if let Some(s) = saved {
+            if should_maximize {
+                let _ = window.maximize();
+            } else if let Some(s) = saved {
                 let (cx, cy) = clamp_to_screen(&window, s.x, s.y, w, h);
                 let _ = window.set_position(tauri::LogicalPosition::new(cx, cy));
             } else if let Ok(pos) = window.outer_position() {

@@ -176,6 +176,17 @@ export function TitleBar() {
               <path d="M2 6V3a1 1 0 011-1h3M10 2h3a1 1 0 011 1v3M14 10v3a1 1 0 01-1 1h-3M6 14H3a1 1 0 01-1-1v-3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
             </svg>
           </button>
+          <div className="w-px h-3 bg-border shrink-0" />
+          <button onClick={() => appWindow.minimize()} className="p-1 rounded-md hover:bg-paper-soft text-ink-3 transition-colors" title="Minimize">
+            <svg width="10" height="10" viewBox="0 0 14 14" fill="none">
+              <path d="M3 7h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+          </button>
+          <button onClick={() => appWindow.close()} className="p-1 rounded-md hover:bg-pastel-pink/50 text-ink-3 transition-colors" title="Close">
+            <svg width="10" height="10" viewBox="0 0 14 14" fill="none">
+              <path d="M4 4l6 6M10 4l-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+          </button>
         </div>
       </div>
     );

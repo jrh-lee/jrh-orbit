@@ -7,15 +7,13 @@
 
 ## 목차
 
-1. [데이터 모델](#1-데이터-모델) — frontmatter 스키마, TODO 확장, 태그, 링크 그래프
-2. [템플릿](#2-템플릿) — 6종 Research Note + Daily Log + 3종 Review
-3. [자동화 규칙](#3-자동화-규칙) — 자동 링크, 이월, 승격, 건강 점검, 스마트 제안
-4. [Statistics & Review 탭](#4-statistics--review-탭) — Dashboard, AI 리뷰, 성장 메트릭
-5. [UX 마이크로 자동화](#5-ux-마이크로-자동화) — 마찰 제거 + 습관 형성 기능
-6. [구현 가이드](#6-구현-가이드) — Phase 7 세부 순서, 파일 구조, 마이그레이션
-7. [Window & Layout 확장](#7-window--layout-확장) — 투명도, 줌, 항상 위, 디자인 통일
-8. [Task 편집 UX 개선](#8-task-편집-ux-개선) — 사이드바/독 태스크 클릭 편집, 서브태스크 마커
-9. [Statistics 확장](#9-statistics-확장) — 요일별 Workhour, 히트맵, 추가 시각화
+1. [데이터 모델](#1-데이터-모델) — frontmatter 스키마, TODO 확장, 태그, 토픽, 링크 그래프
+2. [템플릿](#2-템플릿) — templates-v5.md 참조 (목적/내용/분석 공통 뼈대)
+3. [Hub 시스템](#25-hub-시스템) — Project Hub + Topic Hub (자동 생성 네비게이션)
+4. [자동화 규칙](#3-자동화-규칙) — 자동 링크, 이월, 승격, 건강 점검, 토픽 추천
+5. [Statistics & Review 탭](#4-statistics--review-탭) — Dashboard, AI 리뷰, 성장 메트릭
+6. [UX 마이크로 자동화](#5-ux-마이크로-자동화) — 마찰 제거 + 습관 형성 기능
+7. [구현 가이드](#6-구현-가이드) — Phase 7 세부 순서, 파일 구조, 마이그레이션
 
 ---
 
@@ -222,286 +220,409 @@ Phase 7-A 첫 작업. Settings에 "데이터 마이그레이션" 버튼.
 
 ## 2. 템플릿
 
-### 2.1 Daily Work Log (매일 자동 생성)
+**→ templates-v5.md 참조** (별도 파일)
 
-```markdown
----
-id: "{date}-daily"
-type: daily-log
-title: "{date} 업무일지"
-date: {date}
-project: []
-subsystem: []
-tags: []
-related: []
-status: in-progress
-workhour: 0
-workhour_detail: []
-summary: ""
-carried_over: []
----
-
-## 오늘의 작업
-
-### 🛰️ {project}
-- [ ] {이월된 TODO + 새 TODO 자동 삽입}
-
-### 📌 GENERAL
-- [ ] {task}
+요약:
+- **Daily Log**: 작업(TODO+진행) / 메모(#토픽 인라인) / 노트(자동) / 내일. 수동 작성 2~3분.
+- **Quick Memo**: 구조 없음. 자유 형식. 승격 가능.
+- **Analysis Note**: 목적 / 내용(자유) / 분석 + 후속 과제.
+- **Test Log**: 목적 / 내용(자유) / 판정 / 분석 + 후속 조치. verdict 필드.
+- **Design Note**: 목적 / 내용(대안 비교 테이블) / 분석.
+- **Study Note**: 목적 / 내용(자유) / 분석.
+- **Review Page**: Export → Claude.ai → Import. frontmatter에 stats 자동 계산.
+- 공통 뼈대: **목적 / 내용 / 분석**. 내용은 빈 캔버스, 필요 시 블록 삽입.
 
 ---
 
-## 인사이트 & 의사결정
+## 2.5 Hub 시스템
 
-- {왜 그렇게 판단했는지}
+### 2.5.1 개요
 
----
+노트를 찾고 연결하는 핵심 네비게이션. 3단계 드릴다운:
 
-## 오늘 생성한 노트
-
-<!-- 자동 집계 -->
-| 유형 | 제목 | 프로젝트 |
-|---|---|---|
-| {icon} | [[{id}]] {title} | {project} |
-
----
-
-## 내일 계획
-
-1. `[{project}]` {plan}
-
----
-
-## 회고 (선택)
-
-<!-- 주 1회 권장 -->
+```
+Project Hub (SAT-A-6U)        "이 위성 AOCS 전체가 어떻게 되고 있지?"
+  └── Topic Hub (EKF 튜닝)    "EKF 관련 뭘 적었지?"
+      └── Research Note        "그 시뮬레이션 상세 내용"
 ```
 
-### 2.2 Quick Memo 💬
-
-```markdown
----
-id: "{date}-memo-{seq}"
-type: quick-memo
-title: ""
-date: {date}
-project: []
-topic: ""
-subsystem: []
-tags: []
-related: ["{date}-daily"]
-status: complete
----
-
-## 메모
-
-{자유 형식}
+사이드바:
+```
+├── 🛰️ SAT-A-6U              ← 클릭: Project Hub
+│   ├── 📂 EKF 튜닝 (5)       ← 클릭: Topic Hub
+│   ├── 📂 RW 환경시험 (8)
+│   ├── 📂 B-dot 디텀블링 (3)
+│   └── 📄 미분류 (2)          ← topic 비어있는 노트
+├── 🛰️ SAT-B-16U
+│   └── 📂 궤도결정 (3)
+└── 📌 GENERAL
 ```
 
-### 2.3 Analysis Note 📊
+**Hub는 파일이 아닌 React 컴포넌트** (읽기 전용 뷰). 노트 추가/수정 시 자동 갱신.
 
-```markdown
----
-id: "{date}-analysis-{seq}"
-type: analysis-note
-title: ""
-date: {date}
-project: []
-topic: ""
-subsystem: []
-tags: []
-related: ["{date}-daily"]
-status: draft
----
+### 2.5.2 Project Hub (ProjectHubView.tsx)
 
-## 목적
+프로젝트 전체 AOCS 개발 현황. 토픽 간 연결까지 조감.
 
-{2-3문장}
+```
+표시 내용:
 
-## 분석 조건
+[토픽 맵]
+  프로젝트 내 모든 토픽을 노드로 표시.
+  토픽 간 연결: 노트의 related가 다른 토픽 노트를 참조하면 화살표 생성.
+  → 옵시디언 그래프 뷰의 토픽 레벨 버전.
 
-### 공통 조건 (Base)
+[프로젝트 타임라인]
+  모든 토픽의 노트를 시간순 통합 나열.
+  각 항목: {date} {topic icon} {type icon} {title} — "{요약 한 줄}"
+  → 토픽별 색상 구분으로 "언제 뭘 했는지" 한 눈에.
 
-| 파라미터 | 값 | 비고 |
-|---|---|---|
+[주요 의사결정]
+  type: design-note인 노트만 필터해서 시간순 나열.
+  → AOCS 설계 이력 한 눈에.
 
-### 가변 조건 (Sweep)
+[프로젝트 전체 열린 TODO]
+  프로젝트에 속한 모든 TODO (토픽별 그룹핑).
+  overdue 상단 표시.
 
-| Case | {변수명} | 비고 |
-|---|---|---|
-
-## 결과
-
-### Case A
-{상세}
-
-### 요약 테이블
-
-| Case | {metric} | 판정 |
-|---|---|---|
-
-## 결론
-
-1. {핵심}
-2. {원인}
-3. {후속}
-
-## 코드 / 파일 참조
-
-- 메인 스크립트:
-- 결과 데이터:
-
-## 후속 과제
-
-- [ ] {다음}
+[마일스톤]
+  D-Day 이벤트 중 이 프로젝트 관련 항목 (ddays.json에서 필터).
 ```
 
-### 2.4 Test Log 🔧
-
-```markdown
----
-id: "{date}-test-{seq}"
-type: test-log
-title: ""
-date: {date}
-project: []
-topic: ""
-subsystem: []
-tags: []
-related: ["{date}-daily"]
-status: draft
-verdict: ""
----
-
-## 시험 목적
-
-## 시험 장비 / 환경
-
-| 항목 | 상세 |
-|---|---|
-
-## 시험 절차
-
-1. {step}
-
-## 측정 데이터
-
-| {항목} | {값} | 판정 |
-|---|---|---|
-
-## 판정 기준 및 종합 판정
-
-| 항목 | 기준 | 결과 | 판정 |
-|---|---|---|---|
-
-### {🟢 PASS / 🔴 FAIL / 🟡 CONDITIONAL}
-
-## 이상 소견 / 특이사항
-
-## 첨부 파일
-
-## 후속 조치
-
-- [ ] {다음}
+데이터 소스:
+```
+topics.json        → 이 프로젝트의 토픽 목록
+notes/research/*   → project == 이 프로젝트인 노트
+notes/daily/*      → project에 이 프로젝트 포함된 daily log
+todos.json         → project == 이 프로젝트인 TODO
+links.json         → 토픽 간 연결 계산
+ddays.json         → 프로젝트 관련 마일스톤
 ```
 
-### 2.5 Design Note 📐
+### 2.5.3 Topic Hub (TopicHubView.tsx)
 
-```markdown
----
-id: "{date}-design-{seq}"
-type: design-note
-title: ""
-date: {date}
-project: []
-topic: ""
-subsystem: []
-tags: []
-related: ["{date}-daily"]
-status: draft
----
+특정 토픽의 모든 기록을 시간순으로 조감.
 
-## 의사결정 요약
+```
+표시 내용:
 
-{한 문장}
+[헤더]
+  토픽명, 프로젝트, 서브시스템, 노트 수, 활동 기간.
 
-## 배경 / 문제
+[타임라인]
+  이 토픽의 모든 노트 + Daily Log 인라인 메모를 시간순 나열.
+  각 항목: {date} {type icon} {title} — "{요약 한 줄}"
+  
+  Daily Log의 #토픽 메모도 여기에 표시:
+    06/09 📋 Daily — "OBC 팀에서 인터페이스 변경 통보"
 
-## 검토한 대안
+  클릭 → 해당 노트 또는 Daily Log로 이동.
 
-| 대안 | 장점 | 단점 | 비고 |
-|---|---|---|---|
+[핵심 결론]
+  각 노트의 "## 분석" 섹션에서 불릿/번호 항목 자동 추출.
+  최신순 정렬, 최대 10개 + "더 보기".
+  클릭 → 원본 노트 해당 섹션으로 이동.
 
-## 선정 근거
+[열린 TODO]
+  이 토픽 노트와 연결된 미완료 TODO.
+  overdue 상단 표시. 여기서 바로 체크 가능.
 
-1. {근거}
-
-## 제약 조건 / 리스크
-
-## 결론
+[관련 토픽]
+  이 토픽 노트의 related가 다른 토픽 노트를 참조하면 표시.
+  클릭 → 해당 Topic Hub로 이동.
 ```
 
-### 2.6 Study Note 📚
-
-```markdown
----
-id: "{date}-study-{seq}"
-type: study-note
-title: ""
-date: {date}
-project: []
-topic: ""
-subsystem: []
-tags: []
-related: ["{date}-daily"]
-status: draft
----
-
-## 주제
-
-{한 줄 요약}
-
-## 출처
-
-| 유형 | 상세 |
-|---|---|
-| 논문 | {저자, 제목, 저널, 년도} |
-
-## 핵심 내용
-
-### 주요 개념
-
-- {concept}: {설명}
-
-### 수식 / 알고리즘 (해당 시)
-
-## 내 프로젝트 적용 가능성
-
-- `[{project}]` {아이디어}
-
-## 추가 조사 필요
-
-- [ ] {더 알아볼 것}
+데이터 소스:
+```
+topics.json          → 토픽 메타데이터
+notes/research/*     → topic == 이 토픽인 노트
+notes/daily/*        → 본문에 #토픽명이 포함된 daily log
+todos.json           → related_notes에 이 토픽 노트가 포함된 TODO
+links.json           → 관련 토픽 계산
+SQLite search_index  → summary, conclusions 캐시
 ```
 
-### 2.7 Review Page (Export → Claude.ai → Import)
+### 2.5.4 요약 추출 & 캐싱
 
-```yaml
----
-id: "review-weekly-2026-W23"
-type: review
-review_type: weekly
-period_start: 2026-06-02
-period_end: 2026-06-08
-generated: 2026-06-09T08:15:00       # Import 시각
-stats:
-  total_workhour: 32.5
-  notes_created: 12
-  completion_rate: 0.67
-  # (전체 stats 필드는 §4.3 — Export 시 앱이 자동 계산)
----
-(Claude.ai에서 생성한 분석 본문 — Import 시 붙여넣기)
 ```
+SQLite search_index 테이블 확장:
+  기존: id, note_path, title, content (FTS5)
+  추가: summary TEXT, conclusions TEXT, topic TEXT
+
+summary 추출 (타임라인용):
+  1. "## 분석" 섹션의 첫 번째 "- " 불릿 텍스트
+  2. 없으면 → "## 결론" 첫 불릿
+  3. 없으면 → 본문 첫 줄 (## 헤더 제외)
+  4. 100자 초과 시 잘라내고 "..."
+
+conclusions 추출 (핵심 결론용):
+  1. "## 분석" 섹션에서 "- " 불릿 + "1. " 번호 항목 전부 수집
+  2. 각 항목: {text, note_id, date}
+  3. JSON 배열로 직렬화
+
+갱신 트리거: 노트 저장 시 reindexNote() 함수에서 함께 처리 (증분 업데이트).
+```
+
+### 2.5.5 Daily Log 인라인 토픽 파싱
+
+```
+Daily Log 저장 시:
+  1. "## 메모" 섹션의 각 불릿에서 #토픽명 패턴 추출
+     정규식: /#([^\s]+)/g
+  
+  2. 추출된 토픽명이 topics.json에 존재하는지 확인
+     → 존재: 해당 토픽의 Topic Hub 타임라인에 이 Daily Log 항목 표시
+     → 미존재: 무시 (오타 방지)
+
+  3. Topic Hub 타임라인에서 Daily Log 메모 표시 형식:
+     {date} 📋 Daily — "{#토픽명 제거한 메모 텍스트}"
+
+  4. 인라인 토픽 자동완성:
+     에디터에서 # 입력 시 → 기존 토픽 드롭다운 표시 (태그 자동완성과 동일 UX)
+```
+
+### 2.5.6 Hub 구현 상세
+
+#### 컴포넌트 구조
+
+```
+src/components/hub/
+├── ProjectHubView.tsx       ← 프로젝트 허브 메인 뷰
+│   ├── TopicMap.tsx          ← 토픽 간 연결 시각화 (노드+화살표)
+│   ├── ProjectTimeline.tsx   ← 전체 토픽 통합 타임라인
+│   ├── DecisionList.tsx      ← Design Note만 필터한 의사결정 목록
+│   ├── ProjectTodoList.tsx   ← 프로젝트 전체 열린 TODO
+│   └── MilestoneBar.tsx      ← D-Day 마일스톤 바
+│
+├── TopicHubView.tsx          ← 토픽 허브 메인 뷰
+│   ├── TopicHeader.tsx       ← 토픽 메타정보 (이름, 프로젝트, 노트수, 기간)
+│   ├── TopicTimeline.tsx     ← 노트 + Daily 인라인 메모 타임라인
+│   ├── ConclusionList.tsx    ← 핵심 결론 자동 추출 목록
+│   ├── TopicTodoList.tsx     ← 토픽 관련 TODO
+│   └── RelatedTopics.tsx     ← 관련 토픽 링크
+│
+└── shared/
+    ├── TimelineItem.tsx      ← 타임라인 개별 항목 (아이콘+제목+요약)
+    └── HubTodoItem.tsx       ← TODO 항목 (체크 가능)
+```
+
+#### Zustand Store
+
+```typescript
+// src/stores/hubStore.ts
+
+interface HubStore {
+  // 현재 활성 Hub
+  activeHub: { type: 'project' | 'topic'; id: string } | null;
+  
+  // Project Hub 데이터
+  projectHubData: {
+    topics: TopicMeta[];           // topics.json에서 해당 프로젝트 필터
+    timeline: TimelineEntry[];      // 전체 노트 시간순
+    decisions: NoteEntry[];         // type: design-note만
+    todos: TodoItem[];              // 해당 프로젝트 TODO
+    milestones: DDay[];             // ddays.json 필터
+    topicLinks: TopicLink[];        // 토픽 간 연결 (links.json 기반)
+  } | null;
+  
+  // Topic Hub 데이터
+  topicHubData: {
+    meta: TopicMeta;
+    timeline: TimelineEntry[];      // 노트 + Daily 인라인 메모
+    conclusions: ConclusionEntry[]; // 분석 섹션 추출
+    todos: TodoItem[];
+    relatedTopics: TopicMeta[];
+  } | null;
+
+  // Actions
+  openProjectHub: (projectName: string) => Promise<void>;
+  openTopicHub: (topicName: string) => Promise<void>;
+  closeHub: () => void;
+}
+
+interface TimelineEntry {
+  date: string;
+  type: 'analysis-note' | 'test-log' | 'design-note' | 'study-note' 
+        | 'quick-memo' | 'daily-inline';     // daily-inline = #토픽 메모
+  title: string;
+  summary: string;                            // SQLite 캐시에서
+  noteId: string;
+  topicName?: string;                         // Project Hub에서 토픽 구분용
+  topicColor?: string;                        // 토픽별 색상
+}
+
+interface ConclusionEntry {
+  text: string;
+  noteId: string;
+  date: string;
+}
+
+interface TopicLink {
+  from: string;      // topic name
+  to: string;        // topic name
+  noteCount: number;  // 연결된 노트 수
+}
+```
+
+#### 데이터 로딩 흐름
+
+```
+사이드바 프로젝트 클릭 → hubStore.openProjectHub("SAT-A-6U")
+  │
+  ├─ 1. topics.json 로드 → project == "SAT-A-6U"인 토픽 필터
+  │
+  ├─ 2. SQLite 쿼리: 프로젝트 노트 + 요약
+  │     SELECT id, title, type, date, topic, summary, conclusions
+  │     FROM search_index
+  │     WHERE topic IN (프로젝트 토픽 목록) OR project LIKE '%SAT-A-6U%'
+  │     ORDER BY date DESC
+  │
+  ├─ 3. Daily Log 인라인 메모 쿼리:
+  │     notes/daily/*.md 파일에서 "## 메모" 섹션 스캔
+  │     #토픽명 포함된 항목 추출 → TimelineEntry(type: 'daily-inline')로 변환
+  │     (성능: daily log는 최근 30일만 스캔, 또는 SQLite에 캐싱)
+  │
+  ├─ 4. todos.json → project == "SAT-A-6U"이고 status != done 필터
+  │
+  ├─ 5. links.json → 토픽 간 연결 계산
+  │     각 토픽의 노트 related를 순회
+  │     → related 대상 노트의 topic이 다른 토픽이면 TopicLink 생성
+  │
+  ├─ 6. ddays.json → 프로젝트 관련 D-Day 필터
+  │
+  └─ 7. hubStore.projectHubData 세팅 → React 렌더링
+```
+
+```
+사이드바 토픽 클릭 → hubStore.openTopicHub("EKF 튜닝")
+  │
+  ├─ 1. topics.json에서 해당 토픽 메타데이터
+  │
+  ├─ 2. SQLite 쿼리: 토픽 노트 + 요약 + 결론
+  │     SELECT id, title, type, date, summary, conclusions
+  │     FROM search_index
+  │     WHERE topic = 'EKF 튜닝'
+  │     ORDER BY date ASC
+  │
+  ├─ 3. Daily Log 인라인 메모:
+  │     최근 90일 daily log에서 #EKF-튜닝 포함 항목 추출
+  │
+  ├─ 4. conclusions JSON 파싱 → ConclusionEntry[] 생성
+  │
+  ├─ 5. todos.json → related_notes에 이 토픽 노트 id 포함 필터
+  │
+  ├─ 6. 관련 토픽 계산 (links.json 기반)
+  │
+  └─ 7. hubStore.topicHubData 세팅 → React 렌더링
+```
+
+#### 사이드바 트리 구현
+
+```typescript
+// 기존 사이드바의 Projects 섹션을 확장
+
+// 현재: 프로젝트 목록 (플랫)
+// 변경: 프로젝트 → 토픽 → 노트 트리
+
+interface SidebarTree {
+  projects: {
+    name: string;           // "SAT-A-6U"
+    color: string;          // 프로젝트 색상
+    onClick: () => void;    // → ProjectHubView
+    topics: {
+      name: string;         // "EKF 튜닝"
+      noteCount: number;
+      onClick: () => void;  // → TopicHubView
+    }[];
+    unclassified: number;   // topic 비어있는 노트 수
+  }[];
+}
+
+// 데이터 소스:
+// topics.json → 프로젝트별 토픽 목록
+// SQLite → 토픽별 노트 수 (COUNT GROUP BY topic)
+// topic이 비어있는 노트 → "미분류" 카운트
+```
+
+#### 타임라인 항목 클릭 동작
+
+```
+TimelineItem 클릭:
+  ├─ type != 'daily-inline':
+  │   → noteStore.openNote(noteId)
+  │   → 에디터 영역에 해당 노트 열기
+  │   → Hub 뷰가 에디터로 교체됨
+  │   → 뒤로가기 시 Hub로 복귀 (히스토리 스택)
+  │
+  └─ type == 'daily-inline':
+      → noteStore.openNote(dailyLogId)
+      → Daily Log 열기 + "## 메모" 섹션으로 스크롤
+```
+
+#### ConclusionList 클릭 동작
+
+```
+결론 항목 클릭:
+  → noteStore.openNote(noteId)
+  → 노트 열기 + "## 분석" 섹션으로 스크롤
+  → (스크롤 위치: 해당 불릿 텍스트를 찾아서 하이라이트)
+```
+
+#### HubTodoItem 체크 동작
+
+```
+TODO 체크박스 클릭:
+  → taskStore.completeTask(todoId)
+  → todos.json 업데이트 (status: done, end_date: today)
+  → source_note가 있으면 원본 노트 체크박스도 동기화
+  → Hub 데이터 자동 갱신 (TODO 목록에서 제거)
+```
+
+#### Daily Log 인라인 메모 캐싱
+
+```
+성능 고려: 매번 daily log 파일을 스캔하면 느림.
+→ SQLite에 별도 테이블로 캐싱:
+
+CREATE TABLE daily_inline_topics (
+  id INTEGER PRIMARY KEY,
+  daily_date TEXT,           -- "2026-06-09"
+  topic_name TEXT,           -- "EKF 튜닝"
+  memo_text TEXT,            -- "#토픽명 제거한 메모 텍스트"
+  line_number INTEGER        -- 원본 위치 (스크롤용)
+);
+
+갱신 트리거: Daily Log 저장 시
+  1. 해당 날짜의 기존 행 삭제
+  2. "## 메모" 섹션 파싱 → #토픽명 항목 추출
+  3. 새 행 삽입
+
+Topic Hub 쿼리:
+  SELECT daily_date, memo_text
+  FROM daily_inline_topics
+  WHERE topic_name = 'EKF 튜닝'
+  ORDER BY daily_date DESC
+```
+
+#### 토픽 맵 시각화 (Project Hub)
+
+```
+TopicMap.tsx:
+  토픽을 노드, 토픽 간 연결을 엣지로 표시하는 간단한 그래프.
+  
+  라이브러리 옵션:
+    1. SVG 직접 렌더링 (노드 수 적으니 충분)
+    2. react-flow (드래그 가능, 복잡도 높음)
+    → 권장: SVG 직접 (토픽 수가 보통 3~10개이므로)
+
+  레이아웃:
+    force-directed 또는 수동 배치 (프로젝트당 토픽이 적으므로)
+    
+  노드: 토픽명 + 노트 수 배지
+  엣지: TopicLink (두께 = noteCount 비례)
+  노드 클릭 → 해당 Topic Hub 열기
+```
+
 
 ---
 
@@ -1205,11 +1326,13 @@ Quick Memo:
   └─ subsystems.json 생성
 
 7-B: 템플릿 & Daily Log (2-3일)
-  ├─ 6종 노트 템플릿 교체 (+ Blank 유지)
-  ├─ Daily Log 구조화 (프로젝트 섹션, 인사이트, 자동 집계, 내일 계획)
+  ├─ 5종 노트 템플릿 (목적/내용/분석 공통 뼈대) + Quick Memo
+  ├─ Daily Log 구조화 (작업/메모/노트/내일 4섹션)
+  ├─ Daily Log #토픽 인라인 태그 파싱 (§2.5.5)
   ├─ 미완료 업무 이월 (§3.5)
   ├─ TODO ↔ Daily Log 연동 (§3.6)
   ├─ Quick Memo 승격 (§3.2)
+  ├─ 에디터 삽입 블록 (조건 테이블, 측정 테이블 등)
   └─ Morning Briefing (§5.2)
 
 7-C: 링크 시스템 (2-3일)
@@ -1217,7 +1340,14 @@ Quick Memo:
   ├─ 자동 링크 규칙 1~4 (§3.1~3.4)
   ├─ 백링크 사이드 패널 (§5.13)
   ├─ links.json 자동 갱신
-  └─ 태그 자동완성 + subsystem enum UI (§3.9)
+  └─ 태그 자동완성 + 토픽 드롭다운 + subsystem enum UI
+
+7-C.5: Hub 시스템 (3-4일)
+  ├─ Topic Hub (TopicHubView.tsx) — 타임라인, 핵심 결론, TODO, 관련 토픽
+  ├─ Project Hub (ProjectHubView.tsx) — 토픽 맵, 통합 타임라인, 의사결정, 마일스톤
+  ├─ SQLite summary/conclusions 캐싱 (reindexNote 확장)
+  ├─ 사이드바 프로젝트→토픽 트리 구조
+  └─ Daily Log 인라인 메모 → Topic Hub 타임라인 연동
 
 7-D: Workhour 추적 (1-2일)
   ├─ workhours/{date}.json 저장
@@ -1333,288 +1463,6 @@ Quick Memo:
 
 `reminder_weekly/monthly`: 자동 생성이 아닌 "리뷰 생성하세요" OS 알림.
 `open_claude_ai_on_export`: Export 시 claude.ai를 자동으로 브라우저에서 열기.
-
----
-
-## 7. Window & Layout 확장
-
-### 7.1 투명도 조절 (Opacity Slider)
-
-```
-모든 모드(Dock / Sidebar / Expanded)에서 창 투명도를 조절할 수 있는 슬라이더.
-
-위치: 상단 TitleBar 영역 (우측, 창 컨트롤 버튼 옆)
-
-UI:
-  ┌─── TitleBar ──────────────────────────────────────┐
-  │  [☰] JRH-Orbit        🔆━━━●━━━━ 80%   [─][□][×] │
-  └───────────────────────────────────────────────────┘
-  
-  - 아이콘(🔆 또는 투명도 아이콘) + 슬라이더 바 + 퍼센트 표시
-  - 범위: 30% ~ 100% (30% 미만은 조작 불가능하므로 제한)
-  - 기본값: 100%
-  - 슬라이더 드래그 실시간 반영
-
-구현:
-  - CSS: `opacity` 또는 Tauri window API의 `set_opacity()` 활용
-  - Tauri 2 WebviewWindow.setAlpha() 또는 window effects 활용
-  - 모드별 독립 투명도 저장 (config.json에 영속화)
-    {
-      "window": {
-        "opacity_dock": 100,
-        "opacity_sidebar": 100,
-        "opacity_expanded": 100
-      }
-    }
-  - 모드 전환 시 해당 모드의 저장된 투명도 자동 적용
-
-단축키 (선택):
-  - Cmd+Shift+[ : 투명도 10% 감소
-  - Cmd+Shift+] : 투명도 10% 증가
-```
-
-### 7.2 사이드바/독 디자인 통일 (Theme Design Sync)
-
-```
-현재 상태:
-  - Expanded 모드: 테마별 디자인 요소가 풍부하게 적용됨 (배경 패턴, 보더 스타일, 그림자, 아이콘 스타일 등)
-  - Dock/Sidebar 모드: 색상 테마만 적용, 디자인 요소(패턴, 보더, 그림자 등)는 미적용
-
-개선 목표:
-  Expanded 모드의 테마 디자인 요소를 Dock/Sidebar에도 적용하여 모드 간 시각적 일관성 확보.
-
-적용 대상 디자인 요소:
-  1. 배경 패턴/텍스처 — 테마별 배경 이미지 또는 CSS 패턴
-  2. 보더 스타일 — 테두리 색상, 두께, radius 통일
-  3. 그림자/글로우 — box-shadow, text-shadow 등 테마별 효과
-  4. 아이콘/버튼 스타일 — hover/active 상태, 버튼 형태
-  5. 폰트 스타일 — 테마별 폰트 패밀리, weight 차이
-  6. 스크롤바 스타일 — 커스텀 스크롤바 테마 적용
-  7. 구분선/세퍼레이터 — 섹션 구분선 스타일
-
-모드별 적용 범위:
-  Dock 모드 (72x520 세로):
-    - 배경 패턴 (축소/타일링)
-    - 아이콘 hover 효과
-    - 보더 스타일
-    - 타이머/시계 영역 테마 장식
-
-  Sidebar 모드:
-    - 사이드바 패널 배경 패턴
-    - 섹션 헤더 스타일 (Projects/D-Day/Tags/Tasks)
-    - 리스트 아이템 hover/active 효과
-    - 접기/펼치기 토글 스타일
-    - 스크롤바 커스텀 스타일
-
-구현 방식:
-  - 테마 CSS 변수를 확장하여 디자인 토큰 추가:
-    --theme-border-style, --theme-shadow, --theme-bg-pattern,
-    --theme-hover-effect, --theme-separator, --theme-scrollbar-*
-  - DockMode.tsx, Sidebar.tsx에 테마 클래스 적용
-  - 각 테마 CSS 파일에 Dock/Sidebar 전용 섹션 추가
-```
-
-### 7.3 확장 모드 줌 (Zoom In/Out)
-
-```
-Expanded 모드에서 전체 창 내용을 확대/축소.
-
-단축키:
-  - Cmd + = (또는 Cmd + +) : 확대 (zoom in)
-  - Cmd + -               : 축소 (zoom out)
-  - Cmd + 0               : 기본 크기 (100%) 복원
-
-줌 범위: 50% ~ 200% (10% 단위 스텝)
-기본값: 100%
-
-구현:
-  - WebView의 CSS `zoom` 또는 `transform: scale()` 활용
-  - 또는 Tauri WebView API의 zoom level 제어
-  - 현재 줌 레벨 표시: StatusBar 또는 TitleBar에 "120%" 배지
-  - config.json에 영속화:
-    {
-      "window": {
-        "zoom_level": 100
-      }
-    }
-
-주의사항:
-  - Dock/Sidebar 모드에서는 줌 비활성화 (공간이 제한적)
-  - 줌 시 레이아웃 깨짐 방지: rem/em 단위 기반 반응형 설계 확인
-  - 에디터 영역만 별도 줌도 고려 (에디터 폰트 크기 조절과 병행)
-```
-
-### 7.4 항상 위 (Always on Top) 모드별 설정
-
-```
-Dock/Sidebar/Expanded 모드 각각에 대해 "항상 위" 설정을 독립적으로 제어.
-
-현재 상태:
-  - Dock 모드: 항상 위 고정 (하드코딩)
-  - Sidebar 모드: 설정 없음
-  - Expanded 모드: 항상 위 아님 (기본)
-
-개선:
-  Settings 뷰에 Always on Top 섹션 추가:
-
-  ┌─── Always on Top ───────────────────────────┐
-  │                                              │
-  │  Dock Mode         [■ On ] / [ Off]          │
-  │  Sidebar Mode      [ On ] / [■ Off]          │
-  │  Expanded Mode     [ On ] / [■ Off]          │
-  │                                              │
-  └──────────────────────────────────────────────┘
-
-  - 모드 전환 시 해당 모드의 always_on_top 설정 자동 적용
-  - Tauri WebviewWindow.setAlwaysOnTop(bool) 호출
-  - config.json 영속화:
-    {
-      "window": {
-        "always_on_top_dock": true,
-        "always_on_top_sidebar": false,
-        "always_on_top_expanded": false
-      }
-    }
-  
-  기본값:
-    - Dock: true (기존 동작 유지)
-    - Sidebar: false
-    - Expanded: false
-```
-
----
-
-## 8. Task 편집 UX 개선
-
-### 8.1 사이드바 태스크 클릭 → 편집 창
-
-```
-현재 상태:
-  - 사이드바에서 태스크 목록은 보이지만, 클릭 시 편집 불가
-  - 서브태스크에 편집/삭제 마커 없음
-  - 태스크 수정을 위해 Expanded 모드의 Task 뷰로 이동해야 함
-
-개선:
-  1. 메인 태스크 클릭 → 인라인 편집 패널 또는 모달
-  2. 서브태스크 클릭 → 서브태스크 편집 모달
-  3. 서브태스크에 편집(✏️)/삭제(🗑️) 아이콘 마커 추가
-
-태스크 편집 모달 UI:
-  ┌─── Edit Task ────────────────────────────┐
-  │                                           │
-  │  Title:    [EKF Q matrix 스터디_________] │
-  │  Project:  [SAT-A-6U ▼]                  │
-  │  Priority: [● High ▼]                    │
-  │  Status:   [In Progress ▼]               │
-  │  Due Date: [2026-06-10 📅]               │
-  │                                           │
-  │  Subtasks:                                │
-  │  ☐ 문헌 조사         [✏️][🗑️]            │
-  │  ☑ 시뮬레이션 셋업    [✏️][🗑️]            │
-  │  [+ Add Subtask]                          │
-  │                                           │
-  │  Tags: [ekf] [gyro-bias] [+]             │
-  │                                           │
-  │  [Cancel]              [Save]             │
-  └───────────────────────────────────────────┘
-
-서브태스크 편집/삭제 마커:
-  - 각 서브태스크 우측에 호버 시 ✏️(편집) 🗑️(삭제) 아이콘 표시
-  - ✏️ 클릭 → 인라인 텍스트 입력으로 전환 (Enter로 저장, Esc로 취소)
-  - 🗑️ 클릭 → 확인 없이 즉시 삭제 (undo 토스트 3초)
-
-적용 범위:
-  - Sidebar 모드: 사이드바의 Tasks 섹션에서 태스크/서브태스크 클릭 편집
-  - Dock 모드: 독의 Tasks 뷰에서 태스크 클릭 편집
-  - Expanded 모드: 기존 TaskListView에서도 동일한 편집 모달 사용 (통일)
-```
-
----
-
-## 9. Statistics 확장
-
-### 9.1 Workhour by Day (요일별 작업시간)
-
-```
-Statistics Dashboard에 "Workhour by Day" 차트 추가.
-
-요일별 (월~일) 작업시간을 바 차트로 시각화.
-
-기간별 표시:
-  This Week:
-    - 월/화/수/목/금/토/일 개별 바 (해당 주의 실제 작업시간)
-    - X축: 요일명, Y축: 시간(h)
-    
-  This Month:
-    - 1주차 ~ N주차 그룹핑
-    - 각 주차별 요일 작업시간 스택 바 또는 히트맵
-    - 주차 경계: 월요일 시작 (ISO 8601 주)
-    
-    히트맵 레이아웃 (GitHub contribution 스타일):
-    ┌──────────────────────────────────────┐
-    │       1주  2주  3주  4주  5주        │
-    │  월   ██   ██   ██   ░░   --        │
-    │  화   ██   ██   ░░   ██   --        │
-    │  수   ██   ░░   ██   ██   --        │
-    │  목   ░░   ██   ██   ██   --        │
-    │  금   ██   ██   ██   ░░   --        │
-    │  토   ░░   ░░   --   --   --        │
-    │  일   --   --   --   --   --        │
-    └──────────────────────────────────────┘
-    (██ = 근무, ░░ = 소량, -- = 없음)
-
-데이터 소스:
-  workhours/{date}.json의 세션 기록을 요일별로 집계.
-  date → dayOfWeek (date-fns의 getDay 활용)
-
-차트 라이브러리: Recharts BarChart + 커스텀 히트맵 (CSS Grid)
-```
-
-### 9.2 추가 시각화 추천
-
-```
-기존 Dashboard 대비 추가로 관리하면 좋은 파라미터 및 시각화 요소:
-
-1. 시간대별 생산성 히트맵 (Productivity by Hour)
-   - X축: 시간 (0~23시), Y축: 요일
-   - 노트 생성/수정 시간 + 뽀모도로 세션 시간 기반
-   - 효과: 본인의 골든타임(집중 시간대) 파악
-   - 차트: 히트맵 (CSS Grid + 색상 강도)
-
-2. 프로젝트 시간 추이 (Project Time Trend)
-   - X축: 날짜, Y축: 시간
-   - 프로젝트별 라인 차트 (Recharts LineChart)
-   - 효과: 프로젝트 간 시간 배분 변화 추적
-   - 기간: This Month (일별), Custom (주별 집계)
-
-3. 연속 기록 스트릭 (Writing Streak)
-   - 연속으로 Daily Log를 작성한 일수 (GitHub streak과 유사)
-   - 현재 스트릭 + 최장 스트릭 표시
-   - 효과: 기록 습관 형성 동기부여
-   - UI: 불꽃 아이콘 + "🔥 12일 연속 기록 중"
-
-4. 태그 클라우드 / 기술 영역 트렌드 (Tag Cloud)
-   - 이번 기간 활발한 태그를 워드 클라우드로 표시
-   - 또는 태그 빈도 변화 추이 (이번 달 vs 지난 달)
-   - 효과: 어떤 기술 영역에 집중하고 있는지 한눈에 파악
-
-5. 노트 유형 비율 추이 (Note Type Trend)
-   - 주차/월별로 노트 유형(analysis/test/study/design) 비율 변화
-   - Recharts AreaChart (스택)
-   - 효과: 분석 중심인지 시험 중심인지 작업 패턴 파악
-
-6. 집중 시간 분포 (Focus Session Distribution)
-   - 뽀모도로/스톱워치 세션 길이 분포 (히스토그램)
-   - 평균 집중 시간, 최장 집중 시간
-   - 효과: 집중력 패턴 분석
-
-구현 우선순위:
-  Phase 10-F 필수: ①요일별 작업시간, ③연속 기록 스트릭
-  Phase 10-F 권장: ②프로젝트 시간 추이, ①시간대별 히트맵
-  추후: ④태그 클라우드, ⑤유형 추이, ⑥집중 분포
-```
-
----
 
 ### 6.4 PLAN.md 변경 사항
 

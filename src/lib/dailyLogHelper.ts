@@ -17,6 +17,7 @@ export interface ExistingNote {
   title: string;
   noteType: string;
   project: string[];
+  topic: string;
 }
 
 export interface CarriedItem {
@@ -62,10 +63,14 @@ export async function getCarriedOverItems(
   const todosFile = await readJsonFile<TodosFile>(dataDir, FILES.todos).catch(() => null);
   const doneTodos = new Set<string>();
   const todoCarryCount = new Map<string, number>();
+  const titleToTodoId = new Map<string, string>();
   if (todosFile?.todos) {
     for (const t of todosFile.todos) {
       if (t.status === "done") doneTodos.add(t.id);
       if (t.carry_count) todoCarryCount.set(t.id, t.carry_count);
+      if (t.status !== "done") {
+        titleToTodoId.set(t.title.trim().toLowerCase(), t.id);
+      }
     }
   }
 
@@ -88,10 +93,28 @@ export async function getCarriedOverItems(
         text = text.slice(tidMatch[0].length);
       }
 
-      if (/^\(이월/.test(text) || /^\\?\(이월/.test(text)) continue;
+      if (/^\(이월/.test(text) || /^\\?\(이월/.test(text)) {
+        if (todoId) {
+          text = text.replace(/^\\?\(이월[^)]*\)\s*/, "").trim();
+          if (!text) continue;
+        } else {
+          continue;
+        }
+      }
 
       // Skip empty/whitespace-only items (e.g. default template placeholder)
       if (text.replace(/[​‌‍﻿]/g, "").trim() === "") continue;
+
+      if (!todoId) {
+        const stripped = text
+          .replace(/\s*\((?:⚠️\s*)?D[+-]?\d+\)$/, "")
+          .replace(/\s*\(⚠️\s*D-Day\)$/, "")
+          .trim().toLowerCase();
+        const matchedId = titleToTodoId.get(stripped);
+        if (matchedId) {
+          todoId = matchedId;
+        }
+      }
 
       const done = todoId ? doneTodos.has(todoId) : false;
       const carryCount = todoId ? (todoCarryCount.get(todoId) ?? 0) : 0;
@@ -107,6 +130,7 @@ export async function getCarriedOverItems(
 export async function getActiveTodos(
   dataDir: string,
   dateKey: string,
+  projectMap?: Map<string, string>,
 ): Promise<ActiveTodo[]> {
   const todosFile = await readJsonFile<TodosFile>(dataDir, FILES.todos);
   if (!todosFile?.todos) return [];
@@ -118,10 +142,13 @@ export async function getActiveTodos(
     .filter((t: Task) => !t.startDate || t.startDate <= dateKey)
     .map((t: Task) => {
       const isOverdue = t.dueDate ? new Date(t.dueDate) <= today : false;
+      const project = t.projectId
+        ? (projectMap?.get(t.projectId) ?? t.projectId)
+        : "GENERAL";
       return {
         id: t.id,
         title: t.title,
-        project: t.projectId ?? "GENERAL",
+        project,
         dueDate: t.dueDate,
         isOverdue,
         subtasks: t.subtasks?.length ? t.subtasks.map(s => ({ title: s.title, done: s.done })) : undefined,
@@ -155,6 +182,7 @@ export async function getExistingNotesForDate(
             title: fields.title ?? fields.id,
             noteType: fields.type ?? "analysis-note",
             project: normalizeProject(fields.project),
+            topic: fields.topic ?? "",
           });
         }
       } catch {}
@@ -175,15 +203,26 @@ export function buildDailyLogBody(
   activeTodos: ActiveTodo[],
   dateKey: string,
   existingNotes: ExistingNote[] = [],
+  projectMap?: Map<string, string>,
 ): string {
   const projectSections = new Map<string, string[]>();
 
+  const resolveName = (raw: string): string => {
+    if (!projectMap || raw === "GENERAL") return raw;
+    return projectMap.get(raw) ?? raw;
+  };
+
   const addToProject = (project: string, line: string) => {
-    if (!projectSections.has(project)) projectSections.set(project, []);
-    projectSections.get(project)!.push(line);
+    const resolved = resolveName(project);
+    if (!projectSections.has(resolved)) projectSections.set(resolved, []);
+    projectSections.get(resolved)!.push(line);
   };
 
   const usedTodoIds = new Set<string>();
+  const carriedTitles = new Set<string>();
+
+  const todoById = new Map<string, ActiveTodo>();
+  for (const t of activeTodos) todoById.set(t.id, t);
 
   for (const item of carriedItems) {
     const prefix = item.todoId ? `[${item.todoId}] ` : "";
@@ -191,12 +230,26 @@ export function buildDailyLogBody(
     const carryTag = (item.carryCount ?? 0) >= 3
       ? `(이월, 🔴 D+${item.carryCount} 연속 이월)`
       : "(이월)";
-    addToProject(item.project, `- ${check} ${prefix}${carryTag} ${item.text}`);
+    let cleanText = item.text
+      .replace(/\s*\((?:⚠️\s*)?D[+-]?\d+\)$/, "")
+      .replace(/\s*\(⚠️\s*D-Day\)$/, "")
+      .trim();
+    const matchedTodo = item.todoId ? todoById.get(item.todoId) : undefined;
+    if (matchedTodo?.dueDate) {
+      cleanText += ` (${formatDueTag(matchedTodo.dueDate, dateKey)})`;
+    }
+    addToProject(item.project, `- ${check} ${prefix}${carryTag} ${cleanText}`);
     if (item.todoId) usedTodoIds.add(item.todoId);
+    const stripped = item.text
+      .replace(/\s*\((?:⚠️\s*)?D[+-]?\d+\)$/, "")
+      .replace(/\s*\(⚠️\s*D-Day\)$/, "")
+      .trim().toLowerCase();
+    if (stripped) carriedTitles.add(stripped);
   }
 
   for (const todo of activeTodos) {
     if (usedTodoIds.has(todo.id)) continue;
+    if (carriedTitles.has(todo.title.trim().toLowerCase())) continue;
     const dueTag = todo.dueDate
       ? ` (${formatDueTag(todo.dueDate, dateKey)})`
       : "";
@@ -210,7 +263,7 @@ export function buildDailyLogBody(
   }
 
   const lines: string[] = [];
-  lines.push("## 오늘의 작업");
+  lines.push("## 작업");
   lines.push("");
 
   const generalItems = projectSections.get("GENERAL");
@@ -219,7 +272,6 @@ export function buildDailyLogBody(
   for (const [project, items] of projectSections) {
     lines.push(`### 🛰️ ${project}`);
     for (const item of items) lines.push(item);
-    lines.push("");
   }
 
   lines.push("### 📌 GENERAL");
@@ -229,60 +281,42 @@ export function buildDailyLogBody(
     lines.push("- [ ] ​");
   }
   lines.push("");
+
   lines.push("---");
   lines.push("");
+  lines.push("## 메모");
+  lines.push("");
+  lines.push("<!-- #토픽명을 붙이면 해당 Topic Hub에 자동 연결 -->");
+  lines.push("");
+  lines.push("- ");
+  lines.push("");
 
-  lines.push("## 기술적 발견");
-  lines.push("<!-- 오늘 새로 알게 된 것. 한 줄이라도 OK -->");
-  lines.push("- ");
-  lines.push("");
-  lines.push("");
-  lines.push("## 의사결정");
-  lines.push("<!-- 오늘 내린 판단. 없으면 비워도 됨 -->");
-  lines.push("- ");
-  lines.push("");
-  lines.push("");
-  lines.push("## 이슈 & 블로커");
-  lines.push("<!-- 오늘 막힌 것. 해결했으면 해결 방법도 기록 -->");
-  lines.push("- ");
-  lines.push("");
-  lines.push("");
-  lines.push("## 아이디어 & TODO");
-  lines.push("<!-- ⚡ 여기의 - [ ] 항목은 자동으로 TODO에 등록됩니다 -->");
-  lines.push("- [ ] ");
-  lines.push("");
   lines.push("---");
   lines.push("");
-
-  lines.push("## 오늘 생성한 노트");
+  lines.push("## 노트");
   lines.push("");
-  lines.push("| 유형 | 제목 | 프로젝트 |");
-  lines.push("|---|---|---|");
+  lines.push("<!-- 자동 집계 -->");
+  lines.push("");
+  lines.push("| 유형 | 제목 | 프로젝트 | 토픽 |");
+  lines.push("|---|---|---|---|");
   if (existingNotes.length > 0) {
     for (const n of existingNotes) {
       const icon = NOTE_TYPE_ICONS[n.noteType as NoteType] ?? "📝";
       const label = NOTE_TYPE_LABELS[n.noteType as NoteType] ?? "Note";
-      lines.push(`| ${label} | [${icon} ${n.title}](note://${n.id}) | ${n.project.join(", ")} |`);
+      lines.push(`| ${label} | [${icon} ${n.title}](note://${n.id}) | ${n.project.join(", ")} | ${n.topic} |`);
     }
   } else {
-    lines.push("|  |  |  |");
+    lines.push("|  |  |  |  |");
   }
   lines.push("");
+
   lines.push("---");
   lines.push("");
-
-  lines.push("## 내일 계획");
-  lines.push("<!-- ⚡ 여기의 - [ ] 항목은 자동으로 TODO에 등록되고 내일 Daily Log에 표시됩니다 -->");
+  lines.push("## 내일");
+  lines.push("");
+  lines.push("<!-- ⚡ - [ ] → 자동 TODO + 내일 작업에 표시 -->");
+  lines.push("");
   lines.push("- [ ] ");
-  lines.push("");
-  lines.push("---");
-  lines.push("");
-
-  lines.push("## 회고 (선택)");
-  lines.push("<!-- 주 1회 금요일 권장. 아래 질문 중 1-2개만 답해도 충분 -->");
-  lines.push("- **이번 주 가장 성장한 점**: ");
-  lines.push("- **반복되는 병목**: ");
-  lines.push("- **다음 주 시도할 것**: ");
   lines.push("");
 
   return "\n" + lines.join("\n") + "\n";
@@ -603,6 +637,120 @@ export async function updateTodoTitle(
   });
 }
 
+export function resolveProjectIdsInBody(
+  body: string,
+  projectMap: Map<string, string>,
+): { body: string; changed: boolean } {
+  if (!projectMap || projectMap.size === 0) return { body, changed: false };
+  const lines = body.split("\n");
+  let changed = false;
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(PROJECT_HEADING_RE);
+    if (!m) continue;
+    const raw = m[1].trim();
+    const resolved = projectMap.get(raw);
+    if (resolved && resolved !== raw) {
+      lines[i] = `### 🛰️ ${resolved}`;
+      changed = true;
+    }
+  }
+  return { body: changed ? lines.join("\n") : body, changed };
+}
+
+const STRIP_TODO_META_RE = /\s*\((?:⚠️\s*)?D[+-]?\d+\)$/;
+const STRIP_DDAY_RE = /\s*\(⚠️\s*D-Day\)$/;
+const CARRY_TAG_RE = /^\(이월[^)]*\)\s*/;
+
+function extractNakedTitle(text: string): string {
+  return text
+    .replace(CARRY_TAG_RE, "")
+    .replace(STRIP_TODO_META_RE, "")
+    .replace(STRIP_DDAY_RE, "")
+    .trim()
+    .toLowerCase();
+}
+
+export function deduplicateDailyLogBody(
+  body: string,
+): { body: string; changed: boolean } {
+  const lines = body.split("\n");
+
+  const idBearingTitles = new Set<string>();
+  for (const line of lines) {
+    const m = line.match(/^- \[[ xX]\] \[([^\]]+)\] (.+)$/);
+    if (!m) continue;
+    idBearingTitles.add(extractNakedTitle(m[2]));
+  }
+
+  if (idBearingTitles.size === 0) return { body, changed: false };
+
+  let changed = false;
+  const out: string[] = [];
+  for (const line of lines) {
+    const m = line.match(/^- \[[ xX]\] (.+)$/);
+    if (m) {
+      const content = m[1];
+      const hasId = /^\[([^\]]+)\] /.test(content);
+      if (!hasId) {
+        const title = extractNakedTitle(content);
+        if (title && idBearingTitles.has(title)) {
+          changed = true;
+          continue;
+        }
+      }
+    }
+    out.push(line);
+  }
+
+  return { body: changed ? out.join("\n") : body, changed };
+}
+
+export function compactTaskSections(
+  body: string,
+): { body: string; changed: boolean } {
+  const lines = body.split("\n");
+  let inTask = false;
+  let changed = false;
+  const out: string[] = [];
+  let pendingBlanks = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+
+    if (/^## 작업/.test(trimmed)) {
+      inTask = true;
+      out.push(lines[i]);
+      pendingBlanks = 0;
+      continue;
+    }
+    if (inTask && (/^---/.test(trimmed) || (/^## /.test(trimmed) && !/^## 작업/.test(trimmed)))) {
+      for (let b = 0; b < pendingBlanks; b++) out.push("");
+      pendingBlanks = 0;
+      inTask = false;
+      out.push(lines[i]);
+      continue;
+    }
+
+    if (inTask && trimmed === "") {
+      pendingBlanks++;
+      continue;
+    }
+
+    if (inTask && /^### /.test(trimmed)) {
+      if (pendingBlanks > 0) changed = true;
+      pendingBlanks = 0;
+    } else {
+      for (let b = 0; b < pendingBlanks; b++) out.push("");
+      pendingBlanks = 0;
+    }
+
+    out.push(lines[i]);
+  }
+  for (let b = 0; b < pendingBlanks; b++) out.push("");
+
+  return { body: changed ? out.join("\n") : body, changed };
+}
+
 export function buildCarriedOverMeta(
   items: CarriedItem[],
   prevDateKey: string,
@@ -709,7 +857,7 @@ export async function registerNewTodo(
 
 const TODO_SECTION_MAP: Record<string, string[]> = {
   'analysis-note': ['## 후속 과제'],
-  'study-note': ['## 후속 과제', '## 추가 조사 필요'],
+  'study-note': ['## 후속 과제'],
   'test-log': ['## 후속 조치'],
   'design-note': ['## 결론 & 후속'],
 };
@@ -897,8 +1045,7 @@ export async function syncNoteCheckboxesWithTodos(
 }
 
 /**
- * Insert a newly created research note into today's daily log
- * "오늘 생성한 노트" table.
+ * Insert a newly created research note into today's daily log "노트" table.
  */
 export async function insertNoteToDailyLog(
   dataDir: string,
@@ -906,6 +1053,7 @@ export async function insertNoteToDailyLog(
   title: string,
   noteType: NoteType | string,
   project: string,
+  topic: string = "",
 ): Promise<void> {
   const dateKey = format(new Date(), "yyyy-MM-dd");
   const dailyPath = await join(dataDir, FOLDERS.daily, `${dateKey}.md`);
@@ -914,24 +1062,21 @@ export async function insertNoteToDailyLog(
   try {
     raw = await invoke<string>("read_note", { path: dailyPath });
   } catch {
-    // Daily log for today doesn't exist yet; nothing to update
     return;
   }
 
   const { frontmatter, body } = splitFrontmatter(raw);
   const icon = NOTE_TYPE_ICONS[noteType as NoteType] ?? "📝";
   const label = NOTE_TYPE_LABELS[noteType as NoteType] ?? "Note";
-  const newRow = `| ${label} | [${icon} ${title}](note://${noteId}) | ${project} |`;
+  const newRow = `| ${label} | [${icon} ${title}](note://${noteId}) | ${project} | ${topic} |`;
 
-  // Find the "## 오늘 생성한 노트" section and its table
   const lines = body.split("\n");
   let insertIndex = -1;
 
   for (let i = 0; i < lines.length; i++) {
-    if (/^##\s+오늘 생성한 노트/.test(lines[i])) {
-      // Walk forward past the heading to find the table separator row (|---|---|---|)
+    if (/^##\s+노트\s*$/.test(lines[i])) {
       for (let j = i + 1; j < lines.length; j++) {
-        if (/^\|[\s-]+\|[\s-]+\|[\s-]+\|/.test(lines[j])) {
+        if (/^\|[\s-]+\|/.test(lines[j]) && lines[j].includes('---')) {
           insertIndex = j + 1;
           break;
         }
@@ -940,12 +1085,26 @@ export async function insertNoteToDailyLog(
     }
   }
 
+  // Fallback: try legacy section name
+  if (insertIndex === -1) {
+    for (let i = 0; i < lines.length; i++) {
+      if (/^##\s+오늘 생성한 노트/.test(lines[i])) {
+        for (let j = i + 1; j < lines.length; j++) {
+          if (/^\|[\s-]+\|/.test(lines[j]) && lines[j].includes('---')) {
+            insertIndex = j + 1;
+            break;
+          }
+        }
+        break;
+      }
+    }
+  }
+
   if (insertIndex === -1) return;
 
-  // Check if there's only an empty placeholder row; if so, replace it
   if (
     insertIndex < lines.length &&
-    /^\|\s*\|\s*\|\s*\|$/.test(lines[insertIndex].trim())
+    /^\|\s*\|\s*\|\s*\|/.test(lines[insertIndex].trim())
   ) {
     lines[insertIndex] = newRow;
   } else {
@@ -966,6 +1125,7 @@ export async function updateDailyLogNoteRow(
   title: string,
   noteType: NoteType | string,
   project: string,
+  topic: string = "",
 ): Promise<void> {
   const dateKey = format(new Date(), "yyyy-MM-dd");
   const dailyPath = await join(dataDir, FOLDERS.daily, `${dateKey}.md`);
@@ -985,7 +1145,7 @@ export async function updateDailyLogNoteRow(
 
   for (let i = 0; i < lines.length; i++) {
     if (lines[i].includes(`note://${noteId}`) || lines[i].includes(`[[${noteId}]]`)) {
-      lines[i] = `| ${label} | [${icon} ${title}](note://${noteId}) | ${project} |`;
+      lines[i] = `| ${label} | [${icon} ${title}](note://${noteId}) | ${project} | ${topic} |`;
       found = true;
       break;
     }

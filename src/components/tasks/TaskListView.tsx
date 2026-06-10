@@ -155,7 +155,10 @@ export function TaskListView() {
     setShowAddOptions(false);
     persist([...tasks, task]);
     if (dataDir) {
-      insertTodoToDailyLog(dataDir, task.id, title, task.projectId ?? 'GENERAL').catch(() => {});
+      const projName = task.projectId
+        ? projects.find(p => p.id === task.projectId)?.name ?? 'GENERAL'
+        : 'GENERAL';
+      insertTodoToDailyLog(dataDir, task.id, title, projName).catch(() => {});
     }
     if (task.tags?.length) {
       window.dispatchEvent(new CustomEvent('tags-changed'));
@@ -183,7 +186,10 @@ export function TaskListView() {
     if (dataDir && (changes.title !== undefined || changes.projectId !== undefined)) {
       const task = updated.find((t) => t.id === id);
       if (task) {
-        updateTodoInDailyLog(dataDir, id, task.title, task.projectId ?? 'GENERAL').catch(() => {});
+        const projName = task.projectId
+          ? projects.find(p => p.id === task.projectId)?.name ?? 'GENERAL'
+          : 'GENERAL';
+        updateTodoInDailyLog(dataDir, id, task.title, projName).catch(() => {});
       }
     }
     if (dataDir && changes.status !== undefined) {

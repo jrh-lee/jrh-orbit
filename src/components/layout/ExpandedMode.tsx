@@ -10,6 +10,7 @@ import { SearchView } from '../search/SearchView';
 import { StatisticsView } from '../statistics/StatisticsView';
 import { GraphView } from '../graph/GraphView';
 import { SettingsView } from '../settings/SettingsView';
+import { HubView } from '../hub/HubView';
 
 const views = {
   daily: DailyLog,
@@ -19,6 +20,7 @@ const views = {
   statistics: StatisticsView,
   graph: GraphView,
   settings: SettingsView,
+  hub: HubView,
 } as const;
 
 const SIDEBAR_MIN = 140;

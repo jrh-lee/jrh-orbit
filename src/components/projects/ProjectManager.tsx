@@ -14,7 +14,7 @@ function generateId() {
   return Math.random().toString(36).substring(2, 10);
 }
 
-export function ProjectManager({ adding, setAdding }: { adding: boolean; setAdding: (v: boolean) => void }) {
+export function ProjectManager({ adding, setAdding, hidden }: { adding: boolean; setAdding: (v: boolean) => void; hidden?: boolean }) {
   const { dataDir } = useAppStore();
   const { projects, setProjects, addProject, removeProject, updateProject } = useProjectStore();
   const [newName, setNewName] = useState('');
@@ -91,6 +91,8 @@ export function ProjectManager({ adding, setAdding }: { adding: boolean; setAddi
     persist(projects.filter((p) => p.id !== id));
     if (editingId === id) setEditingId(null);
   }
+
+  if (hidden) return null;
 
   return (
     <div className="px-2">

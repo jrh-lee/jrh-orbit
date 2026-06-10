@@ -11,6 +11,7 @@ import { FOLDERS, FILES } from '../../lib/constants';
 import { NOTE_TYPE_ICONS } from '../../types/note';
 import type { NoteType } from '../../types/note';
 import type { TodosFile } from '../../types/task';
+import type { ProjectsFile } from '../../types/project';
 import {
   getCarriedOverItems,
   getActiveTodos,
@@ -29,6 +30,9 @@ import {
   detectTodoTitleChanges,
   updateTodoTitle,
   syncDailyWithTodos,
+  resolveProjectIdsInBody,
+  deduplicateDailyLogBody,
+  compactTaskSections,
 } from '../../lib/dailyLogHelper';
 
 function makeFrontmatter(date: Date, carriedOver: { from: string; items: string[] }[] = []): string {
@@ -88,20 +92,51 @@ export function DailyLog() {
         const raw = await invoke<string>('read_note', { path: fullPath });
         const { frontmatter, body: b } = splitFrontmatter(raw);
         fmRef.current = frontmatter;
-        prevBodyRef.current = synced ?? b;
-        setBody(synced ?? b);
+
+        let resolvedBody = synced ?? b;
+        let needsWrite = false;
+
+        const projectsFile = await readJsonFile<ProjectsFile>(dataDir, FILES.projects).catch(() => null);
+        const projectMap = new Map<string, string>();
+        if (projectsFile?.projects) {
+          for (const p of projectsFile.projects) projectMap.set(p.id, p.name);
+        }
+        const resolved = resolveProjectIdsInBody(resolvedBody, projectMap);
+        if (resolved.changed) { resolvedBody = resolved.body; needsWrite = true; }
+
+        const deduped = deduplicateDailyLogBody(resolvedBody);
+        if (deduped.changed) { resolvedBody = deduped.body; needsWrite = true; }
+        const compacted = compactTaskSections(resolvedBody);
+        if (compacted.changed) { resolvedBody = compacted.body; needsWrite = true; }
+
+        if (needsWrite) {
+          await invoke('write_note', { path: fullPath, content: joinFrontmatter(frontmatter, resolvedBody) }).catch(() => {});
+        }
+
+        prevBodyRef.current = resolvedBody;
+        setBody(resolvedBody);
         const fields = parseFrontmatterFields(frontmatter);
         setSummary(fields.summary ?? '');
         setLoaded(true);
       } catch {
+        const projectsFile = await readJsonFile<ProjectsFile>(dataDir, FILES.projects).catch(() => null);
+        const projectMap = new Map<string, string>();
+        if (projectsFile?.projects) {
+          for (const p of projectsFile.projects) projectMap.set(p.id, p.name);
+        }
+
         const [carriedItems, activeTodos, existingNotes] = await Promise.all([
           getCarriedOverItems(dataDir, currentDate),
-          getActiveTodos(dataDir, dateKey),
+          getActiveTodos(dataDir, dateKey, projectMap),
           getExistingNotesForDate(dataDir, dateKey),
         ]);
 
         for (const item of carriedItems) {
-          if (item.todoId) incrementCarryCount(dataDir, item.todoId).catch(() => {});
+          if (item.todoId) {
+            try {
+              item.carryCount = await incrementCarryCount(dataDir, item.todoId);
+            } catch {}
+          }
         }
 
         // Update previous day's summary if empty
@@ -122,7 +157,7 @@ export function DailyLog() {
 
         const carriedOverMeta = buildCarriedOverMeta(carriedItems, prevKey);
         const fm = makeFrontmatter(currentDate, carriedOverMeta);
-        const b = buildDailyLogBody(carriedItems, activeTodos, dateKey, existingNotes);
+        const b = buildDailyLogBody(carriedItems, activeTodos, dateKey, existingNotes, projectMap);
         fmRef.current = fm;
         prevBodyRef.current = b;
         setBody(b);
@@ -411,13 +446,14 @@ export function DailyLog() {
         </div>
       )}
       {loaded && (
-        <NoteEditor
-          key={dateKey}
-          content={body}
-          onChange={handleChange}
-          placeholder="Write today's log..."
-          skipBlankLineInsertion
-        />
+        <div className="daily-log-editor">
+          <NoteEditor
+            key={dateKey}
+            content={body}
+            onChange={handleChange}
+            placeholder="Write today's log..."
+          />
+        </div>
       )}
     </div>
   );

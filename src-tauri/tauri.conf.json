@@ -48,12 +48,6 @@
     "sql": {
       "preload": ["sqlite:orbit.db"]
     },
-    "fs": {},
-    "updater": {
-      "endpoints": [
-        "https://github.com/jrh-lee/jrh-orbit/releases/latest/download/latest.json"
-      ],
-      "pubkey": ""
-    }
+    "fs": {}
   }
 }

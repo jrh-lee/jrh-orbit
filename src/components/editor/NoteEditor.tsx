@@ -107,8 +107,26 @@ function ensureMarkdownSpacing(md: string): string {
     const isHeading = /^#{1,6} /.test(line);
 
     if (isHeading && out.length > 0) {
-      while (out.length > 0 && out[out.length - 1] === '') out.pop();
-      out.push('', '');
+      let lastContentIdx = out.length - 1;
+      while (lastContentIdx >= 0 && out[lastContentIdx] === '') lastContentIdx--;
+
+      const prevLine = lastContentIdx >= 0 ? out[lastContentIdx] : '';
+      const prevIsHeading = /^#{1,6} /.test(prevLine);
+      const prevIsHr = /^-{3,}\s*$/.test(prevLine);
+
+      if (prevIsHr) {
+        while (out.length > 0 && out[out.length - 1] === '') out.pop();
+      } else if (prevIsHeading) {
+        const prevLevel = (prevLine.match(/^(#{1,6}) /) || [])[1]?.length ?? 0;
+        const curLevel = (line.match(/^(#{1,6}) /) || [])[1]?.length ?? 0;
+        while (out.length > 0 && out[out.length - 1] === '') out.pop();
+        if (curLevel <= prevLevel) {
+          out.push('', '');
+        }
+      } else {
+        while (out.length > 0 && out[out.length - 1] === '') out.pop();
+        out.push('', '');
+      }
     }
 
     out.push(line);
@@ -123,8 +141,38 @@ export function insertBlankLinesBeforeHeadings(editor: { state: any; view: any }
   const emptyPara = schema.nodes.paragraph.create();
   const insertions: { pos: number; needed: number }[] = [];
 
+  let inTaskSection = false;
+
   doc.forEach((node: any, offset: number, index: number) => {
+    if (node.type.name === 'heading' && node.attrs.level === 2) {
+      const text = node.textContent || '';
+      inTaskSection = /^작업/.test(text.trim());
+    }
+
     if (node.type.name === 'heading' && index > 0) {
+      if (inTaskSection && node.attrs.level === 3) return;
+
+      let prevContentIdx = index - 1;
+      while (prevContentIdx >= 0) {
+        const prev = doc.child(prevContentIdx);
+        if (prev.type.name === 'paragraph' && prev.content.size === 0) {
+          prevContentIdx--;
+        } else {
+          break;
+        }
+      }
+      if (prevContentIdx >= 0) {
+        const prevNode = doc.child(prevContentIdx);
+        if (prevNode.type.name === 'horizontalRule') {
+          return;
+        }
+        if (prevNode.type.name === 'heading') {
+          const prevLevel = prevNode.attrs.level ?? 1;
+          const curLevel = node.attrs.level ?? 1;
+          if (curLevel > prevLevel) return;
+        }
+      }
+
       let existingEmpty = 0;
       for (let i = index - 1; i >= 0; i--) {
         const prev = doc.child(i);
@@ -174,7 +222,7 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
   const { dataDir, openNote } = useAppStore();
   const smartTransformEnabled = useConfigStore((s) => s.editor.smart_transform);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const isLocalChange = useRef(false);
+  const lastEmittedContent = useRef<string | null>(null);
   const isLoadingContent = useRef(false);
   const [mathEdit, setMathEdit] = useState<MathClickInfo | null>(null);
   const [wikiLink, setWikiLink] = useState<WikiLinkState | null>(null);
@@ -276,12 +324,13 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
     },
     onUpdate: ({ editor: e }) => {
       if (isLoadingContent.current) return;
-      isLocalChange.current = true;
       clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
         const storage = e.storage as Record<string, any>;
         const md: string = storage.markdown?.getMarkdown?.() ?? '';
-        onChange(ensureMarkdownSpacing(md));
+        const spaced = ensureMarkdownSpacing(md);
+        lastEmittedContent.current = spaced;
+        onChange(spaced);
       }, 300);
 
       checkWikiLink(e);
@@ -367,10 +416,7 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
 
   useEffect(() => {
     if (!editor) return;
-    if (isLocalChange.current) {
-      isLocalChange.current = false;
-      return;
-    }
+    if (lastEmittedContent.current !== null && content === lastEmittedContent.current) return;
     isLoadingContent.current = true;
     editor.commands.setContent(preprocessEmptyCheckboxes(content));
     if (!skipBlankLineInsertion) {

@@ -18,6 +18,8 @@ import { FILES } from '../../lib/constants';
 import { writeJsonFile } from '../../lib/fileSystem';
 import type { TodosFile } from '../../types/task';
 import type { TopicsFile, TopicEntry } from '../../types/dataFiles';
+import { reindexNote } from '../../lib/searchIndex';
+import { indexNote } from '../../lib/db';
 import { AutoSuggestionBanner } from './AutoSuggestionBanner';
 import { TemplateEditor, loadTemplates, buildTypeIconMap, buildTypeAbbrevMap } from './TemplateEditor';
 import type { CustomTemplate } from './TemplateEditor';
@@ -65,70 +67,32 @@ interface NoteTemplate {
 const NOTE_TEMPLATES: NoteTemplate[] = [
   {
     id: 'quick-memo', noteType: 'quick-memo', label: 'Quick Memo', icon: '💬',
-    title: '', body: `\n<!-- 형식 자유. 떠오른 것을 그대로 적으세요 -->\n<!-- 나중에 정리가 필요하면 Analysis/Design/Study Note로 승격 가능 -->\n- \n`,
+    title: '', body: '\n- \n',
   },
   {
     id: 'analysis-note', noteType: 'analysis-note', label: 'Analysis Note', icon: '📊',
     title: '', body: [
       '',
       '## 목적',
-      '<!-- 이 분석을 왜 하는가 + 무엇을 확인하려 하는가. 2-3문장 -->',
-      '- **배경**: ',
-      '- **확인 사항**: ',
-      '',
-      '',
-      '## 분석 조건',
-      '',
-      '### 공통 조건 (Base)',
-      '<!-- 모든 케이스에서 동일한 조건. 한 번만 기록 -->',
-      '',
-      '| 파라미터 | 값 | 비고 |',
-      '|---|---|---|',
-      '| 시뮬레이션 도구 |  |  |',
-      '| 궤도 |  |  |',
-      '| 자세 초기값 |  |  |',
-      '| 센서 모델 |  |  |',
-      '| 시뮬레이션 시간 |  |  |',
-      '| 적분기 |  |  |',
-      '',
-      '### 가변 조건 (Sweep)',
-      '<!-- 케이스마다 바꾼 변수만 나열 -->',
-      '',
-      '| Case | 변수명 | 변수명2 | 비고 |',
-      '|---|---|---|---|',
-      '| A |  |  | 기존 설정 |',
-      '| B |  |  |  |',
-      '',
-      '',
-      '## 결과',
-      '',
-      '### Case A — ',
-      '<!-- 핵심 케이스만 상세 기록. 나머지는 요약 테이블로 -->',
       '- ',
+      '- ',
+      '', '',
+      '## 내용',
       '',
-      '### 요약 테이블',
-      '',
-      '| Case | 메트릭1 | 메트릭2 | 판정 |',
-      '|---|---|---|---|',
-      '| A |  |  |  |',
-      '| B |  |  |  |',
-      '',
-      '',
-      '## 결론',
-      '<!-- 반드시 번호 매기기. 3개 권장 -->',
-      '1. **핵심 결론**: ',
-      '2. **원인 분석**: ',
-      '3. **후속 방향**: ',
+      '<!-- 자유 형식. 조건, 과정, 결과 등 -->',
+      '<!-- 필요 시 에디터 툴바 → [+ 블록 삽입] → 조건 테이블 / 결과 테이블 / 파일 참조 -->',
       '',
       '',
-      '## 코드 / 파일 참조',
-      '- **메인 스크립트**: ',
-      '- **결과 데이터**: ',
-      '- **MATLAB 버전**: ',
       '',
-      '',
+      '## 분석',
+      '- ',
+      '- ',
+      '- ',
+      '', '',
       '## 후속 과제',
-      '<!-- ⚡ 여기의 - [ ] 항목은 자동으로 TODO에 등록됩니다 -->',
+      '',
+      '<!-- ⚡ - [ ] → 자동 TODO (이 노트와 연결) -->',
+      '',
       '- [ ] ',
       '',
     ].join('\n'),
@@ -137,63 +101,30 @@ const NOTE_TEMPLATES: NoteTemplate[] = [
     id: 'test-log', noteType: 'test-log', label: 'Test Log', icon: '🔧',
     title: '', body: [
       '',
-      '## 시험 목적',
-      '- **시험 이유**: ',
-      '- **기대 결과**: ',
-      '- **판정 기준 요약**: ',
+      '## 목적',
+      '- ',
+      '- ',
+      '', '',
+      '## 내용',
+      '',
+      '<!-- 장비, 절차, 측정 데이터 -->',
+      '<!-- 필요 시 에디터 툴바 → 장비 테이블 / 측정 데이터 테이블 삽입 -->',
       '',
       '',
-      '## 시험 장비 / 환경',
       '',
-      '| 항목 | 상세 |',
-      '|---|---|',
-      '| DUT |  |',
-      '| 전원 공급기 |  |',
-      '| 데이터 수집 |  |',
-      '| 측정 장비 |  |',
-      '| 온도 |  |',
-      '| 시험 일시 |  |',
+      '### 🟢 PASS / 🔴 FAIL / 🟡 CONDITIONAL',
       '',
       '',
-      '## 시험 절차',
-      '<!-- 다른 사람이 이 절차만 보고 동일 시험을 재현할 수 있어야 함 -->',
-      '1. ',
-      '2. ',
-      '3. ',
-      '4. ',
       '',
-      '',
-      '## 측정 데이터',
-      '',
-      '| 측정 항목 | 목표 값 | 실측 값 | 오차 | 판정 |',
-      '|---|---|---|---|---|',
-      '|  |  |  |  | ✅ / ❌ |',
-      '',
-      '',
-      '## 판정 기준 및 종합 판정',
-      '',
-      '| 항목 | 기준 | 결과 | 판정 |',
-      '|---|---|---|---|',
-      '|  |  |  | ✅ PASS / ❌ FAIL |',
-      '',
-      '### 🟢 종합: PASS / 🔴 종합: FAIL / 🟡 종합: CONDITIONAL',
-      '',
-      '',
-      '## 이상 소견 / 특이사항',
-      '<!-- 시험은 통과했지만 주의해야 할 것 -->',
-      '- **관측 내용**: ',
-      '- **추정 원인**: ',
-      '- **조치 필요 여부**: ',
-      '',
-      '',
-      '## 첨부 파일',
-      '- **시험 데이터**: ',
-      '- **사진/영상**: ',
-      '- **시험 절차서**: ',
-      '',
-      '',
+      '## 분석',
+      '- ',
+      '- ',
+      '- ',
+      '', '',
       '## 후속 조치',
-      '<!-- ⚡ 여기의 - [ ] 항목은 자동으로 TODO에 등록됩니다 -->',
+      '',
+      '<!-- ⚡ - [ ] → 자동 TODO (이 노트와 연결) -->',
+      '',
       '- [ ] ',
       '',
     ].join('\n'),
@@ -202,46 +133,24 @@ const NOTE_TEMPLATES: NoteTemplate[] = [
     id: 'design-note', noteType: 'design-note', label: 'Design Note', icon: '📐',
     title: '', body: [
       '',
-      '## 의사결정 요약',
-      '<!-- 한 문장으로. "X를 Y로 결정했다" 형식 -->',
+      '## 목적',
       '- ',
+      '- ',
+      '', '',
+      '## 내용',
+      '',
+      '| 대안       | 장점 | 단점 | 비고 |',
+      '| ---------- | ---- | ---- | ---- |',
+      '| **{선택}** |      |      | ✅   |',
+      '| {대안 2}   |      |      |      |',
+      '| {대안 3}   |      |      |      |',
       '',
       '',
-      '## 배경 / 문제',
-      '<!-- 왜 이 결정이 필요했는가 -->',
-      '- **현재 상황**: ',
-      '- **문제점**: ',
-      '- **제약 조건**: ',
       '',
-      '',
-      '## 검토한 대안',
-      '<!-- 최소 2개 이상. 선택된 대안에 ✅ 표시 -->',
-      '',
-      '| 대안 | 장점 | 단점 | 비고 |',
-      '|---|---|---|---|',
-      '| **선택** |  |  | 선정 ✅ |',
-      '| 대안 2 |  |  |  |',
-      '| 대안 3 |  |  |  |',
-      '',
-      '',
-      '## 선정 근거',
-      '<!-- 번호 매기기 필수. "왜 이것을 골랐는가"에 대한 답 -->',
-      '1. ',
-      '2. ',
-      '3. ',
-      '',
-      '',
-      '## 리스크 & 완화 방안',
-      '- **리스크 1**: ',
-      '  → 완화: ',
-      '- **리스크 2**: ',
-      '  → 완화: ',
-      '',
-      '',
-      '## 결론 & 후속',
-      '- **최종 결정**: ',
-      '- **검증 계획**: ',
-      '- **공유 대상**: ',
+      '## 분석',
+      '- ',
+      '- ',
+      '- ',
       '',
     ].join('\n'),
   },
@@ -249,48 +158,19 @@ const NOTE_TEMPLATES: NoteTemplate[] = [
     id: 'study-note', noteType: 'study-note', label: 'Study Note', icon: '📚',
     title: '', body: [
       '',
-      '## 주제',
+      '## 목적',
       '- ',
       '- ',
+      '', '',
+      '## 내용',
+      '',
+      '<!-- 출처, 핵심 개념, 수식 등 자유롭게 -->',
       '',
       '',
-      '## 출처',
       '',
-      '| 유형 | 상세 |',
-      '|---|---|',
-      '| 논문 |  |',
-      '| 웹 |  |',
-      '| 교육 |  |',
-      '| 도서 |  |',
-      '',
-      '',
-      '## 핵심 내용',
-      '<!-- 배운 것을 나만의 언어로 정리. 복붙이 아니라 이해한 내용 -->',
-      '',
-      '### 주요 개념',
-      '- **개념 1**: ',
-      '- **개념 2**: ',
-      '',
-      '### 수식 / 알고리즘',
-      '<!-- 해당 시에만 작성 -->',
-      '',
-      '### 한계 / 주의사항',
+      '## 분석',
       '- ',
-      '',
-      '',
-      '## 내 프로젝트 적용 가능성',
-      '<!-- 가장 중요한 섹션. "그래서 나한테 뭐가 쓸모 있는데?" -->',
-      '- **적용 아이디어**: ',
-      '- **예상 효과**: ',
-      '- **필요 조건**: ',
-      '',
-      '',
-      '## 추가 조사 필요',
-      '- [ ] ',
-      '',
-      '',
-      '## 요약 (한 줄)',
-      '<!-- 나중에 목록에서 이 노트를 다시 찾을 때 보이는 한 줄 -->',
+      '- ',
       '- ',
       '',
     ].join('\n'),
@@ -461,26 +341,42 @@ export function NoteListView() {
     }
   }
 
-  async function updateTopicsFile(name: string, noteProject: string[], noteSubsystem: string[]) {
+  async function updateTopicsFile(name: string, noteProject: string[], noteSubsystem: string[], prevTopic?: string) {
     if (!dataDir) return;
+    if (prevTopic === name) return;
     const data = await readJsonFile<TopicsFile>(dataDir, FILES.topics) ?? { topics: [] };
-    const existing = data.topics.find(t => t.name === name);
-    if (existing) {
-      existing.note_count += 1;
-      existing.last_used = todayKey();
-    } else {
-      data.topics.push({
-        name,
-        project: noteProject[0] ?? '',
-        subsystem: noteSubsystem[0] ?? '',
-        created: todayKey(),
-        note_count: 1,
-        last_used: todayKey(),
-        keywords: [],
-      });
+
+    if (prevTopic) {
+      const prev = data.topics.find(t => t.name === prevTopic);
+      if (prev && prev.note_count > 0) {
+        prev.note_count -= 1;
+      }
     }
+
+    if (name) {
+      const existing = data.topics.find(t => t.name === name);
+      if (existing) {
+        existing.note_count += 1;
+        existing.last_used = todayKey();
+        if (!existing.project && noteProject[0]) {
+          existing.project = noteProject[0];
+        }
+      } else {
+        data.topics.push({
+          name,
+          project: noteProject[0] ?? '',
+          subsystem: noteSubsystem[0] ?? '',
+          created: todayKey(),
+          note_count: 1,
+          last_used: todayKey(),
+          keywords: [],
+        });
+      }
+    }
+
     await writeJsonFile(dataDir, FILES.topics, data);
     setTopics(data.topics.sort((a, b) => b.last_used.localeCompare(a.last_used)));
+    window.dispatchEvent(new CustomEvent('topics-changed'));
   }
 
   async function loadCustomTemplates() {
@@ -655,6 +551,22 @@ export function NoteListView() {
     if (activeNote) {
       lastWriteTime.current = Date.now();
       invoke('write_note', { path: activeNote, content: joinFrontmatter(fm, body) }).catch(() => {});
+
+      const noteEntry = notes.find(n => n.path === activeNote);
+      indexNote(
+        activeNote,
+        activeNoteId,
+        updated.title,
+        noteEntry?.noteType ?? 'analysis-note',
+        updated.project,
+        updated.subsystem,
+        updated.topic,
+        updated.tags,
+        updated.status,
+        body,
+        noteEntry?.created ?? '',
+        new Date().toISOString(),
+      ).catch((e) => console.error('[indexNote] updateMeta failed:', e));
     }
 
     if (field === 'title') {
@@ -666,11 +578,12 @@ export function NoteListView() {
       window.dispatchEvent(new CustomEvent('tags-changed'));
     }
 
-    if (dataDir && activeNoteId && (field === 'title' || field === 'project')) {
+    if (dataDir && activeNoteId && (field === 'title' || field === 'project' || field === 'topic')) {
       const noteType = notes.find(n => n.path === activeNote)?.noteType ?? 'analysis-note';
       const t = field === 'title' ? (value as string) : updated.title;
       const p = field === 'project' ? (value as string[]).join(', ') : updated.project.join(', ');
-      updateDailyLogNoteRow(dataDir, activeNoteId, t, noteType, p).catch(() => {});
+      const tp = field === 'topic' ? (value as string) : updated.topic;
+      updateDailyLogNoteRow(dataDir, activeNoteId, t, noteType, p, tp).catch(() => {});
     }
   }
 
@@ -741,6 +654,7 @@ export function NoteListView() {
       const today = todayKey();
       const fm = makeFrontmatter(template.noteType, title, noteId);
       await invoke('write_note', { path: fullPath, content: fm + template.body });
+      reindexNote(fullPath, template.noteType).catch(() => {});
       window.dispatchEvent(new CustomEvent('notes-changed'));
 
       updateNoteLinks(dataDir, noteId, [`${today}-daily`]).catch(() => {});
@@ -830,7 +744,7 @@ export function NoteListView() {
         srcRelatedIds.push(noteId);
         updateNoteLinks(dataDir, sourceNote.id, srcRelatedIds).catch(() => {});
       }
-      insertNoteToDailyLog(dataDir, noteId, title, targetType, sourceNote.project.join(', ')).catch(() => {});
+      insertNoteToDailyLog(dataDir, noteId, title, targetType, sourceNote.project.join(', '), sourceNote.topic).catch(() => {});
 
       await loadNotes();
       await handleSelectNote(fullPath);
@@ -1310,7 +1224,13 @@ ${content}
                       onClick={e => e.stopPropagation()}>
                       {meta.topic && (
                         <button
-                          onMouseDown={e => { e.preventDefault(); updateMeta('topic', ''); setTopicDropdownOpen(false); }}
+                          onMouseDown={e => {
+                            e.preventDefault();
+                            const prev = meta.topic;
+                            updateMeta('topic', '');
+                            if (prev) updateTopicsFile('', meta.project, meta.subsystem, prev);
+                            setTopicDropdownOpen(false);
+                          }}
                           className="w-full text-left px-2 py-1 text-xs text-ink-3 hover:bg-paper-soft transition-colors italic"
                         >
                           Clear topic
@@ -1321,8 +1241,9 @@ ${content}
                           key={t.name}
                           onMouseDown={e => {
                             e.preventDefault();
+                            const prev = meta.topic;
                             updateMeta('topic', t.name);
-                            updateTopicsFile(t.name, meta.project, meta.subsystem);
+                            updateTopicsFile(t.name, meta.project, meta.subsystem, prev);
                             setTopicDropdownOpen(false);
                           }}
                           className={`w-full text-left px-2 py-1 text-xs hover:bg-paper-soft transition-colors flex items-center justify-between ${
@@ -1342,8 +1263,9 @@ ${content}
                               key={t.name}
                               onMouseDown={e => {
                                 e.preventDefault();
+                                const prev = meta.topic;
                                 updateMeta('topic', t.name);
-                                updateTopicsFile(t.name, meta.project, meta.subsystem);
+                                updateTopicsFile(t.name, meta.project, meta.subsystem, prev);
                                 setTopicDropdownOpen(false);
                               }}
                               className="w-full text-left px-2 py-1 text-xs text-ink-3 hover:bg-paper-soft transition-colors flex items-center justify-between"
@@ -1363,8 +1285,9 @@ ${content}
                             onChange={e => setNewTopicName(e.target.value)}
                             onKeyDown={e => {
                               if (e.key === 'Enter' && newTopicName.trim()) {
+                                const prev = meta.topic;
                                 updateMeta('topic', newTopicName.trim());
-                                updateTopicsFile(newTopicName.trim(), meta.project, meta.subsystem);
+                                updateTopicsFile(newTopicName.trim(), meta.project, meta.subsystem, prev);
                                 setNewTopicName('');
                                 setShowNewTopicInput(false);
                                 setTopicDropdownOpen(false);
@@ -1439,8 +1362,9 @@ ${content}
               }}
               onUpdateBody={(newBody) => handleChange(newBody)}
               onSetTopic={(t) => {
+                const prev = meta.topic;
                 updateMeta('topic', t);
-                updateTopicsFile(t, meta.project, meta.subsystem);
+                updateTopicsFile(t, meta.project, meta.subsystem, prev);
               }}
             />
             <div className="flex flex-1 min-h-0 overflow-hidden">

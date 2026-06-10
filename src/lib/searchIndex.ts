@@ -5,6 +5,23 @@ import { FOLDERS } from './constants';
 import { indexNote, clearIndex } from './db';
 import { normalizeProject, normalizeLegacyType } from '../types/note';
 
+export async function reindexNote(filePath: string, fallbackType: string): Promise<void> {
+  const raw = await invoke<string>('read_note', { path: filePath });
+  const { frontmatter, body } = splitFrontmatter(raw);
+  const fields = parseFrontmatterFields(frontmatter);
+  const id = fields.id ?? '';
+  const title = fields.title ?? filePath.split(/[/\\]/).pop()?.replace('.md', '') ?? '';
+  const noteType = fields.type ? String(normalizeLegacyType(fields.type)) : fallbackType;
+  const project = normalizeProject(fields.project);
+  const subsystem = Array.isArray(fields.subsystem) ? fields.subsystem : [];
+  const topic = fields.topic ?? fields.experiment ?? '';
+  const tags = Array.isArray(fields.tags) ? fields.tags : [];
+  const status = fields.status ?? '';
+  const created = fields.created ?? '';
+  const updated = fields.updated ?? '';
+  await indexNote(filePath, id, title, noteType, project, subsystem, topic, tags, status, body, created, updated);
+}
+
 export async function buildIndex(dataDir: string): Promise<void> {
   if (!dataDir) return;
 
