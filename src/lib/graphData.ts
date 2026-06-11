@@ -72,12 +72,12 @@ export async function buildGraphData(dataDir: string): Promise<GraphData> {
     noteIds.add(id);
   }
 
-  // Add all notes from links
+  // Only include link targets that exist on disk
   if (links) {
     for (const [id, entry] of Object.entries(links)) {
-      noteIds.add(id);
-      for (const fwd of entry.forward) noteIds.add(fwd);
-      for (const bwd of entry.backward) noteIds.add(bwd);
+      if (noteMeta.has(id)) noteIds.add(id);
+      for (const fwd of entry.forward) { if (noteMeta.has(fwd)) noteIds.add(fwd); }
+      for (const bwd of entry.backward) { if (noteMeta.has(bwd)) noteIds.add(bwd); }
     }
   }
 

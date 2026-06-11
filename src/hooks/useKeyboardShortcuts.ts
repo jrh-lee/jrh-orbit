@@ -24,12 +24,14 @@ async function persistZoom(dataDir: string, zoom: number) {
   });
 }
 
+const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
+
 export function useKeyboardShortcuts() {
   const setView = useAppStore((s) => s.setView);
 
   useEffect(() => {
     function handler(e: KeyboardEvent) {
-      const mod = e.metaKey || e.ctrlKey;
+      const mod = isMac ? e.metaKey : e.ctrlKey;
       if (!mod) return;
 
       const code = e.code;

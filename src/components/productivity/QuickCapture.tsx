@@ -17,8 +17,9 @@ export function QuickCapture() {
   const lastEnterRef = useRef(0);
 
   useEffect(() => {
+    const mac = /Mac|iPhone|iPad/.test(navigator.platform);
     function handler(e: KeyboardEvent) {
-      const mod = e.metaKey || e.ctrlKey;
+      const mod = mac ? e.metaKey : e.ctrlKey;
       if (mod && e.shiftKey && e.key.toLowerCase() === 'n') {
         e.preventDefault();
         setVisible(v => !v);

@@ -1231,6 +1231,16 @@ export async function insertTodoToDailyLog(
     }
   }
 
+  if (insertIndex === -1 && project && project !== "GENERAL") {
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].trim() === "### 📌 GENERAL") {
+        lines.splice(i, 0, sectionHeading);
+        insertIndex = i + 1;
+        break;
+      }
+    }
+  }
+
   if (insertIndex === -1) {
     for (let i = 0; i < lines.length; i++) {
       if (lines[i].trim() === "### 📌 GENERAL") {
@@ -1264,7 +1274,7 @@ export async function updateTodoInDailyLog(
   dataDir: string,
   taskId: string,
   title: string,
-  _project: string,
+  project: string,
 ): Promise<void> {
   const dateKey = format(new Date(), "yyyy-MM-dd");
   const dailyPath = await join(dataDir, FOLDERS.daily, `${dateKey}.md`);
@@ -1280,18 +1290,77 @@ export async function updateTodoInDailyLog(
   const lines = body.split("\n");
   const escaped = taskId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const re = new RegExp(`\\[${escaped}\\]|\\\\\\[${escaped}\\\\\\]`);
-  let found = false;
+  let foundIndex = -1;
+  let checked = false;
 
   for (let i = 0; i < lines.length; i++) {
     if (!re.test(lines[i])) continue;
-    const checked = /^- \[x\]/.test(lines[i].trim());
-    const check = checked ? "[x]" : "[ ]";
-    lines[i] = `- ${check} [${taskId}] ${title}`;
-    found = true;
+    checked = /^- \[x\]/.test(lines[i].trim());
+    foundIndex = i;
     break;
   }
 
-  if (!found) return;
+  if (foundIndex === -1) return;
+
+  const currentSection = extractProjectFromContext(lines, foundIndex);
+  const targetSection = project || "GENERAL";
+  const check = checked ? "[x]" : "[ ]";
+  const newLine = `- ${check} [${taskId}] ${title}`;
+
+  if (currentSection === targetSection) {
+    lines[foundIndex] = newLine;
+  } else {
+    lines.splice(foundIndex, 1);
+
+    const targetHeading = targetSection !== "GENERAL"
+      ? `### 🛰️ ${targetSection}`
+      : "### 📌 GENERAL";
+
+    let insertIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].trim() === targetHeading) {
+        for (let j = i + 1; j < lines.length; j++) {
+          if (lines[j].startsWith("### ") || lines[j].startsWith("## ") || lines[j].startsWith("---")) {
+            insertIdx = j;
+            break;
+          }
+        }
+        break;
+      }
+    }
+
+    if (insertIdx === -1 && targetSection !== "GENERAL") {
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].trim() === "### 📌 GENERAL") {
+          lines.splice(i, 0, targetHeading);
+          insertIdx = i + 1;
+          break;
+        }
+      }
+    }
+
+    if (insertIdx === -1) {
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].trim() === "### 📌 GENERAL") {
+          for (let j = i + 1; j < lines.length; j++) {
+            if (lines[j].startsWith("### ") || lines[j].startsWith("## ") || lines[j].startsWith("---")) {
+              insertIdx = j;
+              break;
+            }
+          }
+          break;
+        }
+      }
+    }
+
+    if (insertIdx === -1) return;
+
+    while (insertIdx > 0 && lines[insertIdx - 1].trim() === "") {
+      insertIdx--;
+    }
+
+    lines.splice(insertIdx, 0, newLine);
+  }
 
   await invoke("write_note", {
     path: dailyPath,

@@ -148,7 +148,7 @@ export function Sidebar() {
             </button>
           }
         >
-          <ProjectManager adding={projectAdding} setAdding={setProjectAdding} hidden={!projectAdding} />
+          <ProjectManager adding={projectAdding} setAdding={setProjectAdding} />
           <SidebarProjectTree />
         </SidebarSection>
 

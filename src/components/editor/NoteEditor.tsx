@@ -278,14 +278,15 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
               return true;
             }
             const isLocal = href.startsWith('/') || href.startsWith('file://');
-            if (isLocal || event.metaKey || event.ctrlKey) {
+            const macPlatform = /Mac|iPhone|iPad/.test(navigator.platform);
+            if (isLocal || (macPlatform ? event.metaKey : event.ctrlKey)) {
               const path = href.startsWith('file://') ? href.slice(7) : href;
               invoke('open_path', { path }).catch(() => {});
             }
             return false;
           }
 
-          if (event.metaKey || event.ctrlKey) {
+          if (/Mac|iPhone|iPad/.test(navigator.platform) ? event.metaKey : event.ctrlKey) {
             const pos = view.posAtCoords({ left: event.clientX, top: event.clientY });
             if (pos) {
               const $pos = view.state.doc.resolve(pos.pos);

@@ -446,7 +446,7 @@ export function DailyLog() {
         </div>
       )}
       {loaded && (
-        <div className="daily-log-editor">
+        <div className="daily-log-editor flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden">
           <NoteEditor
             key={dateKey}
             content={body}
