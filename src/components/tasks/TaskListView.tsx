@@ -364,19 +364,8 @@ export function TaskListView() {
   );
 }
 
-function stripMarkdown(text: string): string {
-  return text
-    .replace(/\\([[\]()#*_~`>+\-!.|])/g, '$1')
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/(\*\*|__)(.*?)\1/g, '$2')
-    .replace(/(\*|_)(.*?)\1/g, '$2')
-    .replace(/~~(.*?)~~/g, '$1')
-    .replace(/`([^`]*)`/g, '$1');
-}
-
-function renderTitle(text: string): (string | JSX.Element)[] {
-  const parts: (string | JSX.Element)[] = [];
+function renderTitle(text: string): (string | React.ReactElement)[] {
+  const parts: (string | React.ReactElement)[] = [];
   const linkRe = /\[([^\]]*)\]\(([^)]*)\)/g;
   let last = 0;
   let m: RegExpExecArray | null;
