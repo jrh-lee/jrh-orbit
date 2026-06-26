@@ -132,13 +132,15 @@ export function DashboardView() {
         try {
           const notes = await findNotesForProject(p.name);
           const dashNotes = notes.filter(n => n.note_type === 'project-dashboard');
-          map[p.id] = dashNotes;
+          const validNotes: HubNoteRow[] = [];
           for (const note of dashNotes) {
             try {
               const raw = await invoke<string>('read_note', { path: note.path });
               contents[note.path] = stripFrontmatter(raw);
-            } catch { /* file might be missing */ }
+              validNotes.push(note);
+            } catch { /* file deleted — skip */ }
           }
+          map[p.id] = validNotes;
         } catch { map[p.id] = []; }
       }
       if (!cancelled) { setProjectNotes(map); setNoteContents(contents); setLoading(false); }

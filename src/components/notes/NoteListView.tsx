@@ -19,7 +19,7 @@ import { writeJsonFile } from '../../lib/fileSystem';
 import type { TodosFile } from '../../types/task';
 import type { TopicsFile, TopicEntry } from '../../types/dataFiles';
 import { reindexNote } from '../../lib/searchIndex';
-import { indexNote } from '../../lib/db';
+import { indexNote, removeNoteIndex } from '../../lib/db';
 import { AutoSuggestionBanner } from './AutoSuggestionBanner';
 import { TemplateEditor, loadTemplates, buildTypeIconMap, buildTypeAbbrevMap } from './TemplateEditor';
 import type { CustomTemplate } from './TemplateEditor';
@@ -683,10 +683,12 @@ export function NoteListView() {
     try {
       const deletedNote = notes.find(n => n.path === path);
       await invoke('delete_note', { path });
+      removeNoteIndex(path).catch(() => {});
       if (deletedNote?.id) {
         removeNoteLinks(dataDir, deletedNote.id).catch(() => {});
         removeNoteFromDailyLog(dataDir, deletedNote.id).catch(() => {});
       }
+      window.dispatchEvent(new CustomEvent('notes-changed'));
       if (activeNote === path) {
         setActiveNote(null);
         setActiveNoteId('');
