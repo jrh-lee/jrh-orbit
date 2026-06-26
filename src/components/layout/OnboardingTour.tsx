@@ -39,7 +39,7 @@ const steps: Step[] = [
   },
   {
     title: '키보드 단축키',
-    body: 'Cmd+1~7로 뷰 전환, Cmd+K 검색, Cmd+N 노트, Cmd+Shift+N 퀵 메모. Settings에서 전체 단축키를 확인하세요.',
+    body: 'Cmd/Ctrl+1~7로 뷰 전환, Cmd/Ctrl+K 검색, Cmd/Ctrl+N 노트, Cmd/Ctrl+Shift+N 퀵 메모. Settings에서 전체 단축키를 확인하세요.',
     icon: '⌨️',
   },
   {

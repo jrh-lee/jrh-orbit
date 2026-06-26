@@ -130,7 +130,7 @@ export function ImportExportSection() {
               const { frontmatter, body } = splitFrontmatter(raw);
               const fields = parseFrontmatterFields(frontmatter);
               noteEntries.push({
-                title: fields.title ?? f.split('/').pop()?.replace('.md', '') ?? 'Untitled',
+                title: fields.title ?? f.split(/[/\\]/).pop()?.replace('.md', '') ?? 'Untitled',
                 type: fields.type ?? 'note',
                 date: fields.date ?? fields.created?.slice(0, 10) ?? '',
                 body,
@@ -220,7 +220,7 @@ ${noteHtml}
             if (!f.endsWith('.md')) continue;
             try {
               const raw = await invoke<string>('read_note', { path: f });
-              const filename = f.split('/').pop() ?? `note-${count}.md`;
+              const filename = f.split(/[/\\]/).pop() ?? `note-${count}.md`;
               const outPath = await join(destSubDir, filename);
               await invoke('write_note', { path: outPath, content: raw });
               count++;
@@ -243,7 +243,7 @@ ${noteHtml}
             if (!f.endsWith('.md')) continue;
             try {
               const raw = await invoke<string>('read_note', { path: f });
-              const filename = f.split('/').pop() ?? `review-${count}.md`;
+              const filename = f.split(/[/\\]/).pop() ?? `review-${count}.md`;
               const outPath = await join(destSubDir, filename);
               await invoke('write_note', { path: outPath, content: raw });
               count++;

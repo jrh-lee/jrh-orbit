@@ -51,7 +51,12 @@ export function AutoSuggestionBanner({
   const { dataDir } = useAppStore();
   const autoTagSuggest = useConfigStore((s) => s.editor.auto_tag_suggest);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const [dismissed, setDismissed] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem(`suggestion-dismissed:${noteId}`);
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch { return new Set(); }
+  });
   const [tagsFile, setTagsFile] = useState<TagsFile | null>(null);
   const lastBodyRef = useRef('');
 
@@ -61,8 +66,12 @@ export function AutoSuggestionBanner({
   }, [dataDir]);
 
   const dismiss = useCallback((id: string) => {
-    setDismissed(prev => new Set([...prev, id]));
-  }, []);
+    setDismissed(prev => {
+      const next = new Set([...prev, id]);
+      try { localStorage.setItem(`suggestion-dismissed:${noteId}`, JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  }, [noteId]);
 
   useEffect(() => {
     if (lastBodyRef.current === body) return;
@@ -100,7 +109,7 @@ export function AutoSuggestionBanner({
       });
     }
 
-    if (noteType === 'quick-memo' && onPromote && status !== 'archived') {
+    if (noteType === 'quick-memo' && onPromote) {
       for (const rule of PROMOTE_KEYWORDS) {
         const hasKeyword = rule.keywords.some(kw => body.toLowerCase().includes(kw.toLowerCase()));
         if (hasKeyword) {

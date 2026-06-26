@@ -44,6 +44,7 @@ interface NoteEntry {
   subsystem: string[];
   tags: string[];
   status: NoteStatus;
+  related: string[];
 }
 
 interface NoteMeta {
@@ -235,7 +236,7 @@ function extractTitle(raw: string, filename: string): string {
 }
 
 export function NoteListView() {
-  const { dataDir, pendingNotePath, clearPendingNote, pendingTagFilter, clearPendingTagFilter, setActiveProject } = useAppStore();
+  const { dataDir, pendingNotePath, clearPendingNote, pendingTagFilter, clearPendingTagFilter, setActiveProject, activeProject } = useAppStore();
   const { projects } = useProjectStore();
   const [notes, setNotes] = useState<NoteEntry[]>([]);
   const [activeNote, setActiveNote] = useState<string | null>(null);
@@ -430,6 +431,11 @@ export function NoteListView() {
   }, [pendingTagFilter]);
 
   useEffect(() => {
+    const proj = activeProject ? projects.find(p => p.id === activeProject)?.name ?? '' : '';
+    setFilterProject(proj);
+  }, [activeProject, projects]);
+
+  useEffect(() => {
     function handleClick() { setContextMenu(null); setTagDropdownOpen(false); setTopicDropdownOpen(false); setShowTemplateMenu(false); }
     document.addEventListener('click', handleClick);
     return () => document.removeEventListener('click', handleClick);
@@ -462,7 +468,7 @@ export function NoteListView() {
 
       const entries: NoteEntry[] = await Promise.all(
         files.map(async (f) => {
-          const filename = f.split('/').pop() ?? f;
+          const filename = f.split(/[/\\]/).pop() ?? f;
           let title = filename.replace('.md', '');
           let id = '';
           let noteType: string = 'analysis-note';
@@ -473,10 +479,11 @@ export function NoteListView() {
           let subsystem: string[] = [];
           let tags: string[] = [];
           let status: NoteStatus = 'draft';
+          let related: string[] = [];
           try {
             const raw = await invoke<string>('read_note', { path: f });
-            title = extractTitle(raw, filename);
             const fields = parseFrontmatterFields(splitFrontmatter(raw).frontmatter);
+            title = fields.title || extractTitle(raw, filename);
             id = fields.id ?? '';
             noteType = fields.type ?? 'analysis-note';
             updated = fields.updated ?? '';
@@ -486,8 +493,9 @@ export function NoteListView() {
             subsystem = Array.isArray(fields.subsystem) ? fields.subsystem : [];
             tags = Array.isArray(fields.tags) ? fields.tags : [];
             status = fields.status ?? 'draft';
+            related = Array.isArray(fields.related) ? fields.related : (fields.related ? [fields.related] : []);
           } catch {}
-          return { path: f, filename, id, noteType, title, updated, created, project, topic, subsystem, tags, status };
+          return { path: f, filename, id, noteType, title, updated, created, project, topic, subsystem, tags, status, related };
         }),
       );
 
@@ -726,25 +734,12 @@ export function NoteListView() {
 
       const newBody = sourceBody || template?.body || '\n';
       await invoke('write_note', { path: fullPath, content: fm + newBody });
-      window.dispatchEvent(new CustomEvent('notes-changed'));
 
-      let sourceFm = splitFrontmatter(raw).frontmatter;
-      const sourceFields = parseFrontmatterFields(sourceFm);
-      const sourceRelated: string[] = Array.isArray(sourceFields.related) ? sourceFields.related : [];
-      if (!sourceRelated.includes(noteId)) sourceRelated.push(noteId);
-      sourceFm = updateFrontmatterField(sourceFm, 'related', formatFrontmatterValue(sourceRelated));
-      sourceFm = updateFrontmatterField(sourceFm, 'status', 'archived');
-      sourceFm = updateFrontmatterField(sourceFm, 'updated', iso);
-      await invoke('write_note', { path: sourcePath, content: joinFrontmatter(sourceFm, sourceBody) });
+      await invoke('delete_note', { path: sourcePath });
 
-      const promotedRelated = [sourceNote.id, `${today}-daily`].filter(Boolean);
-      updateNoteLinks(dataDir, noteId, promotedRelated).catch(() => {});
-      if (sourceNote.id) {
-        const srcRelatedIds = sourceRelated.filter(id => id !== noteId);
-        srcRelatedIds.push(noteId);
-        updateNoteLinks(dataDir, sourceNote.id, srcRelatedIds).catch(() => {});
-      }
+      updateNoteLinks(dataDir, noteId, [sourceNote.id, `${today}-daily`].filter(Boolean)).catch(() => {});
       insertNoteToDailyLog(dataDir, noteId, title, targetType, sourceNote.project.join(', '), sourceNote.topic).catch(() => {});
+      window.dispatchEvent(new CustomEvent('notes-changed'));
 
       await loadNotes();
       await handleSelectNote(fullPath);
@@ -807,7 +802,7 @@ export function NoteListView() {
 
     const clone = editorEl.cloneNode(true) as HTMLElement;
     clone.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
-    clone.querySelectorAll('.image-align-toolbar, .image-resize-handle').forEach(el => el.remove());
+    clone.querySelectorAll('.image-align-toolbar, .image-resize-handle, .react-renderer:not([data-type="image"])').forEach(el => el.remove());
     clone.querySelectorAll('.image-caption-input').forEach(el => {
       const span = document.createElement('span');
       span.style.cssText = 'display:block;text-align:center;font-style:italic;font-size:0.85em;color:#666;margin-top:4px;';
@@ -815,36 +810,77 @@ export function NoteListView() {
       if (span.textContent) el.replaceWith(span);
       else el.remove();
     });
+    clone.querySelectorAll('input[type="checkbox"]').forEach(el => {
+      const cb = el as HTMLInputElement;
+      const span = document.createElement('span');
+      span.textContent = cb.checked ? '☑' : '☐';
+      span.style.cssText = 'font-size:1.1em;margin-right:4px;';
+      cb.replaceWith(span);
+    });
 
     let content = clone.innerHTML;
     content = content.replace(/https?:\/\/asset\.localhost/g, 'file://');
     content = content.replace(/asset:\/\/localhost/g, 'file://');
 
+    const noteEntry = notes.find(n => n.path === activeNote);
+    const createdDate = noteEntry?.created?.slice(0, 10) || '';
+
     const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    const metaParts: string[] = [];
+    if (meta.project.length > 0) metaParts.push(`<span class="meta-label">Project</span> ${meta.project.map(esc).join(', ')}`);
+    if (meta.topic) metaParts.push(`<span class="meta-label">Topic</span> ${esc(meta.topic)}`);
+    if (createdDate) metaParts.push(`<span class="meta-label">Date</span> ${esc(createdDate)}`);
+    const tagHtml = meta.tags.length > 0
+      ? `<div class="print-tags">${meta.tags.map(t => `<span class="tag">${esc(t)}</span>`).join(' ')}</div>`
+      : '';
+
     const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>${esc(meta.title)}</title>
 <style>
-body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;max-width:780px;margin:2cm auto;padding:0 1cm;color:#222;font-size:11pt;line-height:1.65}
-h1{font-size:18pt;font-weight:600;border-bottom:1px solid #ccc;padding-bottom:.5rem;margin-bottom:1rem}
-h2{font-size:14pt;font-weight:600;margin:1.2rem 0 .5rem}
-h3{font-size:12pt;font-weight:600;margin:1rem 0 .5rem}
-table{border-collapse:collapse;width:100%;margin:.75rem 0;page-break-inside:avoid}
-td,th{border:1px solid #bbb;padding:4pt 6pt;font-size:10pt;vertical-align:top}
+@page{size:A4;margin:2cm 1.8cm}
+body{font-family:'Malgun Gothic',system-ui,-apple-system,'Segoe UI',sans-serif;max-width:780px;margin:0 auto;padding:1cm;color:#222;font-size:10.5pt;line-height:1.7}
+.print-header{margin-bottom:1.5rem;padding-bottom:1rem;border-bottom:2px solid #333}
+.print-header h1{font-size:17pt;font-weight:700;margin:0 0 .5rem;color:#111}
+.print-meta{display:flex;flex-wrap:wrap;gap:.4rem 1.2rem;font-size:8.5pt;color:#555}
+.meta-label{font-weight:600;color:#333;margin-right:2px}
+.print-tags{margin-top:.4rem}
+.tag{display:inline-block;padding:1px 6px;font-size:8pt;border:1px solid #ccc;border-radius:10px;color:#555;margin-right:4px}
+h2{font-size:13pt;font-weight:600;margin:1.2rem 0 .4rem;color:#111}
+h3{font-size:11.5pt;font-weight:600;margin:1rem 0 .3rem;color:#222}
+h4{font-size:10.5pt;font-weight:600;margin:.8rem 0 .3rem}
+table{border-collapse:collapse;width:100%;margin:.6rem 0;page-break-inside:avoid;font-size:9.5pt}
+td,th{border:1px solid #bbb;padding:4pt 6pt;vertical-align:top}
 th{background:#f0f0f0;font-weight:600;text-align:left}
-img{max-width:100%;height:auto;border-radius:6px}
-blockquote{border-left:3px solid #aaa;padding-left:10pt;color:#555;margin-left:0}
-code{background:#f4f4f4;padding:1pt 3pt;border-radius:2pt;font-size:9pt;font-family:Consolas,monospace}
-pre{background:#f4f4f4;border:1px solid #ddd;padding:8pt;border-radius:4pt;overflow-x:auto;page-break-inside:avoid}
-pre code{background:none;padding:0}
+img{max-width:100%;height:auto;border-radius:4px;page-break-inside:avoid}
+blockquote{border-left:3px solid #999;padding-left:10pt;color:#444;margin:0.5rem 0;margin-left:0;page-break-inside:avoid}
+code{background:#f4f4f4;padding:1pt 3pt;border-radius:2pt;font-size:9pt;font-family:Consolas,'Courier New',monospace}
+pre{background:#f7f7f7;border:1px solid #ddd;padding:8pt 10pt;border-radius:4pt;overflow-x:auto;page-break-inside:avoid;margin:.5rem 0}
+pre code{background:none;padding:0;font-size:8.5pt;line-height:1.5}
 a{color:#333;text-decoration:underline}
-hr{border:none;border-top:1px solid #ccc;margin:1.5rem 0}
+hr{border:none;border-top:1px solid #ccc;margin:1.2rem 0}
+ul,ol{padding-left:1.5rem;margin:.3rem 0}
+li{margin:.15rem 0}
 ul[data-type="taskList"]{list-style:none;padding-left:0}
-ul[data-type="taskList"] li{display:flex;align-items:flex-start;gap:.5rem}
-mark{background:#fff3a8;padding:0 2px;border-radius:2px}
-p{margin:.3rem 0}
-@media print{body{margin:0;padding:1cm}}
+ul[data-type="taskList"] li{display:flex;align-items:flex-start;gap:.4rem;margin:.2rem 0}
+mark{background:#fff3a8;padding:0 2px;border-radius:2px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+p{margin:.25rem 0}
+.katex,.math-display{page-break-inside:avoid}
+@media print{
+  body{margin:0;padding:0}
+  .print-header{border-bottom-color:#333;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  th{background:#f0f0f0 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  mark{background:#fff3a8 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  h2,h3,h4{page-break-after:avoid}
+  table,pre,blockquote,img{page-break-inside:avoid}
+  a[href]:after{content:none}
+}
 </style></head><body>
+<div class="print-header">
 <h1>${esc(meta.title)}</h1>
+${metaParts.length > 0 ? `<div class="print-meta">${metaParts.join('')}</div>` : ''}
+${tagHtml}
+</div>
 ${content}
 <script>window.onload=function(){window.print()}<\/script>
 </body></html>`;
@@ -856,7 +892,7 @@ ${content}
     } catch (e) {
       console.error('Print export failed:', e);
     }
-  }, [meta.title, dataDir]);
+  }, [meta, activeNote, notes, dataDir]);
 
   return (
     <div className="flex-1 flex min-h-0 min-w-0">
@@ -1003,7 +1039,8 @@ ${content}
 
           {contextMenu && (() => {
             const ctxNote = notes.find(n => n.path === contextMenu.path);
-            const isQuickMemo = ctxNote?.noteType === 'quick-memo';
+            const wasPromoted = ctxNote ? notes.some(n => n.id !== ctxNote.id && n.related.includes(ctxNote.id)) : false;
+            const isQuickMemo = ctxNote?.noteType === 'quick-memo' && !wasPromoted;
             const promoteTargets: { type: NoteType; label: string; icon: string }[] = [
               { type: 'analysis-note', label: 'Analysis Note', icon: '📊' },
               { type: 'design-note', label: 'Design Note', icon: '📐' },
@@ -1073,13 +1110,13 @@ ${content}
                 </div>
               </div>
             )}
-            <div className="px-6 py-3.5 border-b border-border bg-paper shrink-0 space-y-2.5">
+            <div className="pl-10 pr-6 py-3.5 border-b border-border bg-paper shrink-0 space-y-2.5">
               <div className="flex items-center gap-2">
                 <input
                   value={meta.title}
                   onChange={e => updateMeta('title', e.target.value)}
                   placeholder="Note title"
-                  className="flex-1 text-base font-semibold text-ink bg-paper-soft/40 rounded px-2.5 py-1 border border-transparent outline-none focus:border-border placeholder:text-ink-3"
+                  className="flex-1 text-base font-semibold text-ink bg-paper-soft/40 rounded px-3 py-1 border border-transparent outline-none focus:border-border placeholder:text-ink-3"
                 />
                 <button
                   onClick={() => setLinksPanelOpen(v => !v)}
@@ -1350,9 +1387,10 @@ ${content}
               onUpdateStatus={(s) => updateMeta('status', s)}
               onPromote={(() => {
                 const n = notes.find(n => n.path === activeNote);
-                return n?.noteType === 'quick-memo'
-                  ? (targetType: NoteType) => { if (activeNote) handlePromote(activeNote, targetType); }
-                  : undefined;
+                if (!n || n.noteType !== 'quick-memo') return undefined;
+                const alreadyPromoted = notes.some(other => other.id !== n.id && other.related.includes(n.id));
+                if (alreadyPromoted) return undefined;
+                return (targetType: NoteType) => { if (activeNote) handlePromote(activeNote, targetType); };
               })()}
               onAddTag={(tag) => handleAddTag(tag)}
               onAddSubsystem={(sub) => {

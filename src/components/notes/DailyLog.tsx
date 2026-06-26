@@ -78,6 +78,9 @@ export function DailyLog() {
   const prevBodyRef = useRef('');
   const lastWriteTime = useRef(0);
   const reloadingRef = useRef(false);
+  const newItemTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const detectionBaseRef = useRef('');
+  const inflightRef = useRef<Map<string, string>>(new Map());
 
   const dateKey = format(currentDate, 'yyyy-MM-dd');
 
@@ -114,6 +117,8 @@ export function DailyLog() {
         }
 
         prevBodyRef.current = resolvedBody;
+        detectionBaseRef.current = resolvedBody;
+        inflightRef.current.clear();
         setBody(resolvedBody);
         const fields = parseFrontmatterFields(frontmatter);
         setSummary(fields.summary ?? '');
@@ -160,6 +165,8 @@ export function DailyLog() {
         const b = buildDailyLogBody(carriedItems, activeTodos, dateKey, existingNotes, projectMap);
         fmRef.current = fm;
         prevBodyRef.current = b;
+        detectionBaseRef.current = b;
+        inflightRef.current.clear();
         setBody(b);
         setSummary('');
         setLoaded(true);
@@ -171,6 +178,12 @@ export function DailyLog() {
       }
     })();
   }, [dataDir, dateKey, currentDate]);
+
+  useEffect(() => {
+    return () => {
+      if (newItemTimerRef.current) clearTimeout(newItemTimerRef.current);
+    };
+  }, []);
 
   const [linkedRefresh, setLinkedRefresh] = useState(0);
 
@@ -197,7 +210,7 @@ export function DailyLog() {
             if (noteDate === dateKey || updatedDate === dateKey) {
               matched.push({
                 path: f,
-                title: fields.title ?? f.split('/').pop()?.replace('.md', '') ?? '',
+                title: fields.title ?? f.split(/[/\\]/).pop()?.replace('.md', '') ?? '',
                 noteType: fields.type ?? 'analysis-note',
               });
             }
@@ -249,12 +262,14 @@ export function DailyLog() {
       lastWriteTime.current = Date.now();
       fmRef.current = updateFrontmatterField(fmRef.current, 'updated', new Date().toISOString());
 
-      // Auto-summary: update on any daily log edit
+      // Auto-summary: update on any daily log edit (including clearing when all unchecked)
       const newSummary = generateDailyLogSummary(md);
       if (newSummary) {
         fmRef.current = updateFrontmatterField(fmRef.current, 'summary', `"${newSummary.replace(/"/g, '\\"')}"`);
-        setSummary(newSummary);
+      } else {
+        fmRef.current = updateFrontmatterField(fmRef.current, 'summary', '""');
       }
+      setSummary(newSummary);
 
       // Sync todo changes to todos.json — serialize to avoid race conditions
       (async () => {
@@ -272,33 +287,102 @@ export function DailyLog() {
         }
       })();
 
-      // Detect new checkbox items and prompt to register as TODOs
-      // Skip detection during external reloads (e.g. TODO inserted from Tasks tab)
       if (reloadingRef.current) {
         reloadingRef.current = false;
         return;
       }
-      const newItems = detectNewCheckboxItems(prev, md);
-      for (const text of newItems) {
-        const project = detectProjectForItem(md, text);
-        registerNewTodo(dataDir, text, project).then((taskId) => {
-          setBody((current) => {
-            const updated = current.replace(
-              `- [ ] ${text}`,
-              `- [ ] [${taskId}] ${text}`,
-            );
-            prevBodyRef.current = updated;
-            fmRef.current = updateFrontmatterField(fmRef.current, 'updated', new Date().toISOString());
-            (async () => {
-              try {
-                const fullPath = await join(dataDir, FOLDERS.daily, `${dateKey}.md`);
-                await invoke('write_note', { path: fullPath, content: joinFrontmatter(fmRef.current, updated) });
-              } catch {}
-            })();
-            return updated;
-          });
-        }).catch(() => {});
+
+      // Check if any in-flight registered item's text was changed by the user.
+      // If so, update the existing task title instead of creating a new one.
+      for (const [origText, taskId] of inflightRef.current.entries()) {
+        if (!taskId) continue;
+        if (md.includes(`- [ ] [${taskId}] ${origText}`)) continue;
+        const idPattern = `- [ ] [${taskId}] `;
+        for (const line of md.split('\n')) {
+          const trimmed = line.trim();
+          if (trimmed.startsWith(idPattern)) {
+            const newTitle = trimmed.slice(idPattern.length).replace(/\s*\((?:⚠️\s*)?D[+-]?\d+\)$/, '').trim();
+            if (newTitle && newTitle !== origText) {
+              inflightRef.current.set(newTitle, taskId);
+              inflightRef.current.delete(origText);
+              updateTodoTitle(dataDir, taskId, newTitle).catch(() => {});
+            }
+            break;
+          }
+        }
       }
+
+      // Debounced new checkbox detection — wait for typing to settle
+      if (newItemTimerRef.current) clearTimeout(newItemTimerRef.current);
+      newItemTimerRef.current = setTimeout(() => {
+        newItemTimerRef.current = null;
+        const currentBody = prevBodyRef.current;
+        const base = detectionBaseRef.current;
+        const newItems = detectNewCheckboxItems(base, currentBody);
+        detectionBaseRef.current = currentBody;
+
+        // Match new items against pending in-flight items whose text changed.
+        // If an in-flight item (taskId='', registration pending) disappeared from
+        // the body, it was likely edited — pair it with the new item instead of
+        // creating a duplicate task.
+        const vanishedPending: string[] = [];
+        for (const [txt, id] of inflightRef.current.entries()) {
+          if (id) continue;
+          if (!currentBody.includes(`- [ ] ${txt}`)) vanishedPending.push(txt);
+        }
+
+        for (const text of newItems) {
+          if (inflightRef.current.has(text)) continue;
+
+          if (vanishedPending.length > 0) {
+            const oldText = vanishedPending.shift()!;
+            inflightRef.current.delete(oldText);
+            inflightRef.current.set(text, '');
+            continue;
+          }
+
+          inflightRef.current.set(text, '');
+          const project = detectProjectForItem(currentBody, text);
+          registerNewTodo(dataDir, text, project).then((taskId) => {
+            // By now the user may have edited the text further.
+            // Find the latest text associated with this registration cycle.
+            let finalText = text;
+            for (const [t, id] of inflightRef.current.entries()) {
+              if (id === '' && t !== text && !currentBody.includes(`- [ ] ${text}`)) {
+                finalText = t;
+                break;
+              }
+            }
+
+            inflightRef.current.set(finalText, taskId);
+            if (finalText !== text) {
+              inflightRef.current.delete(text);
+              updateTodoTitle(dataDir, taskId, finalText).catch(() => {});
+            }
+
+            setBody((current) => {
+              const marker = `- [ ] ${finalText}`;
+              if (!current.includes(marker)) {
+                inflightRef.current.delete(finalText);
+                return current;
+              }
+              const updated = current.replace(marker, `- [ ] [${taskId}] ${finalText}`);
+              prevBodyRef.current = updated;
+              detectionBaseRef.current = updated;
+              fmRef.current = updateFrontmatterField(fmRef.current, 'updated', new Date().toISOString());
+              (async () => {
+                try {
+                  const fullPath = await join(dataDir, FOLDERS.daily, `${dateKey}.md`);
+                  await invoke('write_note', { path: fullPath, content: joinFrontmatter(fmRef.current, updated) });
+                } catch {}
+              })();
+              return updated;
+            });
+          }).catch(() => {
+            inflightRef.current.delete(text);
+          });
+        }
+      }, 3000);
 
       (async () => {
         try {
@@ -318,6 +402,8 @@ export function DailyLog() {
       const { frontmatter, body: b } = splitFrontmatter(raw);
       fmRef.current = frontmatter;
       prevBodyRef.current = b;
+      detectionBaseRef.current = b;
+      inflightRef.current.clear();
       reloadingRef.current = true;
       setBody(b);
       setConflict(false);

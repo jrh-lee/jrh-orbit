@@ -57,6 +57,7 @@ function rowToTimelineEntry(row: HubNoteRow): TimelineEntry {
     noteId: row.id,
     notePath: row.path,
     topicName: row.topic || undefined,
+    tags: row.tags ? row.tags.split(', ').filter(Boolean) : [],
   };
 }
 
@@ -163,6 +164,14 @@ export async function loadProjectHubData(dataDir: string, projectName: string) {
 
   const decisions = timeline.filter((e) => e.type === 'design-note');
 
+  const dashboardRow = noteRows.find(r => r.note_type === 'project-dashboard');
+  const dashboardNote = dashboardRow ? {
+    path: dashboardRow.path,
+    id: dashboardRow.id,
+    title: dashboardRow.title,
+    summary: extractSummary(dashboardRow.content),
+  } : null;
+
   const allTodos = todosFile?.todos || [];
   const projectTodos = allTodos.filter(
     (t) => t.projectId === projectName && t.status !== 'done',
@@ -201,6 +210,7 @@ export async function loadProjectHubData(dataDir: string, projectName: string) {
     todos: projectTodos,
     milestones,
     topicLinks,
+    dashboardNote,
   };
 }
 

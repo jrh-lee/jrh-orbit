@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react';
-import { useWorkhourTimerStore } from '../../stores/useWorkhourTimerStore';
+import { useState, useCallback, useEffect } from 'react';
+import { useWorkhourTimerStore, ensureWorkhourInterval } from '../../stores/useWorkhourTimerStore';
 
 function formatTime(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -19,6 +19,10 @@ export function WorkhourTimer() {
   const handleReset = useCallback(() => {
     if (confirm('근무시간을 초기화하시겠습니까?')) reset();
   }, [reset]);
+
+  useEffect(() => {
+    ensureWorkhourInterval();
+  }, [running]);
 
   return (
     <div className="px-2.5 py-2 border-t border-border">
@@ -68,6 +72,12 @@ export function WorkhourTimer() {
       {showControls && (
         <div className="flex items-center gap-1 mt-1.5 flex-wrap">
           <button
+            onClick={() => subtractMinutes(60)}
+            className="px-1.5 py-0.5 text-[10px] rounded border border-border text-ink-3 hover:text-ink-2 hover:bg-paper-muted/50 transition-colors"
+          >
+            −1h
+          </button>
+          <button
             onClick={() => subtractMinutes(30)}
             className="px-1.5 py-0.5 text-[10px] rounded border border-border text-ink-3 hover:text-ink-2 hover:bg-paper-muted/50 transition-colors"
           >
@@ -78,6 +88,18 @@ export function WorkhourTimer() {
             className="px-1.5 py-0.5 text-[10px] rounded border border-border text-ink-3 hover:text-ink-2 hover:bg-paper-muted/50 transition-colors"
           >
             −10m
+          </button>
+          <button
+            onClick={() => subtractMinutes(5)}
+            className="px-1.5 py-0.5 text-[10px] rounded border border-border text-ink-3 hover:text-ink-2 hover:bg-paper-muted/50 transition-colors"
+          >
+            −5m
+          </button>
+          <button
+            onClick={() => addMinutes(5)}
+            className="px-1.5 py-0.5 text-[10px] rounded border border-border text-ink-3 hover:text-ink-2 hover:bg-paper-muted/50 transition-colors"
+          >
+            +5m
           </button>
           <button
             onClick={() => addMinutes(10)}

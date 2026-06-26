@@ -1,9 +1,14 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { join } from '@tauri-apps/api/path';
 import { useAppStore } from '../../stores/useAppStore';
 import { useHubStore } from '../../stores/useHubStore';
 import { useTaskStore } from '../../stores/useTaskStore';
 import { writeJsonFile, readJsonFile } from '../../lib/fileSystem';
-import { FILES } from '../../lib/constants';
+import { FILES, FOLDERS } from '../../lib/constants';
+import { buildFrontmatter } from '../../lib/frontmatter';
+import { todayKey } from '../../lib/dateUtils';
+import { reindexNote } from '../../lib/searchIndex';
 import type { TodosFile } from '../../types/task';
 import { TopicMap } from './TopicMap';
 import { ProjectTimeline } from './ProjectTimeline';
@@ -11,13 +16,102 @@ import { DecisionList } from './DecisionList';
 import { ProjectTodoList } from './ProjectTodoList';
 import { MilestoneBar } from './MilestoneBar';
 
+function dashboardTemplate(projectName: string): string {
+  return [
+    '',
+    '## 프로젝트 개요',
+    '',
+    '| 항목 | 내용 |',
+    '|------|------|',
+    '| 프로젝트명 | ' + projectName + ' |',
+    '| 상태 |  |',
+    '| 시작일 |  |',
+    '| 목표 완료일 |  |',
+    '',
+    '## 하드웨어 사양',
+    '',
+    '- ',
+    '',
+    '## 궤도 파라미터',
+    '',
+    '| 파라미터 | 값 |',
+    '|----------|-----|',
+    '| 궤도 고도 |  |',
+    '| 궤도 경사각 |  |',
+    '| 궤도 주기 |  |',
+    '',
+    '## 운용 모드',
+    '',
+    '- ',
+    '',
+    '## 하위 시스템',
+    '',
+    '- ',
+    '',
+    '## 핵심 메모',
+    '',
+    '- ',
+    '',
+  ].join('\n');
+}
+
 export function ProjectHubView() {
   const { dataDir, openNote, openTopicHub, goHubLanding } = useAppStore();
   const data = useHubStore((s) => s.projectHubData);
+  const filterTags = useHubStore((s) => s.filterTags);
+  const toggleFilterTag = useHubStore((s) => s.toggleFilterTag);
+
+  const allTags = useMemo(() => {
+    if (!data) return [];
+    const set = new Set<string>();
+    data.timeline.forEach(e => e.tags?.forEach(t => set.add(t)));
+    return [...set].sort();
+  }, [data]);
+
+  const filteredTimeline = useMemo(() => {
+    if (!data) return [];
+    if (filterTags.length === 0) return data.timeline;
+    return data.timeline.filter(e =>
+      e.tags && filterTags.some(t => e.tags!.includes(t))
+    );
+  }, [data, filterTags]);
+
+  const filteredDecisions = useMemo(() => {
+    if (filterTags.length === 0) return data?.decisions ?? [];
+    return filteredTimeline.filter(e => e.type === 'design-note');
+  }, [filteredTimeline, filterTags, data]);
 
   const handleOpen = useCallback((path: string) => {
     openNote(path);
   }, [openNote]);
+
+  const handleCreateDashboard = useCallback(async () => {
+    if (!dataDir || !data) return;
+    const today = todayKey();
+    const iso = new Date().toISOString();
+    const noteId = `${today}-dashboard-${data.projectName.toLowerCase().replace(/[^a-z0-9가-힣]/g, '-')}`;
+    const title = `${data.projectName} Dashboard`;
+    const fm = buildFrontmatter({
+      id: noteId,
+      type: 'project-dashboard',
+      title,
+      date: today,
+      project: [data.projectName],
+      topic: '',
+      tags: ['dashboard'],
+      related: [],
+      status: 'in-progress',
+      created: iso,
+      updated: iso,
+    });
+    const body = dashboardTemplate(data.projectName);
+    const fullPath = await join(dataDir, FOLDERS.research, `${noteId}.md`);
+    await invoke('ensure_dir', { path: await join(dataDir, FOLDERS.research) });
+    await invoke('write_note', { path: fullPath, content: fm + body });
+    reindexNote(fullPath, 'project-dashboard').catch(() => {});
+    window.dispatchEvent(new CustomEvent('notes-changed'));
+    openNote(fullPath);
+  }, [dataDir, data, openNote]);
 
   const handleToggleTodo = useCallback(async (id: string) => {
     if (!dataDir) return;
@@ -39,6 +133,8 @@ export function ProjectHubView() {
       </div>
     );
   }
+
+  const dashboard = data.dashboardNote;
 
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-y-auto">
@@ -65,11 +161,68 @@ export function ProjectHubView() {
         </div>
       </div>
 
+      {dashboard ? (
+        <div className="px-6 py-3 border-b border-border/50 bg-paper-soft/50">
+          <button
+            onClick={() => openNote(dashboard.path)}
+            className="flex items-center gap-2 group w-full text-left"
+          >
+            <span className="text-base">📋</span>
+            <div className="flex-1 min-w-0">
+              <span className="text-xs font-medium text-ink group-hover:text-chrome transition-colors">{dashboard.title}</span>
+              {dashboard.summary && (
+                <p className="text-[10px] text-ink-3 truncate mt-0.5">{dashboard.summary}</p>
+              )}
+            </div>
+            <span className="text-[10px] text-ink-3 group-hover:text-chrome transition-colors shrink-0">열기 →</span>
+          </button>
+        </div>
+      ) : (
+        <div className="px-6 py-2.5 border-b border-border/50">
+          <button
+            onClick={handleCreateDashboard}
+            className="flex items-center gap-1.5 text-[10px] text-ink-3 hover:text-chrome transition-colors"
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <path d="M8 3v10M3 8h10" />
+            </svg>
+            프로젝트 대시보드 만들기
+          </button>
+        </div>
+      )}
+
+      {allTags.length > 0 && (
+        <div className="px-6 py-2 border-b border-border/50 flex items-center gap-1.5 flex-wrap">
+          <span className="text-[10px] text-ink-3 uppercase tracking-wider mr-1">Tags</span>
+          {allTags.map(tag => (
+            <button
+              key={tag}
+              onClick={() => toggleFilterTag(tag)}
+              className={`px-2 py-0.5 text-[10px] rounded-full border transition-colors ${
+                filterTags.includes(tag)
+                  ? 'bg-chrome/30 border-chrome/50 text-ink font-medium'
+                  : 'border-border text-ink-3 hover:text-ink-2 hover:bg-paper-muted/50'
+              }`}
+            >
+              {tag}
+            </button>
+          ))}
+          {filterTags.length > 0 && (
+            <button
+              onClick={() => useHubStore.getState().setFilterTags([])}
+              className="px-1.5 py-0.5 text-[10px] text-ink-3 hover:text-ink transition-colors"
+            >
+              ✕ Clear
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="flex-1 py-4 space-y-6">
         <TopicMap topics={data.topics} topicLinks={data.topicLinks} onOpenTopic={openTopicHub} />
         <MilestoneBar milestones={data.milestones} />
-        <ProjectTimeline entries={data.timeline} onOpen={handleOpen} />
-        <DecisionList decisions={data.decisions} onOpen={handleOpen} />
+        <ProjectTimeline entries={filteredTimeline} onOpen={handleOpen} />
+        <DecisionList decisions={filteredDecisions} onOpen={handleOpen} />
         <ProjectTodoList todos={data.todos} onToggle={handleToggleTodo} />
       </div>
     </div>

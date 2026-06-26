@@ -21,11 +21,58 @@ import { ReactNodeViewRenderer } from '@tiptap/react';
 import { Markdown } from 'tiptap-markdown';
 import { SmartTransform } from './extensions/SmartTransform';
 import { SectionGuide, type SectionGuideMap } from './extensions/SectionGuide';
+import { DragHandle } from './extensions/DragHandle';
 import { common, createLowlight } from 'lowlight';
 import { CodeBlockView } from './CodeBlockView';
 import { ResizableImageView } from './ResizableImageView';
 import type { Node as PmNode } from '@tiptap/pm/model';
 import 'katex/dist/katex.min.css';
+
+const TaskListWithTight = TaskList.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      tight: {
+        default: true,
+        parseHTML: (element: HTMLElement) =>
+          element.getAttribute('data-tight') === 'true' || !element.querySelector('p'),
+        renderHTML: (attributes: Record<string, unknown>) => ({
+          class: attributes.tight ? 'tight' : null,
+          'data-tight': attributes.tight ? 'true' : null,
+        }),
+      },
+    };
+  },
+});
+
+function stripBlanksInLists(md: string): string {
+  const listRe = /^[ \t]*(?:[-*+]|\d+\.) /;
+  const lines = md.split('\n');
+  const result: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() !== '') { result.push(lines[i]); continue; }
+    let prev = result.length - 1;
+    while (prev >= 0 && result[prev].trim() === '') prev--;
+    let next = i + 1;
+    while (next < lines.length && lines[next].trim() === '') next++;
+    if (prev >= 0 && next < lines.length && listRe.test(result[prev]) && listRe.test(lines[next])) {
+      while (result.length > 0 && result[result.length - 1].trim() === '') result.pop();
+    } else {
+      result.push(lines[i]);
+    }
+  }
+  return result.join('\n');
+}
+
+const TightListSerializer = Extension.create({
+  name: 'tightListSerializer',
+  onCreate() {
+    const serializer = (this.editor.storage as Record<string, any>).markdown?.serializer;
+    if (!serializer) return;
+    const orig = serializer.serialize.bind(serializer);
+    serializer.serialize = (content: any) => stripBlanksInLists(orig(content));
+  },
+});
 
 const TASK_META_RE = /^(\\?\[[^\]\\]+\\?\]\s*)?(\\?\(이월\\?\)\s*)?/;
 
@@ -116,7 +163,7 @@ export function getExtensions(opts?: ExtensionOptions | string) {
     Highlight.configure({
       multicolor: true,
     }),
-    TaskList,
+    TaskListWithTight,
     TaskItem.configure({
       nested: true,
     }),
@@ -137,7 +184,13 @@ export function getExtensions(opts?: ExtensionOptions | string) {
           ...this.parent?.(),
           backgroundColor: {
             default: null,
-            parseHTML: (el) => el.getAttribute('data-bg-color') || el.style.backgroundColor || null,
+            parseHTML: (el) => {
+              const bg = el.getAttribute('data-bg-color') || el.style.backgroundColor || null;
+              if (!bg) return null;
+              const norm = bg.toLowerCase().replace(/\s/g, '');
+              if (['white', '#fff', '#ffffff', 'rgb(255,255,255)', 'transparent', 'initial'].includes(norm)) return null;
+              return bg;
+            },
             renderHTML: (attrs) => {
               if (!attrs.backgroundColor) return {};
               return { 'data-bg-color': attrs.backgroundColor, style: `background-color: ${attrs.backgroundColor}` };
@@ -152,7 +205,13 @@ export function getExtensions(opts?: ExtensionOptions | string) {
           ...this.parent?.(),
           backgroundColor: {
             default: null,
-            parseHTML: (el) => el.getAttribute('data-bg-color') || el.style.backgroundColor || null,
+            parseHTML: (el) => {
+              const bg = el.getAttribute('data-bg-color') || el.style.backgroundColor || null;
+              if (!bg) return null;
+              const norm = bg.toLowerCase().replace(/\s/g, '');
+              if (['white', '#fff', '#ffffff', 'rgb(255,255,255)', 'transparent', 'initial'].includes(norm)) return null;
+              return bg;
+            },
             renderHTML: (attrs) => {
               if (!attrs.backgroundColor) return {};
               return { 'data-bg-color': attrs.backgroundColor, style: `background-color: ${attrs.backgroundColor}` };
@@ -229,10 +288,12 @@ export function getExtensions(opts?: ExtensionOptions | string) {
       ? [SectionGuide.configure({ guideMap: sectionGuides })]
       : []),
     HideTaskMeta,
+    DragHandle,
     Markdown.configure({
       html: true,
       transformPastedText: true,
       transformCopiedText: true,
     }),
+    TightListSerializer,
   ];
 }

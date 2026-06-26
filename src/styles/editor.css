@@ -20,10 +20,11 @@
 .ProseMirror {
   outline: none;
   min-height: 100%;
-  padding: 1rem;
+  padding: 1rem 1rem 1rem 3rem;
   font-size: 0.9375rem;
   line-height: 1.65;
   color: var(--color-ink);
+  position: relative;
 }
 
 .ProseMirror p.is-editor-empty:first-child::before {
@@ -79,7 +80,7 @@
   border-radius: 0 !important;
   font-family: 'Consolas', var(--font-mono) !important;
   font-size: 0.85em !important;
-  line-height: 1.6 !important;
+  line-height: 1.65 !important;
   white-space: pre !important;
   display: block;
 }
@@ -311,7 +312,7 @@
 }
 
 .ProseMirror li {
-  margin: 0.15rem 0;
+  margin: 0.25rem 0;
 }
 
 .ProseMirror li p {
@@ -328,22 +329,80 @@
   background: var(--color-highlight);
 }
 
-.ProseMirror .ProseMirror-selectednode {
-  outline: none;
-}
-
-.ProseMirror [draggable="true"] {
-  outline: none !important;
-  border: none !important;
-}
-
 .ProseMirror li.ProseMirror-selectednode {
-  outline: none;
-  background: transparent;
+  outline: 2px solid var(--color-chrome, #6366f1) !important;
+  outline-offset: -1px;
+  border-radius: 3px;
+  background: rgba(99, 102, 241, 0.04);
 }
 
 .ProseMirror .ProseMirror-dropcursor {
   color: var(--color-chrome);
+  border-top: 2px solid var(--color-chrome);
+}
+
+/* Block hover indicator — left accent on hovered line only */
+.ProseMirror > *:hover:not(:has(:hover)):not(ul):not(ol):not(hr) {
+  box-shadow: -3px 0 0 0 rgba(99, 102, 241, 0.3);
+}
+/* Task items: shadow on label (one-line height, left edge) */
+.ProseMirror ul[data-type="taskList"] > li:hover:not(:has(li:hover)) > label {
+  box-shadow: -3px 0 0 0 rgba(99, 102, 241, 0.3);
+}
+/* Bullet/ordered items: shadow on first paragraph */
+.ProseMirror :is(ul:not([data-type]), ol) > li:hover:not(:has(li:hover)) > p:first-child {
+  box-shadow: -3px 0 0 0 rgba(99, 102, 241, 0.3);
+}
+.sidebar-memo-editor .ProseMirror * {
+  box-shadow: none !important;
+}
+
+/* Left padding area: grab cursor for block drag */
+.ProseMirror {
+  cursor: grab;
+}
+.ProseMirror > * {
+  cursor: text;
+}
+.ProseMirror.block-dragging,
+.ProseMirror.block-dragging > * {
+  cursor: grabbing !important;
+}
+
+/* Drop indicator line between blocks */
+.block-drop-indicator {
+  position: fixed;
+  z-index: 9999;
+  height: 2px;
+  background: var(--color-chrome, #6366f1);
+  border-radius: 1px;
+  opacity: 0;
+  transition: opacity 0.1s;
+  pointer-events: none;
+}
+.block-drop-indicator::before {
+  content: '';
+  position: absolute;
+  left: -3px;
+  top: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-chrome, #6366f1);
+}
+
+/* During block drag: fade source block and hide text dropcursor */
+.ProseMirror.block-dragging .ProseMirror-selectednode {
+  opacity: 0.4;
+}
+.ProseMirror.block-dragging .ProseMirror-dropcursor {
+  display: none !important;
+}
+
+.ProseMirror .ProseMirror-selectednode {
+  outline: 2px solid var(--color-chrome, #6366f1) !important;
+  outline-offset: 1px;
+  border-radius: 3px;
 }
 
 img.ProseMirror-separator {
@@ -383,6 +442,17 @@ img.ProseMirror-separator {
 .ProseMirror ul[data-type="taskList"] {
   list-style: none;
   padding-left: 0;
+  margin: 0.25rem 0;
+}
+
+/* Adjacent lists: collapse vertical gap between them */
+.ProseMirror :is(ul, ol) + :is(ul, ol) {
+  margin-top: 0;
+}
+
+.ProseMirror ul[data-type="taskList"] ul[data-type="taskList"] {
+  padding-left: 1.5rem;
+  margin: 0;
 }
 
 .ProseMirror ul[data-type="taskList"] li {
@@ -750,3 +820,25 @@ img.ProseMirror-separator {
 .sidebar-toolbar::-webkit-scrollbar {
   display: none;
 }
+
+/* ── Dashboard inline content ── */
+.dashboard-content {
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--color-ink);
+}
+.dashboard-content h3 { font-size: 0.9375rem; font-weight: 600; margin: 0.75rem 0 0.25rem; }
+.dashboard-content h4 { font-size: 0.875rem; font-weight: 600; margin: 0.5rem 0 0.25rem; color: var(--color-ink-2); }
+.dashboard-content h5 { font-size: 0.8125rem; font-weight: 600; margin: 0.5rem 0 0.25rem; color: var(--color-ink-2); }
+.dashboard-content p { margin: 0.2rem 0; }
+.dashboard-content ul { padding-left: 1.5rem; margin: 0.25rem 0; list-style-type: disc; }
+.dashboard-content li { margin: 0.15rem 0; }
+.dashboard-content table { border-collapse: collapse; width: 100%; margin: 0.5rem 0; }
+.dashboard-content th,
+.dashboard-content td { border: 1px solid var(--color-border); padding: 0.3rem 0.6rem; font-size: 0.8125rem; text-align: left; vertical-align: top; }
+.dashboard-content th { background: var(--color-paper-soft); font-weight: 600; }
+.dashboard-content pre { background: var(--color-paper-soft); border: 1px solid var(--color-border); border-radius: 4px; padding: 0.5rem 0.75rem; margin: 0.5rem 0; overflow-x: auto; font-size: 0.8125rem; }
+.dashboard-content code { font-family: 'Consolas', var(--font-mono); font-size: 0.85em; background: var(--color-paper-soft); padding: 0.1em 0.3em; border-radius: 3px; }
+.dashboard-content pre code { background: none; padding: 0; }
+.dashboard-content strong { font-weight: 600; }
+.dashboard-content em { font-style: italic; }

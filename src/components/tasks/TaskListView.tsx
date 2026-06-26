@@ -38,8 +38,9 @@ const statusLabels: Record<TaskStatus, string> = {
 
 const statusOrder: TaskStatus[] = ['todo', 'in-progress', 'done'];
 
-const statusFilters: { label: string; value: TaskStatus | null }[] = [
+const statusFilters: { label: string; value: TaskStatus | 'active' | null }[] = [
   { label: 'All', value: null },
+  { label: 'Active', value: 'active' },
   { label: 'Todo', value: 'todo' },
   { label: 'In Progress', value: 'in-progress' },
   { label: 'Done', value: 'done' },
@@ -221,7 +222,7 @@ export function TaskListView() {
   );
 
   const filtered = tasks
-    .filter((t) => !filterStatus || t.status === filterStatus)
+    .filter((t) => !filterStatus || (filterStatus === 'active' ? t.status !== 'done' : t.status === filterStatus))
     .filter((t) => !filterProject || t.projectId === filterProject)
     .filter((t) => !filterTag || t.tags?.includes(filterTag) || t.subtasks?.some(s => s.tags?.includes(filterTag)));
   const sorted = [...filtered].sort((a, b) => a.priority - b.priority || a.createdAt.localeCompare(b.createdAt));
@@ -363,6 +364,51 @@ export function TaskListView() {
   );
 }
 
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/\\([[\]()#*_~`>+\-!.|])/g, '$1')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/(\*\*|__)(.*?)\1/g, '$2')
+    .replace(/(\*|_)(.*?)\1/g, '$2')
+    .replace(/~~(.*?)~~/g, '$1')
+    .replace(/`([^`]*)`/g, '$1');
+}
+
+function renderTitle(text: string): (string | JSX.Element)[] {
+  const parts: (string | JSX.Element)[] = [];
+  const linkRe = /\[([^\]]*)\]\(([^)]*)\)/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  let clean = text.replace(/\\([[\]()#*_~`>+\-!.|])/g, '$1');
+  clean = clean.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1');
+  clean = clean.replace(/(\*\*|__)(.*?)\1/g, '$2');
+  clean = clean.replace(/(\*|_)(.*?)\1/g, '$2');
+  clean = clean.replace(/~~(.*?)~~/g, '$1');
+  clean = clean.replace(/`([^`]*)`/g, '$1');
+
+  while ((m = linkRe.exec(clean)) !== null) {
+    if (m.index > last) parts.push(clean.slice(last, m.index));
+    const label = m[1];
+    const url = m[2];
+    parts.push(
+      <a
+        key={m.index}
+        href={url}
+        onClick={(e) => { e.stopPropagation(); invoke('open_path', { path: url }).catch(() => window.open(url, '_blank')); e.preventDefault(); }}
+        className="text-chrome hover:underline cursor-pointer"
+        title={url}
+      >
+        {label}
+      </a>
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < clean.length) parts.push(clean.slice(last));
+  if (parts.length === 0) return [clean];
+  return parts;
+}
+
 const statusColors: Record<TaskStatus, string> = {
   'todo': 'bg-paper-muted text-ink-3',
   'in-progress': 'bg-chrome/20 text-chrome',
@@ -462,7 +508,7 @@ function TaskRow({ task, projects, isEditing, onToggleEdit, onCycleStatus, onUpd
           onClick={onToggleEdit}
           className={`flex-1 text-sm cursor-pointer min-w-0 truncate ${task.status === 'done' ? 'text-ink-3 line-through' : 'text-ink'}`}
         >
-          {task.title}
+          {renderTitle(task.title)}
         </span>
 
         {/* Project badge */}
@@ -551,7 +597,7 @@ function TaskRow({ task, projects, isEditing, onToggleEdit, onCycleStatus, onUpd
               <div key={st.id}>
                 <div className="flex items-center gap-1.5 py-0.5 group/st">
                   <button onClick={() => handleCycleSubStatus(st.id)} className={`px-1 py-0 text-[9px] rounded font-medium shrink-0 transition-colors ${statusColors[stStatus]}`}>{statusLabels[stStatus]}</button>
-                  <span onClick={() => setEditingSubId(isEditingSub ? null : st.id)} className={`flex-1 text-[11px] min-w-0 truncate cursor-pointer ${st.done ? 'text-ink-3 line-through' : 'text-ink'}`}>{st.title}</span>
+                  <span onClick={() => setEditingSubId(isEditingSub ? null : st.id)} className={`flex-1 text-[11px] min-w-0 truncate cursor-pointer ${st.done ? 'text-ink-3 line-through' : 'text-ink'}`}>{renderTitle(st.title)}</span>
                   {(() => { const sp = st.projectId ? projects.find(p => p.id === st.projectId) : null; return sp ? (
                     <span className="inline-flex items-center gap-0.5 px-1 py-0 text-[8px] rounded-full text-tag-text shrink-0" style={{ backgroundColor: sp.color + '30' }}>
                       <span className="w-1 h-1 rounded-full" style={{ backgroundColor: sp.color }} />{sp.name}

@@ -31,6 +31,8 @@ export function ResizableImageView({ node, updateAttributes, selected }: NodeVie
   const imgRef = useRef<HTMLImageElement>(null);
   const [resizing, setResizing] = useState(false);
   const [hovered, setHovered] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
 
   const align: TextAlign = node.attrs.textAlign ?? 'center';
   const caption: string = node.attrs.caption ?? '';
@@ -111,15 +113,38 @@ export function ResizableImageView({ node, updateAttributes, selected }: NodeVie
         </div>
 
         {/* ── Image ── */}
-        <img
-          ref={imgRef}
-          src={node.attrs.src}
-          alt={node.attrs.alt ?? ''}
-          title={node.attrs.title ?? undefined}
-          className={`resizable-image-img ${selected ? 'selected' : ''} ${resizing ? 'resizing' : ''}`}
-          style={{ width: node.attrs.width ? `${node.attrs.width}px` : undefined }}
-          draggable={false}
-        />
+        {loadError ? (
+          <div
+            className="flex flex-col items-center justify-center gap-1.5 py-4 px-3 rounded bg-paper-muted/50 border border-border/50 text-ink-3"
+            style={{ width: node.attrs.width ? `${node.attrs.width}px` : undefined }}
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <path d="M21 15l-5-5L5 21" />
+              <line x1="2" y1="2" x2="22" y2="22" stroke="currentColor" strokeWidth="1.5" />
+            </svg>
+            <span className="text-[11px]">이미지를 불러올 수 없습니다</span>
+            <button
+              className="px-2 py-0.5 text-[10px] rounded border border-border text-ink-3 hover:text-ink-2 hover:bg-paper-muted transition-colors"
+              onClick={(e) => { e.preventDefault(); setLoadError(false); setRetryKey(k => k + 1); }}
+            >
+              다시 시도
+            </button>
+          </div>
+        ) : (
+          <img
+            key={retryKey}
+            ref={imgRef}
+            src={node.attrs.src}
+            alt={node.attrs.alt ?? ''}
+            title={node.attrs.title ?? undefined}
+            className={`resizable-image-img ${selected ? 'selected' : ''} ${resizing ? 'resizing' : ''}`}
+            style={{ width: node.attrs.width ? `${node.attrs.width}px` : undefined }}
+            draggable={false}
+            onError={() => setLoadError(true)}
+          />
+        )}
 
         {/* ── Resize handles ── */}
         <div

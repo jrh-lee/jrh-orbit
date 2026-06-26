@@ -50,7 +50,7 @@ function classifyPath(dataDir: string, fullPath: string): { event: SyncEvent; no
     if (rel.startsWith(FOLDERS.workhours + '/') && rel.endsWith('.json')) {
       return { event: 'workhours-changed' };
     }
-    const filename = rel.split('/').pop() ?? '';
+    const filename = rel.split(/[/\\]/).pop() ?? '';
     const ev = JSON_FILE_EVENTS[filename];
     if (ev) return { event: ev };
   }

@@ -48,7 +48,7 @@ export async function buildIndex(dataDir: string): Promise<void> {
         const fields = parseFrontmatterFields(frontmatter);
 
         const id = fields.id ?? '';
-        const title = fields.title ?? filePath.split('/').pop()?.replace('.md', '') ?? '';
+        const title = fields.title ?? filePath.split(/[/\\]/).pop()?.replace('.md', '') ?? '';
         const noteType = fields.type ? String(normalizeLegacyType(fields.type)) : fallbackType;
         const project = normalizeProject(fields.project);
         const subsystem = Array.isArray(fields.subsystem) ? fields.subsystem : [];

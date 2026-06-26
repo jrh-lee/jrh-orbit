@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 export type WindowMode = 'dock' | 'sidebar' | 'expanded';
-export type AppView = 'daily' | 'notes' | 'tasks' | 'search' | 'statistics' | 'graph' | 'settings' | 'hub';
+export type AppView = 'daily' | 'notes' | 'tasks' | 'search' | 'statistics' | 'graph' | 'settings' | 'hub' | 'dashboard';
 export type Theme = 'light' | 'dark' | 'spreadsheet' | 'cyberpunk' | 'forest' | 'ocean' | 'paper' | 'terminal' | 'solarized' | 'buddybuddy';
 
 const STORAGE_KEY = 'jrh-orbit-data-dir';

@@ -98,6 +98,33 @@ function applyAutoFitCol(view: EditorView, tableEl: HTMLTableElement, colIndex: 
   view.dispatch(tr);
 }
 
+function stripLooseListItems(md: string): string {
+  const listRe = /^[ \t]*(?:[-*+]|\d+\.) /;
+  const lines = md.split('\n');
+  const result: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() !== '') {
+      result.push(lines[i]);
+      continue;
+    }
+
+    let prev = result.length - 1;
+    while (prev >= 0 && result[prev].trim() === '') prev--;
+
+    let next = i + 1;
+    while (next < lines.length && lines[next].trim() === '') next++;
+
+    if (prev >= 0 && next < lines.length && listRe.test(result[prev]) && listRe.test(lines[next])) {
+      while (result.length > 0 && result[result.length - 1].trim() === '') result.pop();
+    } else {
+      result.push(lines[i]);
+    }
+  }
+
+  return result.join('\n');
+}
+
 function ensureMarkdownSpacing(md: string): string {
   const lines = md.split('\n');
   const out: string[] = [];
@@ -229,6 +256,8 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
   const [wikiResults, setWikiResults] = useState<SearchResult[]>([]);
   const [wikiIndex, setWikiIndex] = useState(0);
   const wikiSearchRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const onMathClick = useCallback((info: MathClickInfo) => {
     setMathEdit(info);
@@ -263,7 +292,69 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
     content: preprocessEmptyCheckboxes(content),
     shouldRerenderOnTransaction: true,
     editorProps: {
+      transformPastedHTML(html) {
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        doc.querySelectorAll('table').forEach(table => {
+          const firstRow = table.querySelector('tr');
+          if (!firstRow) return;
+          const hasHeader = table.querySelector('th');
+          if (hasHeader) return;
+          firstRow.querySelectorAll('td').forEach(td => {
+            const th = doc.createElement('th');
+            th.innerHTML = td.innerHTML;
+            for (const attr of td.attributes) th.setAttribute(attr.name, attr.value);
+            td.replaceWith(th);
+          });
+        });
+        return doc.body.innerHTML;
+      },
+      handleDrop: (view, event) => {
+        const dt = event.dataTransfer;
+        if (!dt?.files?.length) return false;
+        const imageFiles = Array.from(dt.files).filter(f => f.type.startsWith('image/'));
+        if (imageFiles.length === 0) return false;
+        event.preventDefault();
+        const coords = { left: event.clientX, top: event.clientY };
+        const dropPos = view.posAtCoords(coords);
+        (async () => {
+          for (const file of imageFiles) {
+            const src = await handleImageDrop(file);
+            if (src && view.state) {
+              const pos = dropPos?.pos ?? view.state.doc.content.size;
+              const node = view.state.schema.nodes.image.create({ src });
+              const tr = view.state.tr.insert(pos, node);
+              view.dispatch(tr);
+            }
+          }
+        })();
+        return true;
+      },
+      handlePaste: (view, event) => {
+        const items = event.clipboardData?.items;
+        if (!items) return false;
+        const imageItems = Array.from(items).filter(i => i.type.startsWith('image/'));
+        if (imageItems.length === 0) return false;
+        event.preventDefault();
+        (async () => {
+          for (const item of imageItems) {
+            const file = item.getAsFile();
+            if (!file) continue;
+            const src = await handleImageDrop(file);
+            if (src && view.state) {
+              const node = view.state.schema.nodes.image.create({ src });
+              const tr = view.state.tr.replaceSelectionWith(node);
+              view.dispatch(tr);
+            }
+          }
+        })();
+        return true;
+      },
       handleDOMEvents: {
+        contextmenu(_view, event) {
+          event.preventDefault();
+          setCtxMenu({ x: event.clientX, y: event.clientY });
+          return true;
+        },
         click(view, event) {
           const link = (event.target as HTMLElement).closest('a');
           if (link) {
@@ -329,7 +420,8 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
       debounceRef.current = setTimeout(() => {
         const storage = e.storage as Record<string, any>;
         const md: string = storage.markdown?.getMarkdown?.() ?? '';
-        const spaced = ensureMarkdownSpacing(md);
+        const tight = stripLooseListItems(md);
+        const spaced = ensureMarkdownSpacing(tight);
         lastEmittedContent.current = spaced;
         onChange(spaced);
       }, 300);
@@ -379,7 +471,7 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
 
   const insertWikiLink = useCallback((result: SearchResult) => {
     if (!editor || !wikiLink) return;
-    const titleOrId = result.title || result.path.split('/').pop()?.replace('.md', '') || '';
+    const titleOrId = result.title || result.path.split(/[/\\]/).pop()?.replace('.md', '') || '';
     const text = `[[${titleOrId}]]`;
     const { from } = wikiLink;
     const to = editor.state.selection.$from.pos;
@@ -504,12 +596,50 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
         </div>
       )}
       <div
-        className="flex-1 overflow-y-auto"
+        ref={scrollContainerRef}
+        className="flex-1 overflow-y-auto relative"
         onDrop={handleDrop}
         onDragOver={(e) => e.preventDefault()}
+        onClick={() => ctxMenu && setCtxMenu(null)}
       >
         <EditorContent editor={editor} className="h-full" />
       </div>
+
+      {ctxMenu && editor && (
+        <div
+          className="fixed z-50 bg-paper border border-border rounded-lg shadow-lg py-1 min-w-[160px]"
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          onMouseLeave={() => setCtxMenu(null)}
+        >
+          {[
+            { label: '잘라내기', action: () => { document.execCommand('cut'); }, key: 'Ctrl+X' },
+            { label: '복사', action: () => { document.execCommand('copy'); }, key: 'Ctrl+C' },
+            { label: '붙여넣기', action: () => { navigator.clipboard.readText().then(t => editor.commands.insertContent(t)); }, key: 'Ctrl+V' },
+            null,
+            { label: '전체 선택', action: () => editor.commands.selectAll(), key: 'Ctrl+A' },
+            null,
+            { label: '실행 취소', action: () => editor.commands.undo(), key: 'Ctrl+Z' },
+            { label: '다시 실행', action: () => editor.commands.redo(), key: 'Ctrl+Y' },
+            null,
+            { label: '블록 삭제', action: () => editor.commands.deleteNode(editor.state.selection.$from.parent.type.name), key: '' },
+            { label: '위에 줄 삽입', action: () => { const pos = editor.state.selection.$from.before(1); editor.chain().focus().insertContentAt(pos, { type: 'paragraph' }).run(); }, key: '' },
+            { label: '아래에 줄 삽입', action: () => { const $from = editor.state.selection.$from; const pos = $from.after(1); editor.chain().focus().insertContentAt(pos, { type: 'paragraph' }).run(); }, key: '' },
+          ].map((item, i) =>
+            item === null ? (
+              <div key={i} className="h-px bg-border my-1" />
+            ) : (
+              <button
+                key={i}
+                onClick={() => { item.action(); setCtxMenu(null); }}
+                className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-ink-2 hover:bg-paper-soft hover:text-ink transition-colors"
+              >
+                <span>{item.label}</span>
+                {item.key && <span className="text-[10px] text-ink-3 ml-4">{item.key}</span>}
+              </button>
+            )
+          )}
+        </div>
+      )}
     </div>
   );
 }

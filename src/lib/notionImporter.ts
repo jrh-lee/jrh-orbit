@@ -144,7 +144,7 @@ export async function importNotionExport(
 
   for (let i = 0; i < files.length; i++) {
     const filePath = files[i];
-    const filename = filePath.split('/').pop() ?? filePath;
+    const filename = filePath.split(/[/\\]/).pop() ?? filePath;
 
     if (!filename.endsWith('.md')) continue;
 

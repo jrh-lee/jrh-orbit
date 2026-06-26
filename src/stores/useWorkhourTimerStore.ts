@@ -145,6 +145,13 @@ export const useWorkhourTimerStore = create<WorkhourTimerState>((set, get) => {
   };
 });
 
+export function ensureWorkhourInterval() {
+  const { running } = useWorkhourTimerStore.getState();
+  if (running && intervalId === undefined) {
+    startInterval();
+  }
+}
+
 if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
     const { running, startedAt, baseElapsed } = useWorkhourTimerStore.getState();
@@ -153,6 +160,7 @@ if (typeof document !== 'undefined') {
     if (document.visibilityState === 'visible') {
       const sessionSeconds = Math.floor((Date.now() - startedAt) / 1000);
       useWorkhourTimerStore.setState({ elapsed: baseElapsed + sessionSeconds });
+      ensureWorkhourInterval();
     }
     save({ baseElapsed, running: true, startedAt, date: today() });
   });

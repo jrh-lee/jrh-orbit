@@ -128,6 +128,7 @@ export interface HubNoteRow {
   note_type: string;
   project: string;
   topic: string;
+  tags: string;
   content: string;
   created: string;
   updated: string;
@@ -137,7 +138,7 @@ export async function findNotesForProject(projectName: string): Promise<HubNoteR
   const database = await getDb();
   try {
     const all = await database.select<HubNoteRow[]>(
-      `SELECT path, id, title, note_type, project, topic, content, created, updated FROM notes_fts`,
+      `SELECT path, id, title, note_type, project, topic, tags, content, created, updated FROM notes_fts`,
     );
     const rows = all.filter(r => r.project && r.project.includes(projectName));
     console.log(`[findNotesForProject] "${projectName}": ${all.length} total, ${rows.length} matched`);
@@ -152,7 +153,7 @@ export async function findNotesForTopic(topicName: string): Promise<HubNoteRow[]
   const database = await getDb();
   try {
     const all = await database.select<HubNoteRow[]>(
-      `SELECT path, id, title, note_type, project, topic, content, created, updated FROM notes_fts`,
+      `SELECT path, id, title, note_type, project, topic, tags, content, created, updated FROM notes_fts`,
     );
     const rows = all.filter(r => r.topic === topicName);
     console.log(`[findNotesForTopic] "${topicName}": ${all.length} total, ${rows.length} matched`);

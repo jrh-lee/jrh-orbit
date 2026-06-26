@@ -11,6 +11,7 @@ import { StatisticsView } from '../statistics/StatisticsView';
 import { GraphView } from '../graph/GraphView';
 import { SettingsView } from '../settings/SettingsView';
 import { HubView } from '../hub/HubView';
+import { DashboardView } from '../dashboard/DashboardView';
 
 const views = {
   daily: DailyLog,
@@ -21,6 +22,7 @@ const views = {
   graph: GraphView,
   settings: SettingsView,
   hub: HubView,
+  dashboard: DashboardView,
 } as const;
 
 const SIDEBAR_MIN = 140;

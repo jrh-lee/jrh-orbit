@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTimerStore } from '../../stores/useTimerStore';
 import { useAppStore } from '../../stores/useAppStore';
+import { useProjectStore } from '../../stores/useProjectStore';
 import { useConfigStore } from '../../stores/useConfigStore';
 import { MusicPlayer } from '../productivity/MusicPlayer';
 import { ManualWorkhour } from '../productivity/ManualWorkhour';
@@ -32,6 +33,10 @@ function ZoomBadge() {
 export function StatusBar() {
   const { phase, status, remaining, completedPomodoros } = useTimerStore();
   const { dataDir, activeProject } = useAppStore();
+  const { projects } = useProjectStore();
+  const activeProjectName = activeProject
+    ? projects.find(p => p.id === activeProject)?.name ?? activeProject
+    : null;
   const [todayMinutes, setTodayMinutes] = useState(0);
   const [projectMinutes, setProjectMinutes] = useState<{ project: string; mins: number }[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -95,8 +100,8 @@ export function StatusBar() {
             <span className="text-ink-3">x {completedPomodoros}</span>
           </span>
         )}
-        {activeProject && (
-          <span className="text-ink-3 truncate max-w-[100px]">{activeProject}</span>
+        {activeProjectName && (
+          <span className="text-ink-3 truncate max-w-[100px]">{activeProjectName}</span>
         )}
         {todayMinutes > 0 && (
           <span className="text-ink-3 flex items-center gap-1.5">

@@ -71,6 +71,98 @@ const headingButtons: ToolbarButton[] = [
   },
 ];
 
+function toggleTaskInPlace(editor: Editor) {
+  const { state, view } = editor;
+  const { $from } = state.selection;
+  const { schema } = state;
+
+  let itemDepth = -1;
+  for (let d = $from.depth; d >= 0; d--) {
+    const name = $from.node(d).type.name;
+    if (name === 'listItem' || name === 'taskItem') {
+      itemDepth = d;
+      break;
+    }
+  }
+
+  if (itemDepth < 1) {
+    editor.chain().focus().toggleTaskList().run();
+    return;
+  }
+
+  const listDepth = itemDepth - 1;
+  const parentList = $from.node(listDepth);
+  const isTask = parentList.type.name === 'taskList';
+
+  const targetListType = isTask ? schema.nodes.bulletList : schema.nodes.taskList;
+  const targetItemType = isTask ? schema.nodes.listItem : schema.nodes.taskItem;
+
+  if (!targetListType || !targetItemType) {
+    editor.chain().focus().toggleTaskList().run();
+    return;
+  }
+
+  const listPos = $from.before(listDepth + 1);
+
+  if (parentList.childCount === 1) {
+    const tr = state.tr;
+    const itemPos = listPos + 1;
+    tr.setNodeMarkup(listPos, targetListType);
+    tr.setNodeMarkup(tr.mapping.map(itemPos), targetItemType, isTask ? {} : { checked: false });
+    view.dispatch(tr.scrollIntoView());
+    return;
+  }
+
+  const itemStart = $from.before(itemDepth + 1);
+
+  let itemIndex = -1;
+  let offset = 0;
+  for (let i = 0; i < parentList.childCount; i++) {
+    if (listPos + 1 + offset === itemStart) {
+      itemIndex = i;
+      break;
+    }
+    offset += parentList.child(i).nodeSize;
+  }
+
+  if (itemIndex < 0) {
+    editor.chain().focus().toggleTaskList().run();
+    return;
+  }
+
+  const before: ReturnType<typeof parentList.child>[] = [];
+  const after: ReturnType<typeof parentList.child>[] = [];
+  let target: ReturnType<typeof parentList.child> | null = null;
+
+  parentList.forEach((child, _offset, i) => {
+    if (i < itemIndex) before.push(child);
+    else if (i === itemIndex) target = child;
+    else after.push(child);
+  });
+
+  if (!target) return;
+
+  const nodes: ReturnType<typeof parentList.type.create>[] = [];
+  if (before.length > 0) {
+    nodes.push(parentList.type.create(parentList.attrs, before));
+  }
+
+  const newItem = targetItemType.create(
+    isTask ? {} : { checked: false },
+    (target as typeof before[0]).content,
+    (target as typeof before[0]).marks,
+  );
+  nodes.push(targetListType.create(null, [newItem]));
+
+  if (after.length > 0) {
+    nodes.push(parentList.type.create(parentList.attrs, after));
+  }
+
+  const tr = state.tr;
+  tr.replaceWith(listPos, listPos + parentList.nodeSize, nodes);
+  view.dispatch(tr.scrollIntoView());
+}
+
 const blockButtons: ToolbarButton[] = [
   {
     label: 'Bullet list',
@@ -87,7 +179,7 @@ const blockButtons: ToolbarButton[] = [
   {
     label: 'Task list',
     icon: '☐',
-    action: (e) => e.chain().focus().toggleTaskList().run(),
+    action: (e) => toggleTaskInPlace(e),
     isActive: (e) => e.isActive('taskList'),
   },
   {
@@ -480,7 +572,7 @@ async function pickAttachFile(dataDir: string): Promise<{ path: string; filename
     });
     if (!result) return null;
     const filePath = result;
-    const originalName = filePath.split('/').pop() ?? 'file';
+    const originalName = filePath.split(/[/\\]/).pop() ?? 'file';
     const ext = originalName.split('.').pop() ?? '';
     const filename = `att-${Date.now().toString(36)}.${ext}`;
     const attachDir = await join(dataDir, 'attachments');

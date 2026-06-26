@@ -12,6 +12,7 @@ export interface TimelineEntry {
   notePath: string;
   topicName?: string;
   topicColor?: string;
+  tags?: string[];
 }
 
 export interface ConclusionEntry {
@@ -33,6 +34,13 @@ export interface DDayItem {
   targetDate: string;
 }
 
+export interface DashboardNote {
+  path: string;
+  id: string;
+  title: string;
+  summary: string;
+}
+
 interface ProjectHubData {
   projectName: string;
   topics: TopicEntry[];
@@ -41,6 +49,7 @@ interface ProjectHubData {
   todos: Task[];
   milestones: DDayItem[];
   topicLinks: TopicLink[];
+  dashboardNote: DashboardNote | null;
 }
 
 interface TopicHubData {
@@ -55,10 +64,13 @@ interface HubState {
   projectHubData: ProjectHubData | null;
   topicHubData: TopicHubData | null;
   loading: boolean;
+  filterTags: string[];
 
   setProjectHubData: (data: ProjectHubData | null) => void;
   setTopicHubData: (data: TopicHubData | null) => void;
   setLoading: (loading: boolean) => void;
+  setFilterTags: (tags: string[]) => void;
+  toggleFilterTag: (tag: string) => void;
   clear: () => void;
 }
 
@@ -66,9 +78,16 @@ export const useHubStore = create<HubState>((set) => ({
   projectHubData: null,
   topicHubData: null,
   loading: false,
+  filterTags: [],
 
-  setProjectHubData: (data) => set({ projectHubData: data, topicHubData: null }),
-  setTopicHubData: (data) => set({ topicHubData: data, projectHubData: null }),
+  setProjectHubData: (data) => set({ projectHubData: data, topicHubData: null, filterTags: [] }),
+  setTopicHubData: (data) => set({ topicHubData: data, projectHubData: null, filterTags: [] }),
   setLoading: (loading) => set({ loading }),
-  clear: () => set({ projectHubData: null, topicHubData: null, loading: false }),
+  setFilterTags: (tags) => set({ filterTags: tags }),
+  toggleFilterTag: (tag) => set((s) => ({
+    filterTags: s.filterTags.includes(tag)
+      ? s.filterTags.filter(t => t !== tag)
+      : [...s.filterTags, tag],
+  })),
+  clear: () => set({ projectHubData: null, topicHubData: null, loading: false, filterTags: [] }),
 }));

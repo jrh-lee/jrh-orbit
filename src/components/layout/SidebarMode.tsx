@@ -8,9 +8,9 @@ import { useConfigStore } from '../../stores/useConfigStore';
 import { useMusicStore, type PlaylistItem } from '../../stores/useMusicStore';
 import { readJsonFile, writeJsonFile } from '../../lib/fileSystem';
 import { FILES, FOLDERS } from '../../lib/constants';
-import { buildFrontmatter, updateFrontmatterField } from '../../lib/frontmatter';
+import { buildFrontmatter, updateFrontmatterField, parseFrontmatterFields } from '../../lib/frontmatter';
 import { todayKey } from '../../lib/dateUtils';
-import { insertNoteToDailyLog, insertTodoToDailyLog } from '../../lib/dailyLogHelper';
+import { insertNoteToDailyLog, insertTodoToDailyLog, updateDailyLogNoteRow } from '../../lib/dailyLogHelper';
 import { updateNoteLinks } from '../../lib/linkGraph';
 import { getExtensions } from '../editor/extensions';
 import { ColorPicker } from '../editor/EditorToolbar';
@@ -69,6 +69,9 @@ export function SidebarMode() {
   const [addingTrack, setAddingTrack] = useState(false);
   const [memoOpen, setMemoOpen] = useState(true);
   const [tasksOpen, setTasksOpen] = useState(true);
+  const [memoHeight, setMemoHeight] = useState(200);
+  const resizingRef = useRef(false);
+  const resizeStartRef = useRef({ y: 0, h: 0 });
   const [calMonth, setCalMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
   const [selectedDate, setSelectedDate] = useState<string | null>(todayKey());
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -88,24 +91,19 @@ export function SidebarMode() {
     try {
       const dir = await join(dataDir, FOLDERS.research);
       const files = await invoke<string[]>('list_notes', { dir });
-      const today = todayKey();
-      const memoFiles = files
-        .filter(f => {
-          const name = f.split('/').pop()?.replace('.md', '') ?? '';
-          return name.startsWith(`${today}-memo-`);
-        })
+      const allFiles = files
         .sort()
         .reverse()
-        .slice(0, 5);
+        .slice(0, 30);
 
       const memos: RecentMemo[] = [];
-      for (const f of memoFiles) {
+      for (const f of allFiles) {
         try {
           const raw = await invoke<string>('read_note', { path: f });
           const titleMatch = raw.match(/^title:\s*["']?(.+?)["']?\s*$/m);
           const createdMatch = raw.match(/^created:\s*["']?(.+?)["']?\s*$/m);
           memos.push({
-            id: f.split('/').pop()?.replace('.md', '') ?? '',
+            id: f.split(/[/\\]/).pop()?.replace('.md', '') ?? '',
             title: titleMatch?.[1] || 'Untitled',
             path: f,
             createdAt: createdMatch?.[1] || '',
@@ -185,7 +183,7 @@ export function SidebarMode() {
     const prefix = `${today}-memo-`;
     let seq = 1;
     for (const f of files) {
-      const name = f.split('/').pop()?.replace('.md', '') ?? '';
+      const name = f.split(/[/\\]/).pop()?.replace('.md', '') ?? '';
       if (name.startsWith(prefix)) {
         const num = parseInt(name.slice(prefix.length), 10);
         if (!isNaN(num) && num >= seq) seq = num + 1;
@@ -238,7 +236,7 @@ export function SidebarMode() {
   }, [editingMemo]);
 
   const saveMemoTitle = useCallback(async (newTitle: string) => {
-    if (!editingMemo) return;
+    if (!editingMemo || !dataDir) return;
     try {
       const raw = await invoke<string>('read_note', { path: editingMemo });
       const fmEnd = raw.indexOf('\n---\n');
@@ -248,9 +246,19 @@ export function SidebarMode() {
       const updatedFm = updateFrontmatterField(fm, 'title', `"${newTitle.replace(/"/g, '\\"')}"`);
       await invoke('write_note', { path: editingMemo, content: updatedFm + body });
       setEditingTitle(newTitle);
+
+      const fields = parseFrontmatterFields(fm);
+      const noteId = fields.id || '';
+      const noteType = fields.type || 'quick-memo';
+      const project = Array.isArray(fields.project) ? fields.project.join(', ') : (fields.project || '');
+      const topic = fields.topic || '';
+      if (noteId) {
+        updateDailyLogNoteRow(dataDir, noteId, newTitle, noteType, project, topic).catch(() => {});
+      }
+
       window.dispatchEvent(new CustomEvent('notes-changed'));
     } catch {}
-  }, [editingMemo]);
+  }, [editingMemo, dataDir]);
 
   const closeEditor = useCallback(() => {
     setEditingMemo(null);
@@ -442,19 +450,20 @@ export function SidebarMode() {
 
       <div className="w-full h-px bg-border shrink-0" />
 
-      {/* Quick memo — collapsible */}
-      <div className="shrink-0">
+      {/* Quick memo — collapsible, resizable */}
+      <div className="shrink-0 flex flex-col" style={memoOpen ? { height: memoHeight, minHeight: 80 } : undefined}>
         <button onClick={() => setMemoOpen(!memoOpen)}
-          className="flex items-center gap-1 w-full mb-1">
+          className="flex items-center gap-1 w-full mb-1 shrink-0">
           <svg width="10" height="10" viewBox="0 0 16 16" fill="none"
             className={`text-ink-3 transition-transform ${memoOpen ? '' : '-rotate-90'}`}>
             <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
-          <span className="text-[10px] text-ink-3 uppercase tracking-wider">Quick Memo</span>
+          <span className="text-[10px] text-ink-3 uppercase tracking-wider">Quick Memo &amp; Notes</span>
+          <span className="text-[10px] text-ink-3 ml-auto">{recentMemos.length}</span>
         </button>
         {memoOpen && (
           <>
-            <form onSubmit={(e) => { e.preventDefault(); handleQuickMemo(); }} className="flex gap-1.5">
+            <form onSubmit={(e) => { e.preventDefault(); handleQuickMemo(); }} className="flex gap-1.5 shrink-0">
               <input value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="Capture a thought..."
                 className="flex-1 px-2.5 py-1.5 text-xs rounded-[var(--radius-sm)] border border-border bg-paper-soft text-ink placeholder:text-ink-3 focus:outline-none focus:border-chrome" />
               <button type="submit" disabled={!memo.trim()}
@@ -463,26 +472,56 @@ export function SidebarMode() {
               </button>
             </form>
             {recentMemos.length > 0 && (
-              <div className="mt-1 space-y-0.5">
-                {recentMemos.map(m => (
-                  <button key={m.id} onClick={() => openMemoForEdit(m.path)}
-                    className="w-full flex items-center gap-1.5 px-1 py-0.5 rounded hover:bg-paper-muted/50 transition-colors text-left">
-                    <span className="text-[9px]">💬</span>
-                    <span className="text-[10px] text-ink-2 truncate flex-1">{m.title}</span>
-                    {m.createdAt && (
+              <div className="mt-1 flex-1 overflow-y-auto space-y-0.5">
+                {recentMemos.map(m => {
+                  const isMemo = m.id.includes('-memo-') || m.id.includes('-qm-');
+                  const icon = isMemo ? '💬' : m.id.includes('-ana-') || m.id.includes('-analysis-') ? '📊' : m.id.includes('-test-') ? '🧪' : m.id.includes('-study-') ? '📖' : m.id.includes('-design-') ? '📐' : m.id.includes('-dashboard-') ? '🛰️' : '📝';
+                  const dateStr = m.createdAt ? new Date(m.createdAt).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' }) : '';
+                  const timeStr = m.createdAt ? new Date(m.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '';
+                  return (
+                    <button key={m.id}
+                      onClick={() => openMemoForEdit(m.path)}
+                      onDoubleClick={() => { openExpanded('notes'); }}
+                      className="w-full flex items-center gap-1.5 px-1 py-0.5 rounded hover:bg-paper-muted/50 transition-colors text-left"
+                      title="Click to edit, double-click to open in expanded mode"
+                    >
+                      <span className="text-[9px]">{icon}</span>
+                      <span className="text-[10px] text-ink-2 truncate flex-1">{m.title}</span>
                       <span className="text-[8px] text-ink-3 tabular-nums shrink-0">
-                        {new Date(m.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+                        {dateStr} {timeStr}
                       </span>
-                    )}
-                  </button>
-                ))}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </>
         )}
       </div>
 
-      <div className="w-full h-px bg-border shrink-0" />
+      {/* Resizable divider */}
+      <div
+        className="w-full h-1.5 shrink-0 cursor-row-resize group flex items-center justify-center hover:bg-chrome/10 transition-colors"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          resizingRef.current = true;
+          resizeStartRef.current = { y: e.clientY, h: memoHeight };
+          const onMove = (ev: MouseEvent) => {
+            if (!resizingRef.current) return;
+            const delta = ev.clientY - resizeStartRef.current.y;
+            setMemoHeight(Math.max(80, Math.min(500, resizeStartRef.current.h + delta)));
+          };
+          const onUp = () => {
+            resizingRef.current = false;
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+          };
+          document.addEventListener('mousemove', onMove);
+          document.addEventListener('mouseup', onUp);
+        }}
+      >
+        <div className="w-8 h-0.5 rounded bg-border group-hover:bg-chrome/40 transition-colors" />
+      </div>
 
       {/* Tasks — collapsible with add */}
       <div className="flex-1 min-h-0 flex flex-col">
@@ -662,6 +701,7 @@ function MemoEditor({ title, initialBody, onSave, onTitleChange, onClose }: {
   const [localTitle, setLocalTitle] = useState(title);
   const titleDebounce = useRef<ReturnType<typeof setTimeout>>(undefined);
   const isLoadingContent = useRef(true);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
 
   const handleTitleChange = useCallback((val: string) => {
     setLocalTitle(val);
@@ -669,11 +709,25 @@ function MemoEditor({ title, initialBody, onSave, onTitleChange, onClose }: {
     titleDebounce.current = setTimeout(() => onTitleChange(val), 500);
   }, [onTitleChange]);
 
+  const flushTitle = useCallback(() => {
+    clearTimeout(titleDebounce.current);
+    if (localTitle !== title) onTitleChange(localTitle);
+  }, [localTitle, title, onTitleChange]);
+
   useEffect(() => () => clearTimeout(titleDebounce.current), []);
 
   const editor = useEditor({
     extensions,
     content: initialBody || '',
+    editorProps: {
+      handleDOMEvents: {
+        contextmenu(_view, event) {
+          event.preventDefault();
+          setCtxMenu({ x: event.clientX, y: event.clientY });
+          return true;
+        },
+      },
+    },
     onCreate: ({ editor: e }) => {
       try { insertBlankLinesBeforeHeadings(e); } catch (err) { console.warn('insertBlankLines failed:', err); }
       isLoadingContent.current = false;
@@ -689,9 +743,9 @@ function MemoEditor({ title, initialBody, onSave, onTitleChange, onClose }: {
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-paper">
       {/* Header with back button */}
-      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border shrink-0">
+      <div className="flex items-center gap-2 px-4 py-1.5 border-b border-border shrink-0">
         <button
-          onClick={onClose}
+          onClick={() => { flushTitle(); onClose(); }}
           className="p-1 rounded text-ink-3 hover:text-ink hover:bg-paper-soft transition-colors shrink-0"
           title="Back"
         >
@@ -703,14 +757,48 @@ function MemoEditor({ title, initialBody, onSave, onTitleChange, onClose }: {
           value={localTitle}
           onChange={e => handleTitleChange(e.target.value)}
           placeholder="Untitled"
-          className="flex-1 text-xs font-medium text-ink bg-transparent border-none outline-none placeholder:text-ink-3 min-w-0"
+          className="flex-1 text-xs font-medium text-ink bg-transparent border-none outline-none placeholder:text-ink-3 min-w-0 pl-1"
         />
       </div>
 
       {/* TipTap editor */}
-      <div className="flex-1 overflow-y-auto px-3 pr-4 py-2">
+      <div className="flex-1 overflow-y-auto px-4 pr-4 py-2" onClick={() => ctxMenu && setCtxMenu(null)}>
         <EditorContent editor={editor} className="h-full sidebar-memo-editor text-xs" />
       </div>
+
+      {ctxMenu && editor && (
+        <div
+          className="fixed z-50 bg-paper border border-border rounded-lg shadow-lg py-1 min-w-[160px]"
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          onMouseLeave={() => setCtxMenu(null)}
+        >
+          {[
+            { label: '잘라내기', action: () => { document.execCommand('cut'); }, key: 'Ctrl+X' },
+            { label: '복사', action: () => { document.execCommand('copy'); }, key: 'Ctrl+C' },
+            { label: '붙여넣기', action: () => { navigator.clipboard.readText().then(t => editor.commands.insertContent(t)); }, key: 'Ctrl+V' },
+            null,
+            { label: '전체 선택', action: () => editor.commands.selectAll(), key: 'Ctrl+A' },
+            null,
+            { label: '실행 취소', action: () => editor.commands.undo(), key: 'Ctrl+Z' },
+            { label: '다시 실행', action: () => editor.commands.redo(), key: 'Ctrl+Y' },
+            null,
+            { label: '블록 삭제', action: () => editor.commands.deleteNode(editor.state.selection.$from.parent.type.name), key: '' },
+          ].map((item, i) =>
+            item === null ? (
+              <div key={i} className="h-px bg-border my-1" />
+            ) : (
+              <button
+                key={i}
+                onClick={() => { item.action(); setCtxMenu(null); }}
+                className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-ink-2 hover:bg-paper-soft hover:text-ink transition-colors"
+              >
+                <span>{item.label}</span>
+                {item.key && <span className="text-[10px] text-ink-3 ml-4">{item.key}</span>}
+              </button>
+            )
+          )}
+        </div>
+      )}
 
       {/* Bottom toolbar — 2 rows */}
       {editor && (

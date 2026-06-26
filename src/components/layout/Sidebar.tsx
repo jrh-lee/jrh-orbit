@@ -56,6 +56,18 @@ const navItems: { view: AppView; label: string; icon: React.ReactNode }[] = [
     ),
   },
   {
+    view: 'dashboard',
+    label: 'Dashboard',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
+        <rect x="2" y="2" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
+        <rect x="10" y="2" width="6" height="3" rx="1" stroke="currentColor" strokeWidth="1.3"/>
+        <rect x="10" y="7" width="6" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
+        <rect x="2" y="10" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
+      </svg>
+    ),
+  },
+  {
     view: 'graph',
     label: 'Graph',
     icon: (

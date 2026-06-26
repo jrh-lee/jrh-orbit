@@ -6,6 +6,7 @@ export type NoteType =
   | 'design-note'
   | 'study-note'
   | 'review'
+  | 'project-dashboard'
   | 'blank';
 
 export type LegacyNoteType = 'daily' | 'research';
@@ -58,6 +59,7 @@ export const NOTE_TYPE_LABELS: Record<NoteType, string> = {
   'design-note': 'Design Note',
   'study-note': 'Study Note',
   'review': 'Review',
+  'project-dashboard': 'Project Dashboard',
   'blank': 'Blank',
 };
 
@@ -69,6 +71,7 @@ export const NOTE_TYPE_ICONS: Record<NoteType, string> = {
   'design-note': '📐',
   'study-note': '📚',
   'review': '🔍',
+  'project-dashboard': '🛰️',
   'blank': '📝',
 };
 
@@ -80,6 +83,7 @@ export const NOTE_TYPE_ABBREV: Record<NoteType, string> = {
   'design-note': 'design',
   'study-note': 'study',
   'review': 'review',
+  'project-dashboard': 'dashboard',
   'blank': 'note',
 };
 

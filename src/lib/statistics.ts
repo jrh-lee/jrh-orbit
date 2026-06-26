@@ -125,7 +125,7 @@ async function collectAllNotes(dataDir: string): Promise<ParsedNoteMeta[]> {
           const projects = normalizeProject(fields.project);
           results.push({
             id: fields.id ?? '',
-            title: fields.title ?? filePath.split('/').pop()?.replace('.md', '') ?? '',
+            title: fields.title ?? filePath.split(/[/\\]/).pop()?.replace('.md', '') ?? '',
             type: normalizedType,
             date: fields.date ?? fields.created?.slice(0, 10) ?? '',
             project: projects,
@@ -640,7 +640,7 @@ export async function getWritingStreak(dataDir: string): Promise<WritingStreak> 
   }
 
   const dates = files
-    .map(f => f.split('/').pop()?.replace('.md', '') ?? '')
+    .map(f => f.split(/[/\\]/).pop()?.replace('.md', '') ?? '')
     .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d))
     .sort()
     .reverse();

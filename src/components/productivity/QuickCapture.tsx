@@ -123,7 +123,7 @@ export function QuickCapture() {
           />
         </div>
         <div className="flex items-center justify-between px-4 py-2 border-t border-border">
-          <span className="text-[10px] text-ink-3">Cmd+Shift+N to toggle</span>
+          <span className="text-[10px] text-ink-3">Cmd/Ctrl+Shift+N to toggle</span>
           <div className="flex gap-2">
             <button
               onClick={() => setVisible(false)}
