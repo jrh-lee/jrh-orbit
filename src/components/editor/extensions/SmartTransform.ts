@@ -62,6 +62,37 @@ function buildSymbolRules(): InputRule[] {
 }
 
 /**
+ * Arrow shorthands.
+ * Immediate (fire on the closing char): `->` →, `=>` ⇒, `<->` ↔, `<=>` ⇔.
+ * Lookbehinds keep `->`/`=>` from firing inside `<->`/`<=>`.
+ * Space-triggered (to avoid eating `<->`/`<=>` mid-typing and comparison
+ * operators): `<- ` ←, `<= ` ⇐. Word-style: `/up ` ↑, `/down ` ↓.
+ */
+function buildArrowRules(): InputRule[] {
+  const rules: InputRule[] = [
+    textInputRule({ find: /<->$/, replace: '↔' }),
+    textInputRule({ find: /<=>$/, replace: '⇔' }),
+    textInputRule({ find: /(?<!<)->$/, replace: '→' }),
+    textInputRule({ find: /(?<![<=])=>$/, replace: '⇒' }),
+    // trigger space is consumed — it's an activation key, not intended text
+    textInputRule({ find: /<-\s$/, replace: '←' }),
+    textInputRule({ find: /<=\s$/, replace: '⇐' }),
+  ];
+  const words: Record<string, string> = { up: '↑', down: '↓', left: '←', right: '→' };
+  for (const [word, symbol] of Object.entries(words)) {
+    rules.push(
+      new InputRule({
+        find: new RegExp(`(^|\\s)/${word}\\s$`),
+        handler: ({ state, range, match }) => {
+          state.tr.insertText(`${match[1]}${symbol}`, range.from, range.to);
+        },
+      }),
+    );
+  }
+  return rules;
+}
+
+/**
  * Build a date input rule that converts M/D + space into YYYY-MM-DD.
  * Matches patterns like "6/10 " and replaces with "2026-06-10 ".
  */
@@ -100,6 +131,6 @@ export const SmartTransform = Extension.create({
   name: 'smartTransform',
 
   addInputRules() {
-    return [...buildSymbolRules(), buildDateRule()];
+    return [...buildSymbolRules(), ...buildArrowRules(), buildDateRule()];
   },
 });

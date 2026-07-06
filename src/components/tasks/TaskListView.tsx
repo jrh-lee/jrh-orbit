@@ -49,6 +49,7 @@ const statusFilters: { label: string; value: TaskStatus | 'active' | null }[] = 
 export function TaskListView() {
   const { dataDir, pendingTagFilter, clearPendingTagFilter } = useAppStore();
   const { tasks, setTasks, addTask, updateTask, removeTask, filterStatus, setFilterStatus, filterProject, setFilterProject, filterTag, setFilterTag } = useTaskStore();
+  const [searchQuery, setSearchQuery] = useState('');
   const { projects, setProjects } = useProjectStore();
   const [newTitle, setNewTitle] = useState('');
   const [newProjectId, setNewProjectId] = useState('');
@@ -175,7 +176,7 @@ export function TaskListView() {
     await persist(tasks.map((t) => (t.id === id ? { ...t, status: next, updatedAt: new Date().toISOString() } : t)));
     if (dataDir) {
       const dateKey = todayKey();
-      await syncDailyWithTodos(dataDir, dateKey);
+      await syncDailyWithTodos(dataDir, dateKey, true, true);
       window.dispatchEvent(new CustomEvent('daily-log-updated'));
     }
   }
@@ -193,9 +194,13 @@ export function TaskListView() {
         updateTodoInDailyLog(dataDir, id, task.title, projName).catch(() => {});
       }
     }
-    if (dataDir && changes.status !== undefined) {
+    if (dataDir && (changes.status !== undefined || changes.subtasks !== undefined
+        || changes.projectId !== undefined || changes.title !== undefined)) {
+      // appendMissingActive + includeFresh: if the task's line vanished from
+      // today's daily, an explicit edit in this tab brings it back — even for
+      // freshly created tasks (user action = intent, unlike load-time syncs).
       const dateKey = todayKey();
-      await syncDailyWithTodos(dataDir, dateKey);
+      await syncDailyWithTodos(dataDir, dateKey, true, true);
       window.dispatchEvent(new CustomEvent('daily-log-updated'));
     }
     if (changes.tags !== undefined || changes.subtasks !== undefined) {
@@ -222,6 +227,13 @@ export function TaskListView() {
   );
 
   const filtered = tasks
+    .filter((t) => {
+      const q = searchQuery.trim().toLowerCase();
+      if (!q) return true;
+      return t.title.toLowerCase().includes(q)
+        || (t.subtasks ?? []).some((s) => s.title.toLowerCase().includes(q))
+        || (t.tags ?? []).some((tag) => tag.toLowerCase().includes(q));
+    })
     .filter((t) => !filterStatus || (filterStatus === 'active' ? t.status !== 'done' : t.status === filterStatus))
     .filter((t) => !filterProject || t.projectId === filterProject)
     .filter((t) => !filterTag || t.tags?.includes(filterTag) || t.subtasks?.some(s => s.tags?.includes(filterTag)));
@@ -280,6 +292,27 @@ export function TaskListView() {
               </span>
             </>
           )}
+          <span className="w-px h-4 bg-border mx-1" />
+          <div className="relative flex items-center">
+            <svg width="12" height="12" viewBox="0 0 18 18" fill="none" className="absolute left-2 text-ink-3 pointer-events-none">
+              <circle cx="8" cy="8" r="5" stroke="currentColor" strokeWidth="1.5"/>
+              <path d="M12 12l4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="검색..."
+              className="pl-7 pr-6 py-1 text-xs rounded-full border border-border bg-paper text-ink placeholder:text-ink-3 w-40 focus:w-56 transition-all focus:outline-none focus:border-chrome"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 text-ink-3 hover:text-ink text-xs"
+              >
+                ×
+              </button>
+            )}
+          </div>
         </div>
 
         <form

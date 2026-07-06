@@ -672,6 +672,7 @@ export function NoteListView() {
       fmRef.current = fm;
       setBody(template.body);
       setActiveNote(fullPath);
+      setActiveNoteId(noteId);
       setMeta({ title, project: [], topic: '', subsystem: [], tags: [], status: 'draft' });
       setTagInput('');
     } catch (e) {

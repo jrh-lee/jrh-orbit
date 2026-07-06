@@ -38,3 +38,10 @@ src-tauri/icons/icon.png
 *.njsproj
 *.sln
 *.sw?
+
+# Local build artifacts dropped in repo root
+/jrh-orbit.exe
+/uninstall.exe
+
+# Claude Code local permissions (machine-specific)
+.claude/settings.local.json

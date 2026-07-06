@@ -7,6 +7,7 @@ import { readConfig, initDataFiles, ensureDataDir } from '../../lib/fileSystem';
 import { buildIndex } from '../../lib/searchIndex';
 import { debugFts } from '../../lib/db';
 import { autoArchiveQuickMemos } from '../../lib/autoArchive';
+import { runDailyBackup } from '../../lib/backup';
 import { processRecurringTodos } from '../../lib/recurringTodos';
 import { useConfigStore } from '../../stores/useConfigStore';
 import { TitleBar } from './TitleBar';
@@ -61,6 +62,9 @@ export function AppShell() {
           autoArchiveQuickMemos(dataDir).catch(() => {});
           processRecurringTodos(dataDir).catch(() => {});
           (window as any).__debugFts = () => debugFts().then(r => { console.table(r); return r; });
+          // Delayed so Google Drive has time to hydrate after boot — a
+          // snapshot of stale/unreadable files would be useless.
+          setTimeout(() => { runDailyBackup(dataDir).catch(() => {}); }, 20_000);
         })
         .catch((e) => console.error('[AppShell] init failed:', e));
     }

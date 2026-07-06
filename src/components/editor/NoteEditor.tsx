@@ -1,5 +1,6 @@
-import { useEditor, EditorContent } from '@tiptap/react';
+import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import { useState, useEffect, useRef, useCallback } from 'react';
+import type { MutableRefObject } from 'react';
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import { join } from '@tauri-apps/api/path';
 import { useAppStore } from '../../stores/useAppStore';
@@ -8,8 +9,9 @@ import { getExtensions, preprocessEmptyCheckboxes } from './extensions';
 import type { MathClickInfo } from './extensions';
 import { EditorToolbar } from './EditorToolbar';
 import { MathEditor } from './MathEditor';
-import { searchNotes, type SearchResult } from '../../lib/db';
+import { searchNotes, getNoteByExactId, type SearchResult } from '../../lib/db';
 import type { EditorView } from '@tiptap/pm/view';
+import type { Slice, Node as PmDocNode, Fragment } from '@tiptap/pm/model';
 import '../../styles/editor.css';
 
 const BORDER_THRESHOLD = 16;
@@ -96,6 +98,24 @@ function applyAutoFitCol(view: EditorView, tableEl: HTMLTableElement, colIndex: 
     off += rowNode.nodeSize;
   });
   view.dispatch(tr);
+}
+
+/** tiptap-markdown (html:true) entity-escapes `>` to `&gt;` on serialize,
+ *  so `A => B` gets stored — and later displayed — as `A =&gt; B`. Undo it
+ *  outside fenced code blocks. Line-leading `>` is left escaped so the next
+ *  parse doesn't turn the line into a blockquote. Round-trips cleanly:
+ *  a mid-line `>` parses back as plain text. */
+function unescapeHtmlGt(md: string): string {
+  let inFence = false;
+  return md.split('\n').map((line) => {
+    if (/^\s*(```|~~~)/.test(line)) {
+      inFence = !inFence;
+      return line;
+    }
+    if (inFence) return line;
+    if (line.trimStart().startsWith('&gt;')) return line;
+    return line.replace(/&gt;/g, '>');
+  }).join('\n');
 }
 
 function stripLooseListItems(md: string): string {
@@ -231,12 +251,87 @@ export function insertBlankLinesBeforeHeadings(editor: { state: any; view: any }
 
 import type { SectionGuideMap } from './extensions/SectionGuide';
 
+/* ── Plain-text copy serialization ──
+ * Default markdown copy emits raw `- [ ]` markers (doubled for nested task
+ * items) and internal metadata. Produce clean text instead: single-line
+ * selections copy as bare text; multi-line as •/✓ bullets with indentation.
+ * The rich text/html clipboard flavor is unaffected, so pasting into Word
+ * or other rich editors keeps real list formatting. */
+
+function cleanTaskText(text: string): string {
+  return text
+    .replace(/[​‌‍﻿]/g, '')
+    .replace(/^\[[A-Za-z0-9-]+(?:\.\d+)?\]\s*/, '')
+    .replace(/^\(이월[^)]*\)\s*/, '')
+    .trim();
+}
+
+function countTextblocks(frag: Fragment): number {
+  let n = 0;
+  frag.forEach((child) => {
+    if (child.isTextblock) n++;
+    n += countTextblocks(child.content);
+  });
+  return n;
+}
+
+function sliceToPlainText(slice: Slice): string {
+  if (countTextblocks(slice.content) <= 1) {
+    return cleanTaskText(slice.content.textBetween(0, slice.content.size, '\n'));
+  }
+
+  const lines: string[] = [];
+  const BULLETS = ['•', '◦', '▪'];
+  const visit = (node: PmDocNode, depth: number) => {
+    const t = node.type.name;
+    if (t === 'taskItem' || t === 'listItem') {
+      const first = node.firstChild;
+      const mark = t === 'taskItem' && node.attrs.checked ? '✓' : BULLETS[depth % BULLETS.length];
+      lines.push('  '.repeat(depth) + mark + ' ' + cleanTaskText(first?.isTextblock ? first.textContent : ''));
+      node.forEach((child) => {
+        if (child === first) return;
+        if (/List$/.test(child.type.name)) {
+          child.forEach((li) => visit(li, depth + 1));
+        } else if (child.isTextblock) {
+          lines.push('  '.repeat(depth + 1) + cleanTaskText(child.textContent));
+        }
+      });
+      return;
+    }
+    if (/List$/.test(t)) {
+      node.forEach((li) => visit(li, depth));
+      return;
+    }
+    if (t === 'table') {
+      node.forEach((row) => {
+        const cells: string[] = [];
+        row.forEach((cell) => cells.push(cell.textContent.trim()));
+        lines.push(cells.join('\t'));
+      });
+      return;
+    }
+    if (node.isTextblock) {
+      const text = cleanTaskText(node.textContent);
+      if (text || lines.length > 0) lines.push('  '.repeat(depth) + text);
+      return;
+    }
+    node.forEach((child) => visit(child, depth));
+  };
+  slice.content.forEach((node) => visit(node, 0));
+  return lines.join('\n');
+}
+
 interface NoteEditorProps {
   content: string;
   onChange: (markdown: string) => void;
   placeholder?: string;
   skipBlankLineInsertion?: boolean;
   sectionGuides?: SectionGuideMap;
+  /** Exposes the TipTap editor so parents can patch the doc via transactions
+   *  (content-prop replacement resets the cursor — see jrh-orbit-dev skill). */
+  editorRef?: MutableRefObject<Editor | null>;
+  /** Fired when the editor loses focus — safe moment for doc normalization. */
+  onEditorBlur?: () => void;
 }
 
 interface WikiLinkState {
@@ -245,7 +340,7 @@ interface WikiLinkState {
   coords: { left: number; top: number };
 }
 
-export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsertion, sectionGuides }: NoteEditorProps) {
+export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsertion, sectionGuides, editorRef, onEditorBlur }: NoteEditorProps) {
   const { dataDir, openNote } = useAppStore();
   const smartTransformEnabled = useConfigStore((s) => s.editor.smart_transform);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -256,7 +351,7 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
   const [wikiResults, setWikiResults] = useState<SearchResult[]>([]);
   const [wikiIndex, setWikiIndex] = useState(0);
   const wikiSearchRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; linkPos: number | null } | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const onMathClick = useCallback((info: MathClickInfo) => {
@@ -265,6 +360,13 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
 
   const handleImageDrop = useCallback(async (file: File) => {
     if (!dataDir || !file.type.startsWith('image/')) return null;
+    // Read once as data URI — used both for the base64 IPC payload and as fallback src
+    const dataUri = await new Promise<string | null>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(file);
+    });
     try {
       const ext = file.name.split('.').pop() ?? 'png';
       const filename = `img-${Date.now().toString(36)}.${ext}`;
@@ -272,16 +374,13 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
       await invoke('ensure_dir', { path: attachDir });
       const destPath = await join(attachDir, filename);
 
-      const buffer = await file.arrayBuffer();
-      const bytes = Array.from(new Uint8Array(buffer));
-      await invoke('write_binary', { path: destPath, data: bytes });
+      if (!dataUri) throw new Error('failed to read image file');
+      const base64 = dataUri.slice(dataUri.indexOf(',') + 1);
+      await invoke('write_binary_b64', { path: destPath, data: base64 });
       return convertFileSrc(destPath);
-    } catch {
-      const reader = new FileReader();
-      return new Promise<string>((resolve) => {
-        reader.onload = () => resolve(reader.result as string);
-        reader.readAsDataURL(file);
-      });
+    } catch (err) {
+      console.warn('[image] save to attachments failed, falling back to data URI:', err);
+      return dataUri;
     }
   }, [dataDir]);
 
@@ -292,6 +391,7 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
     content: preprocessEmptyCheckboxes(content),
     shouldRerenderOnTransaction: true,
     editorProps: {
+      clipboardTextSerializer: (slice) => sliceToPlainText(slice),
       transformPastedHTML(html) {
         const doc = new DOMParser().parseFromString(html, 'text/html');
         doc.querySelectorAll('table').forEach(table => {
@@ -332,6 +432,10 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
       handlePaste: (view, event) => {
         const items = event.clipboardData?.items;
         if (!items) return false;
+        // Excel/Sheets put both text/html (the table) and image/png (a preview
+        // bitmap) on the clipboard — prefer the table over the image.
+        const html = event.clipboardData?.getData('text/html') ?? '';
+        if (/<table[\s>]/i.test(html)) return false;
         const imageItems = Array.from(items).filter(i => i.type.startsWith('image/'));
         if (imageItems.length === 0) return false;
         event.preventDefault();
@@ -350,9 +454,23 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
         return true;
       },
       handleDOMEvents: {
-        contextmenu(_view, event) {
+        contextmenu(view, event) {
           event.preventDefault();
-          setCtxMenu({ x: event.clientX, y: event.clientY });
+          // Detect a link under the right-click point so the menu can offer
+          // 링크 제거 — links are easy to create but were impossible to remove
+          let linkPos: number | null = null;
+          const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
+          if (at) {
+            const node = view.state.doc.nodeAt(at.pos);
+            const $pos = view.state.doc.resolve(at.pos);
+            if (
+              node?.marks.some((mk) => mk.type.name === 'link') ||
+              $pos.marks().some((mk) => mk.type.name === 'link')
+            ) {
+              linkPos = at.pos;
+            }
+          }
+          setCtxMenu({ x: event.clientX, y: event.clientY, linkPos });
           return true;
         },
         click(view, event) {
@@ -363,8 +481,16 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
             event.preventDefault();
             if (href.startsWith('note://')) {
               const noteId = href.slice(7);
-              searchNotes(noteId).then(results => {
-                if (results.length > 0) openNote(results[0].path);
+              // Exact id lookup first — ranked FTS can return the daily log
+              // (whose body embeds the id) instead of the target note.
+              getNoteByExactId(noteId).then(exact => {
+                if (exact) {
+                  openNote(exact.path);
+                  return;
+                }
+                searchNotes(noteId).then(results => {
+                  if (results.length > 0) openNote(results[0].path);
+                });
               });
               return true;
             }
@@ -418,10 +544,11 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
       if (isLoadingContent.current) return;
       clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
+        debounceRef.current = undefined;
         const storage = e.storage as Record<string, any>;
         const md: string = storage.markdown?.getMarkdown?.() ?? '';
         const tight = stripLooseListItems(md);
-        const spaced = ensureMarkdownSpacing(tight);
+        const spaced = unescapeHtmlGt(ensureMarkdownSpacing(tight));
         lastEmittedContent.current = spaced;
         onChange(spaced);
       }, 300);
@@ -430,6 +557,9 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
     },
     onSelectionUpdate: ({ editor: e }) => {
       checkWikiLink(e);
+    },
+    onBlur: () => {
+      onEditorBlurRef.current?.();
     },
   });
 
@@ -508,19 +638,57 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
   }, [editor, wikiLink, wikiResults, wikiIndex, insertWikiLink]);
 
   useEffect(() => {
+    if (!editorRef) return;
+    editorRef.current = editor;
+    return () => { editorRef.current = null; };
+  }, [editor, editorRef]);
+
+  useEffect(() => {
     if (!editor) return;
     if (lastEmittedContent.current !== null && content === lastEmittedContent.current) return;
     isLoadingContent.current = true;
+    // Programmatic setContent replaces the whole doc and resets the selection.
+    // Save/restore the cursor so external body updates don't yank it away mid-typing.
+    const hadFocus = editor.isFocused;
+    const { from, to } = editor.state.selection;
     editor.commands.setContent(preprocessEmptyCheckboxes(content));
     if (!skipBlankLineInsertion) {
       insertBlankLinesBeforeHeadings(editor);
     }
+    if (hadFocus) {
+      const size = editor.state.doc.content.size;
+      try {
+        editor.commands.setTextSelection({ from: Math.min(from, size), to: Math.min(to, size) });
+        editor.commands.focus(undefined, { scrollIntoView: false });
+      } catch { /* selection restore is best-effort */ }
+    }
     isLoadingContent.current = false;
   }, [editor, content]);
 
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const onEditorBlurRef = useRef(onEditorBlur);
+  onEditorBlurRef.current = onEditorBlur;
+
   useEffect(() => {
-    return () => clearTimeout(debounceRef.current);
-  }, []);
+    if (!editor) return;
+    return () => {
+      // Flush a pending debounced change on unmount — otherwise the last
+      // ~300ms of typing dies with the timer when the user switches views.
+      if (debounceRef.current === undefined) return;
+      clearTimeout(debounceRef.current);
+      debounceRef.current = undefined;
+      if (editor.isDestroyed) return;
+      try {
+        const storage = editor.storage as Record<string, any>;
+        const md: string = storage.markdown?.getMarkdown?.() ?? '';
+        const tight = stripLooseListItems(md);
+        const spaced = unescapeHtmlGt(ensureMarkdownSpacing(tight));
+        lastEmittedContent.current = spaced;
+        onChangeRef.current(spaced);
+      } catch { /* flush is best-effort */ }
+    };
+  }, [editor]);
 
   useEffect(() => {
     if (!editor) return;
@@ -612,6 +780,20 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
           onMouseLeave={() => setCtxMenu(null)}
         >
           {[
+            ...(ctxMenu.linkPos !== null ? [
+              {
+                label: '링크 제거',
+                action: () => {
+                  editor.chain().focus()
+                    .setTextSelection(ctxMenu.linkPos!)
+                    .extendMarkRange('link')
+                    .unsetLink()
+                    .run();
+                },
+                key: '',
+              },
+              null,
+            ] : []),
             { label: '잘라내기', action: () => { document.execCommand('cut'); }, key: 'Ctrl+X' },
             { label: '복사', action: () => { document.execCommand('copy'); }, key: 'Ctrl+C' },
             { label: '붙여넣기', action: () => { navigator.clipboard.readText().then(t => editor.commands.insertContent(t)); }, key: 'Ctrl+V' },

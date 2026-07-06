@@ -1,6 +1,6 @@
 mod commands;
 
-use commands::{config, notes, window};
+use commands::{config, google, notes, window};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -26,11 +26,17 @@ pub fn run() {
             notes::list_notes,
             notes::delete_note,
             notes::ensure_dir,
+            notes::path_exists,
+            notes::snapshot_data,
             notes::write_binary,
+            notes::write_binary_b64,
             notes::copy_file,
             notes::open_path,
             config::read_config,
             config::write_config,
+            google::google_oauth_login,
+            google::google_refresh_token,
+            google::http_get_text,
             window::set_window_mode,
             window::toggle_always_on_top,
         ])

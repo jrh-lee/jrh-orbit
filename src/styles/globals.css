@@ -155,7 +155,8 @@ body {
   --radius-sm: 2px;
   --radius-lg: 4px;
 }
-[data-theme="spreadsheet"] body { font-size: 13px; line-height: 1.35; }
+/* (removed) spreadsheet used to shrink the whole app UI to 13px/1.35 —
+   app chrome must look identical across themes */
 /* Sidebar: sheet tabs, Fluent style */
 [data-theme="spreadsheet"] nav {
   background: #f5f5f5 !important;
@@ -203,22 +204,25 @@ body {
   outline: none !important;
 }
 /* Editor: clean Fluent */
+/* Text metrics and padding come from the base .ProseMirror — themes only
+   restyle colors/fonts so spacing stays identical across themes. */
 [data-theme="spreadsheet"] .ProseMirror {
-  font-family: 'Segoe UI', -apple-system, sans-serif;
-  font-size: 13px;
-  line-height: 1.4;
-  padding: 10px 14px;
+  /* Segoe UI has no Hangul — without an explicit Korean fallback the text
+     drops to Malgun Gothic, which renders optically smaller than Pretendard
+     at the same px (the "spreadsheet text looks tiny" effect). */
+  font-family: 'Segoe UI', 'Pretendard Variable', 'Pretendard', -apple-system, sans-serif;
 }
-[data-theme="spreadsheet"] .ProseMirror p { margin: 2px 0; }
+/* Heading sizes/margins come from the base .ProseMirror (light-theme values,
+   uniform across themes) — themes only recolor. */
 [data-theme="spreadsheet"] .ProseMirror h1 {
-  font-size: 18px; font-weight: 600; color: #242424;
-  border-bottom: 2px solid #185a30; padding-bottom: 3px; margin: 10px 0 5px;
+  color: #242424;
+  border-bottom: 2px solid #185a30; padding-bottom: 3px;
 }
 [data-theme="spreadsheet"] .ProseMirror h2 {
-  font-size: 15px; font-weight: 600; color: #185a30; margin: 8px 0 4px;
+  color: #185a30;
 }
 [data-theme="spreadsheet"] .ProseMirror h3 {
-  font-size: 13px; font-weight: 600; color: #185a30; margin: 6px 0 3px;
+  color: #185a30;
 }
 /* Tables: modern pastel grid — no PTSD */
 [data-theme="spreadsheet"] .ProseMirror .tableWrapper { margin: 6px 0; }
@@ -359,8 +363,7 @@ body {
 /* Editor: bartender's notepad */
 [data-theme="cyberpunk"] .ProseMirror {
   font-family: 'DotGothic16', monospace;
-  font-size: 14px;
-  line-height: 1.8;
+  --editor-font-size: 14px; /* pixel font optical compensation */
   color: #d0c8cc;
 }
 /* h1 = # title → pink neon (bar sign) */
@@ -369,7 +372,6 @@ body {
   text-shadow: 0 0 10px rgba(224,96,152,0.4);
   border-bottom: 2px solid #e06098;
   padding-bottom: 6px;
-  font-size: 1.3rem;
 }
 /* h2 = ## 오늘의 작업 → yellow (money/slot display) */
 [data-theme="cyberpunk"] .ProseMirror h2 {
@@ -377,7 +379,6 @@ body {
   text-shadow: 0 0 10px rgba(240,208,96,0.4), 0 0 20px rgba(240,208,96,0.15);
   border-left: 3px solid #f0d060;
   padding-left: 8px;
-  font-size: 1.1rem;
 }
 /* h3 = ### GENERAL → blue neon (ingredient labels) */
 [data-theme="cyberpunk"] .ProseMirror h3 {
@@ -430,8 +431,10 @@ body {
 [data-theme="cyberpunk"] .ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"] {
   accent-color: #f0d060;
 }
-/* Checked items: dim like completed orders */
-[data-theme="cyberpunk"] .ProseMirror ul[data-type="taskList"] li[data-checked="true"] > div {
+/* Checked items: dim like completed orders.
+   Scoped to the item's own paragraphs — `> div` would cascade the
+   strikethrough onto nested (unchecked) subtask lists. */
+[data-theme="cyberpunk"] .ProseMirror ul[data-type="taskList"] li[data-checked="true"] > div > p {
   opacity: 0.45;
   text-decoration: line-through;
   text-decoration-color: #e06098;
@@ -490,18 +493,15 @@ body {
 }
 [data-theme="paper"] .ProseMirror {
   font-family: 'Noto Serif KR', Georgia, serif;
-  font-size: 15px;
-  line-height: 1.9;
 }
-[data-theme="paper"] .ProseMirror p { margin: 0.15em 0; }
 [data-theme="paper"] .ProseMirror h1 {
-  font-size: 1.6rem; font-weight: 700; color: #2c2416;
-  border-bottom: 2px solid #7a5830; margin: 0.5em 0 0.3em;
+  font-weight: 700; color: #2c2416;
+  border-bottom: 2px solid #7a5830;
 }
 [data-theme="paper"] .ProseMirror h2 {
-  font-size: 1.2rem; font-weight: 700; color: #5a4020; margin: 0.4em 0 0.2em;
+  font-weight: 700; color: #5a4020;
 }
-[data-theme="paper"] .ProseMirror h3 { font-size: 1rem; font-weight: 700; color: #7a5830; }
+[data-theme="paper"] .ProseMirror h3 { font-weight: 700; color: #7a5830; }
 [data-theme="paper"] .ProseMirror a { color: #5a7a9a; }
 [data-theme="paper"] .ProseMirror blockquote {
   border-left: 3px solid #b8a070; font-style: italic; color: #5c4e3c;
@@ -593,8 +593,8 @@ body {
 }
 [data-theme="terminal"] .ProseMirror {
   font-family: 'VT323', monospace;
-  font-size: 16px;
-  line-height: 1.6;
+  /* VT323 renders optically small — compensate; line-height stays shared */
+  --editor-font-size: 16px;
   color: #33ff33;
 }
 [data-theme="terminal"] .ProseMirror h1 { color: #33ff33; text-shadow: 0 0 8px rgba(51,255,51,0.4); border-bottom: 1px solid #1a3a1a; }
@@ -728,8 +728,7 @@ body {
 /* Editor */
 [data-theme="buddybuddy"] .ProseMirror {
   font-family: 'Galmuri11', 'DotGothic16', sans-serif;
-  font-size: 14px;
-  line-height: 1.7;
+  --editor-font-size: 14px; /* pixel font optical compensation */
   background: #eef2da;
 }
 [data-theme="buddybuddy"] .ProseMirror h1 {
@@ -839,16 +838,13 @@ body {
 /* --- Spreadsheet: Fluent grid compact --- */
 [data-theme="spreadsheet"] [data-mode="dock"],
 [data-theme="spreadsheet"] [data-mode="sidebar"] {
-  font-family: 'Segoe UI', -apple-system, sans-serif;
-  font-size: 13px;
-  line-height: 1.35;
+  font-family: 'Segoe UI', 'Pretendard Variable', 'Pretendard', -apple-system, sans-serif;
   background: #fafafa !important;
 }
 [data-theme="spreadsheet"] [data-mode="dock"] button,
 [data-theme="spreadsheet"] [data-mode="sidebar"] button {
   border-radius: 2px !important;
-  font-family: 'Segoe UI', -apple-system, sans-serif;
-  font-size: 12px;
+  font-family: 'Segoe UI', 'Pretendard Variable', 'Pretendard', -apple-system, sans-serif;
 }
 [data-theme="spreadsheet"] [data-mode="dock"] button:hover,
 [data-theme="spreadsheet"] [data-mode="sidebar"] button:hover {

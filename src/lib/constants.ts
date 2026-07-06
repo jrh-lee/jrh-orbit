@@ -22,6 +22,8 @@ export const FILES = {
   links: 'data/links.json',
   subsystems: 'data/subsystems.json',
   ddays: 'data/ddays.json',
+  calendar: 'data/calendar.json',
+  calendarFeeds: 'data/calendar-feeds.json',
   playlist: 'data/playlist.json',
   templates: 'data/templates.json',
   config: 'config.json',

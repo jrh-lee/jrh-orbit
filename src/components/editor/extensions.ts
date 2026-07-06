@@ -74,7 +74,7 @@ const TightListSerializer = Extension.create({
   },
 });
 
-const TASK_META_RE = /^(\\?\[[^\]\\]+\\?\]\s*)?(\\?\(이월\\?\)\s*)?/;
+const TASK_META_RE = /^(\\?\[[^\]\\]+\\?\]\s*)?(\\?\(이월[^)]*\\?\)\s*)?(\\?\(시작 [^)]*\\?\)\s*)?/;
 
 const HideTaskMeta = Extension.create({
   name: 'hideTaskMeta',
@@ -96,22 +96,35 @@ const HideTaskMeta = Extension.create({
               if (parent.firstChild !== node) return;
               const text = node.text ?? '';
               const m = text.match(TASK_META_RE);
-              if (m && m[0].length > 0) {
-                const hasCarryOver = !!m[2];
+              if (!m || m[0].length === 0) return;
+
+              // Hide the [TASK-xxx] id and the (이월) tag; show a badge instead
+              const hideLen = (m[1]?.length ?? 0) + (m[2]?.length ?? 0);
+              if (hideLen > 0) {
                 decorations.push(
-                  Decoration.inline(pos, pos + m[0].length, { class: 'task-id-hidden' }),
+                  Decoration.inline(pos, pos + hideLen, { class: 'task-id-hidden' }),
                 );
-                if (hasCarryOver) {
-                  decorations.push(
-                    Decoration.widget(pos, () => {
-                      const span = document.createElement('span');
-                      span.className = 'task-carry-badge';
-                      span.textContent = '🔄';
-                      span.title = '이월된 항목';
-                      return span;
-                    }, { side: -1 }),
-                  );
-                }
+              }
+              if (m[2]) {
+                decorations.push(
+                  Decoration.widget(pos, () => {
+                    const span = document.createElement('span');
+                    span.className = 'task-carry-badge';
+                    span.textContent = '🔄';
+                    span.title = '이월된 항목';
+                    return span;
+                  }, { side: -1 }),
+                );
+              }
+              // (시작 M/D) — keep visible but subtle, and dim the whole item
+              if (m[3]) {
+                decorations.push(
+                  Decoration.inline(pos + hideLen, pos + hideLen + m[3].length, { class: 'task-start-badge' }),
+                );
+                const itemPos = $pos.before($pos.depth - 1);
+                decorations.push(
+                  Decoration.node(itemPos, itemPos + grandparent.nodeSize, { class: 'task-scheduled' }),
+                );
               }
             });
             return DecorationSet.create(state.doc, decorations);
@@ -125,7 +138,9 @@ const HideTaskMeta = Extension.create({
 const ZWS = '​';
 
 function preprocessEmptyCheckboxes(md: string): string {
-  return md.replace(/^(- \[[ xX]\])\s*$/gm, `$1 ${ZWS}`);
+  // Indented (subtask) empty checkboxes need the ZWS too, or the markdown
+  // parser renders them as literal "[ ]" text instead of a checkbox.
+  return md.replace(/^([ \t]*- \[[ xX]\])\s*$/gm, `$1 ${ZWS}`);
 }
 
 export { preprocessEmptyCheckboxes };

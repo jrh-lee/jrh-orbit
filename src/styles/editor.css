@@ -20,9 +20,16 @@
 .ProseMirror {
   outline: none;
   min-height: 100%;
-  padding: 1rem 1rem 1rem 3rem;
-  font-size: 0.9375rem;
-  line-height: 1.65;
+  /* Compact Spreadsheet-style margins, identical across themes.
+     Left stays 1.75rem (not 14px) — it's the block-drag gutter. */
+  padding: 10px 14px 10px 1.75rem;
+  /* Single source of truth for editor text metrics — themes and dependent
+     rules (checkbox label height, code blocks) must reference these vars
+     instead of hardcoding, or line spacing drifts between node types. */
+  --editor-font-size: 0.8125rem; /* 13px — Spreadsheet-era body size */
+  --editor-line-height: 1.6;
+  font-size: var(--editor-font-size);
+  line-height: var(--editor-line-height);
   color: var(--color-ink);
   position: relative;
 }
@@ -35,9 +42,11 @@
   height: 0;
 }
 
-.ProseMirror h1 { font-size: 1.75rem; font-weight: 600; margin: 1.5rem 0 0.75rem; }
-.ProseMirror h2 { font-size: 1.375rem; font-weight: 600; margin: 1.25rem 0 0.5rem; }
-.ProseMirror h3 { font-size: 1.125rem; font-weight: 600; margin: 1rem 0 0.5rem; }
+/* Heading margins sit midway between the old light theme (roomy) and the
+   old Spreadsheet theme (cramped) — H2→H3 runs read grouped, not gappy. */
+.ProseMirror h1 { font-size: 1.3rem; font-weight: 600; margin: 1.05rem 0 0.5rem; }
+.ProseMirror h2 { font-size: 1.15rem; font-weight: 600; margin: 0.85rem 0 0.4rem; }
+.ProseMirror h3 { font-size: 1rem; font-weight: 600; margin: 0.7rem 0 0.3rem; }
 
 /* Inline code */
 .ProseMirror code {
@@ -80,7 +89,7 @@
   border-radius: 0 !important;
   font-family: 'Consolas', var(--font-mono) !important;
   font-size: 0.85em !important;
-  line-height: 1.65 !important;
+  line-height: var(--editor-line-height, 1.6) !important;
   white-space: pre !important;
   display: block;
 }
@@ -208,8 +217,8 @@
  */
 
 .ProseMirror ul:not([data-type]) {
-  padding-left: 1.5rem;
-  margin: 0.5rem 0;
+  padding-left: 1.3rem;
+  margin: 0.25rem 0; /* match p/taskList margins — mixed blocks keep even spacing */
   list-style-type: disc;
 
   & ul:not([data-type]) {
@@ -260,8 +269,8 @@
 }
 
 .ProseMirror ol {
-  padding-left: 1.5rem;
-  margin: 0.5rem 0;
+  padding-left: 1.3rem;
+  margin: 0.25rem 0; /* match p/taskList margins */
   list-style-type: decimal;
 
   & ol {
@@ -451,21 +460,33 @@ img.ProseMirror-separator {
 }
 
 .ProseMirror ul[data-type="taskList"] ul[data-type="taskList"] {
-  padding-left: 1.5rem;
+  /* The 1.3rem label column already provides one indent step — extra padding
+     here would double the step (2.6rem) vs bullet lists (1.3rem). */
+  padding-left: 0;
   margin: 0;
+}
+
+/* Task items are flex containers, so a nested list's last-item bottom margin
+   can't collapse with the outer item's margin (flex items never collapse) —
+   without this, the line after a nested task group gets a double-height gap. */
+.ProseMirror ul[data-type="taskList"] ul[data-type="taskList"] li:last-child {
+  margin-bottom: 0;
 }
 
 .ProseMirror ul[data-type="taskList"] li {
   display: flex;
   align-items: flex-start;
-  gap: 0.5rem;
+  /* No gap — the label column is exactly 1.3rem wide so task text starts at
+     the same x-position as bullet list text (ul padding-left: 1.3rem). */
+  gap: 0;
 }
 
 .ProseMirror ul[data-type="taskList"] li > label {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: calc(0.9375rem * 1.65);
+  width: 1.3rem; /* matches bullet padding-left → text columns align */
+  height: calc(var(--editor-font-size) * var(--editor-line-height));
   flex-shrink: 0;
   margin: 0;
 }
@@ -496,6 +517,15 @@ img.ProseMirror-separator {
   margin-right: 4px;
   cursor: default;
   user-select: none;
+}
+
+/* Future-start tasks: visible but dimmed, with a subtle (시작 M/D) badge */
+.ProseMirror li.task-scheduled {
+  opacity: 0.5;
+}
+.task-start-badge {
+  font-size: 0.8em;
+  color: var(--color-ink-3);
 }
 
 /* ── Note link in tables ── */

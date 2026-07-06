@@ -111,6 +111,28 @@ export async function searchNotes(query: string): Promise<SearchResult[]> {
   }
 }
 
+/**
+ * Resolve a note by its exact frontmatter id (used for note:// links).
+ * Unlike searchNotes this never matches the id text inside other notes'
+ * bodies — e.g. the daily log's '## 노트' table that embeds the id.
+ */
+export async function getNoteByExactId(id: string): Promise<SearchResult | null> {
+  if (!id || !id.trim()) return null;
+  const database = await getDb();
+  try {
+    const results = await database.select<SearchResult[]>(
+      `SELECT path, title, note_type as noteType, '' as snippet, updated
+       FROM notes_fts
+       WHERE id = $1
+       LIMIT 1`,
+      [id.trim()],
+    );
+    return results[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function removeNoteIndex(path: string): Promise<void> {
   const database = await getDb();
   await database.execute(`DELETE FROM notes_fts WHERE path = $1`, [path]);

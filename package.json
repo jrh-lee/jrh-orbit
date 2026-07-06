@@ -39,6 +39,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
     "gray-matter": "^4.0.3",
+    "ical.js": "^2.2.1",
     "katex": "^0.16.4",
     "lowlight": "^3.3.0",
     "mermaid": "^11.15.0",

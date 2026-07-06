@@ -42,6 +42,21 @@ const navItems: { view: AppView; label: string; icon: React.ReactNode }[] = [
     ),
   },
   {
+    view: 'calendar',
+    label: 'Calendar',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
+        <rect x="2" y="3" width="14" height="13" rx="2" stroke="currentColor" strokeWidth="1.3"/>
+        <path d="M2 7h14" stroke="currentColor" strokeWidth="1.3"/>
+        <path d="M6 1v4M12 1v4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+        <circle cx="6" cy="10.5" r="1" fill="currentColor"/>
+        <circle cx="9" cy="10.5" r="1" fill="currentColor"/>
+        <circle cx="12" cy="10.5" r="1" fill="currentColor"/>
+        <circle cx="6" cy="13.5" r="1" fill="currentColor"/>
+      </svg>
+    ),
+  },
+  {
     view: 'hub',
     label: 'Hub',
     icon: (

@@ -1,0 +1,970 @@
+<title>jrh-orbit Improvement Plan</title>
+<style>
+:root {
+  --ground: #1B2332;
+  --raised: #222D3E;
+  --raised-2: #283548;
+  --text: #C0CCD9;
+  --text-dim: #6B7D94;
+  --text-bright: #E8EFF6;
+  --bug: #E8A838;
+  --bug-dim: rgba(232,168,56,0.08);
+  --improve: #3DB8A0;
+  --improve-dim: rgba(61,184,160,0.08);
+  --feature: #8B7EC8;
+  --feature-dim: rgba(139,126,200,0.08);
+  --blue: #5BA4E6;
+  --blue-dim: rgba(91,164,230,0.08);
+  --pink: #D4708F;
+  --border: rgba(200,211,224,0.06);
+  --border-strong: rgba(200,211,224,0.12);
+  --mono: 'Cascadia Code','JetBrains Mono','Fira Code','Consolas',monospace;
+  --sans: 'Segoe UI','Inter',system-ui,sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--ground);color:var(--text);font-family:var(--sans);line-height:1.6;min-height:100vh}
+::selection{background:rgba(61,184,160,0.25);color:var(--text-bright)}
+
+.shell{max-width:860px;margin:0 auto;padding:36px 24px 80px}
+
+/* header */
+.doc-hdr{margin-bottom:36px}
+.doc-hdr .tag{font-family:var(--mono);font-size:11px;letter-spacing:0.05em;color:var(--text-dim);text-transform:uppercase;margin-bottom:4px}
+.doc-hdr h1{font-size:24px;font-weight:600;color:var(--text-bright);letter-spacing:-0.01em;line-height:1.3}
+.doc-hdr .sub{font-size:13px;color:var(--text-dim);margin-top:6px}
+
+/* toc */
+.toc{background:var(--raised);border:1px solid var(--border);border-radius:6px;padding:16px 20px;margin-bottom:36px}
+.toc-title{font-family:var(--mono);font-size:11px;letter-spacing:0.04em;color:var(--text-dim);text-transform:uppercase;margin-bottom:10px}
+.toc a{display:block;font-size:13px;color:var(--text);text-decoration:none;padding:3px 0;transition:color 0.12s}
+.toc a:hover{color:var(--text-bright)}
+.toc a .num{font-family:var(--mono);color:var(--text-dim);font-size:11px;margin-right:8px;display:inline-block;width:20px}
+
+/* sections */
+.section{margin-bottom:40px}
+.section-hdr{display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid var(--border-strong)}
+.section-marker{width:3px;height:16px;border-radius:2px;flex-shrink:0}
+.section-title{font-size:17px;font-weight:600;color:var(--text-bright);letter-spacing:-0.005em}
+.section-title .accent{color:var(--text-dim);font-weight:400}
+
+/* issue card */
+.issue-card{background:var(--raised);border:1px solid var(--border);border-radius:6px;margin-bottom:12px;overflow:hidden}
+.issue-card.expanded .ic-detail{display:block}
+.ic-head{display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;transition:background 0.12s;user-select:none}
+.ic-head:hover{background:var(--raised-2)}
+.ic-num{font-family:var(--mono);font-size:11px;color:var(--text-dim);flex-shrink:0;width:28px}
+.ic-type{font-family:var(--mono);font-size:9.5px;letter-spacing:0.03em;padding:2px 7px;border-radius:3px;flex-shrink:0}
+.ic-type.bug{color:var(--bug);background:var(--bug-dim)}
+.ic-type.improve{color:var(--improve);background:var(--improve-dim)}
+.ic-type.feature{color:var(--feature);background:var(--feature-dim)}
+.ic-title{font-size:13.5px;font-weight:500;color:var(--text-bright);flex:1;min-width:0}
+.ic-effort{font-family:var(--mono);font-size:10px;color:var(--text-dim);flex-shrink:0;text-align:right}
+.ic-arrow{color:var(--text-dim);font-size:12px;flex-shrink:0;transition:transform 0.15s}
+.issue-card.expanded .ic-arrow{transform:rotate(90deg)}
+
+.ic-detail{display:none;padding:0 16px 16px;border-top:1px solid var(--border)}
+
+/* detail blocks */
+.d-block{margin-top:14px}
+.d-label{font-family:var(--mono);font-size:10.5px;letter-spacing:0.04em;color:var(--text-dim);text-transform:uppercase;margin-bottom:6px}
+.d-text{font-size:12.5px;color:var(--text);line-height:1.65}
+.d-text strong{color:var(--text-bright);font-weight:600}
+.d-text code{font-family:var(--mono);font-size:11.5px;background:rgba(200,211,224,0.06);padding:1px 5px;border-radius:3px;color:var(--blue)}
+.d-text a{color:var(--blue);text-decoration:none}
+.d-text a:hover{text-decoration:underline}
+
+.d-files{list-style:none;margin-top:4px}
+.d-files li{font-family:var(--mono);font-size:11px;color:var(--blue);padding:2px 0;display:flex;align-items:center;gap:6px}
+.d-files li::before{content:'';width:4px;height:4px;border-radius:50%;background:var(--border-strong);flex-shrink:0}
+
+.d-code{background:#181F2C;border:1px solid var(--border);border-radius:4px;padding:10px 14px;margin-top:6px;overflow-x:auto}
+.d-code pre{font-family:var(--mono);font-size:11px;line-height:1.55;color:var(--text);white-space:pre;tab-size:2}
+.d-code .cm{color:var(--text-dim)}
+.d-code .kw{color:var(--feature)}
+.d-code .fn{color:var(--improve)}
+.d-code .str{color:var(--bug)}
+.d-code .add{color:var(--improve);background:rgba(61,184,160,0.06)}
+.d-code .del{color:#E06C75;background:rgba(224,108,117,0.06);text-decoration:line-through}
+
+.d-steps{list-style:none;margin-top:4px;counter-reset:step}
+.d-steps li{font-size:12.5px;color:var(--text);padding:4px 0 4px 24px;position:relative;line-height:1.55}
+.d-steps li::before{counter-increment:step;content:counter(step);position:absolute;left:0;font-family:var(--mono);font-size:10px;color:var(--text-dim);background:var(--raised-2);width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;top:5px}
+
+/* summary table */
+.sum-table{width:100%;border-collapse:collapse;margin-top:8px;font-size:12px}
+.sum-table th{font-family:var(--mono);font-size:10.5px;letter-spacing:0.03em;color:var(--text-dim);text-transform:uppercase;text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-strong);font-weight:500}
+.sum-table td{padding:7px 10px;border-bottom:1px solid var(--border);color:var(--text);vertical-align:top}
+.sum-table tr:last-child td{border-bottom:none}
+.sum-table .effort{font-family:var(--mono);font-size:10.5px}
+.ef-s{color:var(--improve)}
+.ef-m{color:var(--bug)}
+.ef-l{color:var(--pink)}
+.ef-xl{color:var(--feature)}
+
+/* notion section */
+.notion-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+.n-card{background:var(--raised);border:1px solid var(--border);border-radius:5px;padding:12px 14px}
+.n-card-title{font-size:12.5px;font-weight:600;color:var(--text-bright);margin-bottom:4px;display:flex;align-items:center;gap:6px}
+.n-card-title .ico{font-size:14px}
+.n-card-desc{font-size:11.5px;color:var(--text-dim);line-height:1.5}
+.n-card.current{border-color:var(--improve);border-style:dashed}
+.n-card.missing{border-color:var(--bug);border-style:dashed}
+
+@media(max-width:640px){
+  .shell{padding:20px 16px 48px}
+  .notion-grid{grid-template-columns:1fr}
+  .ic-effort{display:none}
+}
+@media(prefers-reduced-motion:reduce){*{transition:none !important}}
+</style>
+
+<div class="shell">
+
+<div class="doc-hdr">
+  <div class="tag">jrh-orbit &mdash; engineering document</div>
+  <h1>Improvement Plan &amp; Code Review</h1>
+  <div class="sub">2026-06-22 &middot; 17 issues &middot; Root cause analysis + fix specifications</div>
+</div>
+
+<!-- TOC -->
+<div class="toc">
+  <div class="toc-title">Contents</div>
+  <a href="#s1"><span class="num">A</span>Notes Editor &mdash; Notion-like UX Roadmap</a>
+  <a href="#s2"><span class="num">B</span>Bugs &mdash; Root Cause &amp; Fix Plan (8)</a>
+  <a href="#s3"><span class="num">C</span>UX Improvements (5)</a>
+  <a href="#s4"><span class="num">D</span>Feature Requests (4)</a>
+  <a href="#s5"><span class="num">E</span>Priority &amp; Effort Matrix</a>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- SECTION A: Notion-like Editor Roadmap              -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div class="section" id="s1">
+<div class="section-hdr">
+  <div class="section-marker" style="background:var(--blue)"></div>
+  <div class="section-title">Notes Editor <span class="accent">&mdash; Notion-like UX Roadmap</span></div>
+</div>
+
+<div class="d-block">
+<div class="d-text" style="margin-bottom:16px">
+  현재 에디터는 <strong>TipTap 3.25 (ProseMirror)</strong> 기반으로 17개 이상의 extension을 사용 중입니다.
+  Notion 수준의 사용성을 위해 아래 영역별 현황과 개선 방향을 정리합니다.
+</div>
+</div>
+
+<!-- comparison grid -->
+<div class="d-block">
+<div class="d-label">Notion vs jrh-orbit 기능 비교</div>
+<div class="notion-grid">
+  <div class="n-card current">
+    <div class="n-card-title"><span class="ico">&#9745;</span> 블록 에디터 기반</div>
+    <div class="n-card-desc">TipTap/ProseMirror가 블록 기반. 각 paragraph, heading, list item이 노드 단위. 기반 구조는 이미 Notion과 동일.</div>
+  </div>
+  <div class="n-card missing">
+    <div class="n-card-title"><span class="ico">&#9744;</span> 블록 드래그 핸들</div>
+    <div class="n-card-desc">현재 이미지에만 <code>data-drag-handle</code> 속성이 있음. 모든 블록에 좌측 드래그 핸들 UI 필요. <code>@tiptap-pro/extension-drag-handle</code> 또는 커스텀 구현 필요.</div>
+  </div>
+  <div class="n-card current">
+    <div class="n-card-title"><span class="ico">&#9745;</span> 리스트 들여쓰기</div>
+    <div class="n-card-desc">StarterKit의 Tab/Shift+Tab이 동작. 다만 일부 상황에서 indent가 풀리는 버그 존재 가능.</div>
+  </div>
+  <div class="n-card missing">
+    <div class="n-card-title"><span class="ico">&#9744;</span> 블록 간 이동 (드래그)</div>
+    <div class="n-card-desc">블록을 드래그해서 다른 위치로 옮기는 기능 없음. NodeView 기반 드래그 핸들 + ProseMirror DnD 로직 구현 필요.</div>
+  </div>
+  <div class="n-card current">
+    <div class="n-card-title"><span class="ico">&#9745;</span> 서식 도구 모음</div>
+    <div class="n-card-desc">EditorToolbar에 Bold, Italic, Heading, List, Table, Color, Align 등 대부분 구현. 696줄 규모.</div>
+  </div>
+  <div class="n-card missing">
+    <div class="n-card-title"><span class="ico">&#9744;</span> Slash Commands</div>
+    <div class="n-card-desc">'/' 입력으로 블록 타입 빠르게 전환하는 기능 없음. <code>@tiptap/extension-slash-command</code> 또는 커스텀 Suggestion 플러그인 필요.</div>
+  </div>
+  <div class="n-card current">
+    <div class="n-card-title"><span class="ico">&#9745;</span> Task List 체크박스</div>
+    <div class="n-card-desc">TaskList + TaskItem 확장으로 구현. nested 지원, carry-over 배지 표시. ID 메타데이터 자동 숨김(HideTaskMeta).</div>
+  </div>
+  <div class="n-card missing">
+    <div class="n-card-title"><span class="ico">&#9744;</span> Toggle / Callout 블록</div>
+    <div class="n-card-desc">접기/펼치기 토글 블록, 컬러 callout 블록 없음. Notion의 핵심 기능 중 하나.</div>
+  </div>
+</div>
+</div>
+
+<div class="d-block">
+<div class="d-label">핵심 개선 항목 (Phase별)</div>
+<ol class="d-steps">
+  <li><strong>Phase 1 &mdash; 기본 사용성 수정</strong><br>
+    줄 간격 일관성 수정 (<code>editor.css</code> paragraph/list/heading margin 통일),
+    Tab 들여쓰기 안정화, 이미지 렌더링 버그 수정, 표 헤더 색상 수정.
+    이 단계는 기존 코드의 CSS/로직 버그 수정 위주.</li>
+  <li><strong>Phase 2 &mdash; 블록 드래그 &amp; 재정렬</strong><br>
+    모든 top-level 노드에 좌측 드래그 핸들 추가.
+    TipTap Pro의 DragHandle 확장이 유료이므로, ProseMirror의 <code>NodeView</code> + 커스텀 <code>DragHandle</code> decoration으로 구현 권장.
+    각 블록 호버 시 좌측에 6-dot grip 아이콘 표시, 드래그하면 블록 위치 이동.</li>
+  <li><strong>Phase 3 &mdash; Slash Commands</strong><br>
+    '/' 키 입력 시 팝업 메뉴로 블록 타입 전환.
+    TipTap의 <code>Suggestion</code> 유틸리티 기반으로 구현.
+    Heading, Bullet List, Task List, Code Block, Table, Math, HR 등 빠르게 삽입.</li>
+  <li><strong>Phase 4 &mdash; 고급 블록 타입</strong><br>
+    Toggle(접기/펼치기), Callout(색상별 안내 박스), Column Layout 등
+    Notion 고유 블록 타입 추가. 각각 커스텀 TipTap extension으로 구현.</li>
+</ol>
+</div>
+
+<div class="d-block">
+<div class="d-label">에디터 줄 간격 분석</div>
+<div class="d-text">
+  현재 <code>editor.css</code>에서 블록 타입별 margin이 불일치합니다:
+</div>
+<div class="d-code"><pre><span class="cm">/* 현재 상태 - 블록 타입별 다른 간격 */</span>
+.ProseMirror          { line-height: <span class="str">1.65</span>; font-size: <span class="str">0.9375rem</span>; }
+.ProseMirror p        { margin: <span class="str">0.25rem 0</span>; }
+.ProseMirror li       { margin: <span class="str">0.15rem 0</span>; }
+.ProseMirror li p     { margin: <span class="str">0</span>; }
+.ProseMirror pre      { line-height: <span class="str">1.6</span>; }
+.ProseMirror h2       { margin: <span class="str">1.25rem 0 0.5rem</span>; }
+
+<span class="cm">/* 개선안 - 통일된 간격 시스템 */</span>
+<span class="add">.ProseMirror          { line-height: 1.65; }</span>
+<span class="add">.ProseMirror p        { margin: 0.2rem 0; }</span>
+<span class="add">.ProseMirror li       { margin: 0.2rem 0; }  /* p와 동일 */</span>
+<span class="add">.ProseMirror li p     { margin: 0; }</span>
+<span class="add">.ProseMirror pre      { line-height: 1.65; } /* base와 동일 */</span></pre></div>
+</div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- SECTION B: Bugs                                    -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div class="section" id="s2">
+<div class="section-hdr">
+  <div class="section-marker" style="background:var(--bug)"></div>
+  <div class="section-title">Bugs <span class="accent">&mdash; Root Cause &amp; Fix Plan</span></div>
+</div>
+
+<!-- #01 Timer persistence -->
+<div class="issue-card" id="i01">
+  <div class="ic-head" onclick="toggle(this)">
+    <span class="ic-num">#01</span>
+    <span class="ic-type bug">BUG</span>
+    <span class="ic-title">Timer 패널 닫으면 시간 누적 안 됨</span>
+    <span class="ic-effort ef-m">M</span>
+    <span class="ic-arrow">&#9656;</span>
+  </div>
+  <div class="ic-detail">
+    <div class="d-block">
+      <div class="d-label">Root Cause</div>
+      <div class="d-text">
+        코드 리뷰 결과, <code>useWorkhourTimerStore</code>는 실제로 <strong>localStorage에 timer 상태를 저장</strong>하고 있으며,
+        앱 재시작 시에도 <code>running=true</code>이면 경과 시간을 복원합니다 (line 72-80).
+        <code>document.visibilitychange</code> 이벤트로 탭 비활성 시에도 시간을 보정합니다.<br><br>
+        <strong>문제는 "패널 닫기"의 의미</strong>에 있습니다.
+        WorkhourTimer 컴포넌트가 언마운트되면 <code>setInterval</code>이 정리되지만,
+        store의 <code>start()</code> 함수에서 interval을 관리하는 <code>intervalId</code>가 <strong>module-scope 변수</strong>입니다.
+        컴포넌트 언마운트 시 interval이 클리어되면, 다시 마운트될 때 localStorage에서 복원하지만,
+        <strong>그 사이 시간은 startedAt 기반으로 계산되므로 누적은 정상</strong>이어야 합니다.<br><br>
+        실제 원인은 <strong>WorkhourTimer가 특정 뷰에서만 렌더링</strong>되는 구조일 가능성이 높습니다.
+        패널을 닫으면 interval이 정지되고, localStorage의 <code>running</code> 상태가 <code>pause()</code>로 변경될 수 있습니다.
+      </div>
+    </div>
+    <div class="d-block">
+      <div class="d-label">Affected Files</div>
+      <ul class="d-files">
+        <li>src/stores/useWorkhourTimerStore.ts &mdash; interval lifecycle</li>
+        <li>src/components/productivity/WorkhourTimer.tsx &mdash; mount/unmount</li>
+      </ul>
+    </div>
+    <div class="d-block">
+      <div class="d-label">Fix Plan</div>
+      <ol class="d-steps">
+        <li>Store의 interval 관리를 <strong>컴포넌트 lifecycle에서 분리</strong>. Store 초기화 시 interval을 시작하고 앱 전체 수명 동안 유지.</li>
+        <li>컴포넌트는 store의 <code>elapsed</code>를 구독만 하고, interval 시작/정지는 store의 <code>start()/pause()</code>만 호출.</li>
+        <li><code>AppShell.tsx</code>에서 앱 시작 시 <code>useWorkhourTimerStore.getState().restore()</code>를 호출하여 이전 세션 복원.</li>
+        <li>패널이 닫혀도 store의 interval은 계속 실행되므로 시간이 누적됨.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<!-- #02 Project code display -->
+<div class="issue-card" id="i02">
+  <div class="ic-head" onclick="toggle(this)">
+    <span class="ic-num">#02</span>
+    <span class="ic-type bug">BUG</span>
+    <span class="ic-title">하단 바에 프로젝트 코드로 표시됨</span>
+    <span class="ic-effort ef-s">S</span>
+    <span class="ic-arrow">&#9656;</span>
+  </div>
+  <div class="ic-detail">
+    <div class="d-block">
+      <div class="d-label">Root Cause</div>
+      <div class="d-text">
+        StatusBar에서 <code>activeProject</code>를 표시할 때, <code>useAppStore()</code>의 <code>activeProject</code> 값을 그대로 출력합니다.
+        이 값은 <strong>SidebarProjectTree에서 <code>projectId</code></strong>로 설정되며 (SidebarProjectTree.tsx:18),
+        <code>projectId</code>는 내부 코드(예: <code>PROJ-001</code>)입니다.<br><br>
+        <strong>projects 배열에서 name을 조회하지 않고 id를 바로 표시</strong>하는 것이 원인.
+      </div>
+    </div>
+    <div class="d-block">
+      <div class="d-label">Fix Plan</div>
+      <div class="d-text">
+        StatusBar에서 <code>activeProject</code> ID를 받아 <code>projects.find(p => p.id === activeProject)?.name</code>으로 변환하여 표시.
+        또는 <code>setActiveProject()</code> 호출 시 name도 함께 저장.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- #03 Sidebar edit missing -->
+<div class="issue-card" id="i03">
+  <div class="ic-head" onclick="toggle(this)">
+    <span class="ic-num">#03</span>
+    <span class="ic-type bug">BUG</span>
+    <span class="ic-title">사이드바 모드에서 노트 수정 기능 없음</span>
+    <span class="ic-effort ef-m">M</span>
+    <span class="ic-arrow">&#9656;</span>
+  </div>
+  <div class="ic-detail">
+    <div class="d-block">
+      <div class="d-label">Root Cause</div>
+      <div class="d-text">
+        <code>SidebarMode.tsx</code>의 <strong>MemoEditor</strong> 컴포넌트 (line 654-798)는
+        오늘 생성된 quick-memo만 편집할 수 있는 경량 에디터입니다.<br><br>
+        사이드바에서 기존 노트를 클릭하면 <code>openMemoForEdit()</code>가 호출되지만,
+        이 함수는 <strong>오늘의 research 폴더에서만 파일을 로드</strong>합니다.
+        이전 날짜의 노트나 다른 타입의 노트를 열 수 있는 경로가 없습니다.<br><br>
+        Expanded 모드에서는 <code>NoteEditor</code> 전체가 렌더링되어 모든 노트를 편집할 수 있지만,
+        사이드바 모드에서는 MemoEditor만 있어서 기존 노트 수정이 불가능합니다.
+      </div>
+    </div>
+    <div class="d-block">
+      <div class="d-label">Affected Files</div>
+      <ul class="d-files">
+        <li>src/components/layout/SidebarMode.tsx &mdash; MemoEditor (line 654-798)</li>
+      </ul>
+    </div>
+    <div class="d-block">
+      <div class="d-label">Fix Plan</div>
+      <ol class="d-steps">
+        <li><code>openMemoForEdit()</code>에 <strong>임의 경로의 노트를 열 수 있는 파라미터</strong> 추가.</li>
+        <li>사이드바 노트 목록에서 클릭 시 해당 노트 경로로 MemoEditor를 초기화.</li>
+        <li>또는, 사이드바에서 노트 클릭 시 <strong>자동으로 Expanded 모드로 전환</strong>하여 전체 편집 UI 제공 (더 간단한 접근).</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<!-- #04 Quick Memo promotion duplicate -->
+<div class="issue-card" id="i04">
+  <div class="ic-head" onclick="toggle(this)">
+    <span class="ic-num">#04</span>
+    <span class="ic-type bug">BUG</span>
+    <span class="ic-title">Quick Memo 승격 시 기존 노트 유지 &amp; 중복 안내</span>
+    <span class="ic-effort ef-m">M</span>
+    <span class="ic-arrow">&#9656;</span>
+  </div>
+  <div class="ic-detail">
+    <div class="d-block">
+      <div class="d-label">Root Cause</div>
+      <div class="d-text">
+        <strong>NoteListView.tsx</strong>의 <code>handlePromote()</code> (line 694-754)에서
+        의도적으로 <strong>"새 파일 생성 + 원본 archive"</strong> 방식으로 구현되어 있습니다:
+      </div>
+      <div class="d-code"><pre><span class="cm">// NoteListView.tsx:703-738</span>
+<span class="kw">const</span> noteId = <span class="fn">generateNoteId</span>(targetType, notes, typeAbbrevMap);
+<span class="kw">const</span> fullPath = <span class="kw">await</span> <span class="fn">join</span>(dataDir, FOLDERS.research, filename);
+<span class="cm">// 1) 새 노트 생성 (새 ID, 새 type)</span>
+<span class="kw">await</span> <span class="fn">invoke</span>(<span class="str">'write_note'</span>, { path: fullPath, content: fm + newBody });
+<span class="cm">// 2) 원본은 status: 'archived'로 변경</span>
+sourceFm = <span class="fn">updateFrontmatterField</span>(sourceFm, <span class="str">'status'</span>, <span class="str">'archived'</span>);</pre></div>
+      <div class="d-text" style="margin-top:10px">
+        원본이 archived 되지만 <strong>노트 목록에서 archived가 기본적으로 숨겨지지 않으면</strong> 두 개가 보입니다.<br><br>
+        <strong>중복 안내 문제</strong>: <code>AutoSuggestionBanner.tsx</code>의 <code>dismissed</code> 상태가
+        <strong>React useState</strong>로 관리됩니다 (line 54). 노트가 저장/리로드되면
+        컴포넌트가 리마운트되어 dismissed가 초기화되고, 키워드 매칭이 다시 발생합니다.
+        승격 후 type이 바뀌어도, <strong>body의 키워드는 그대로</strong>이므로 새 type에서도 트리거될 수 있습니다.
+      </div>
+    </div>
+    <div class="d-block">
+      <div class="d-label">Fix Plan</div>
+      <ol class="d-steps">
+        <li><strong>In-place 변환</strong>으로 변경: 새 파일을 만들지 않고, 기존 파일의 frontmatter <code>type</code>과 <code>id</code> 필드만 업데이트.
+          필요시 파일명도 rename. 이렇게 하면 단일 파일이 유지됨.</li>
+        <li><code>handlePromote</code>에서 승격 완료 후 frontmatter에 <code>promoted: true</code> 플래그 추가.</li>
+        <li><code>AutoSuggestionBanner</code>에서 <code>promoted: true</code>이면 승격 제안을 건너뛰도록 수정.</li>
+        <li>대안: dismissed 상태를 노트의 frontmatter에 저장하여 영구적으로 유지.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<!-- #05 Image rendering -->
+<div class="issue-card" id="i05">
+  <div class="ic-head" onclick="toggle(this)">
+    <span class="ic-num">#05</span>
+    <span class="ic-type bug">BUG</span>
+    <span class="ic-title">이미지 첨부 시 렌더링 안 됨 (Caption만 표시)</span>
+    <span class="ic-effort ef-m">M</span>
+    <span class="ic-arrow">&#9656;</span>
+  </div>
+  <div class="ic-detail">
+    <div class="d-block">
+      <div class="d-label">Root Cause</div>
+      <div class="d-text">
+        <code>ResizableImageView.tsx</code>에서 이미지는 <code>&lt;img src={node.attrs.src}&gt;</code>로 렌더링됩니다.
+        이미지 삽입 시 <code>EditorToolbar.tsx</code> (line 473-514)에서 파일을 <code>attachments/</code> 폴더에 복사하고
+        경로를 <code>src</code> 속성에 설정합니다.<br><br>
+        <strong>가능한 원인:</strong>
+      </div>
+      <ol class="d-steps">
+        <li><strong>경로 문제</strong>: Tauri의 WebView에서 로컬 파일 경로(<code>C:\...</code>)를 직접 src로 사용하면
+          보안 정책으로 차단될 수 있음. <code>convertFileSrc()</code> (Tauri API)를 사용해야 WebView에서 접근 가능.</li>
+        <li><strong>base64 변환 실패</strong>: NoteEditor.tsx line 462-474의 드래그/드롭 핸들러에서
+          base64 변환을 시도하지만, 큰 이미지에서 실패할 수 있음.</li>
+        <li><strong>NodeView 렌더링 조건</strong>: ResizableImageView에서 <code>node.attrs.src</code>가 비어있거나
+          invalid할 때 이미지 태그가 렌더링되지 않고 caption 영역만 보일 수 있음.</li>
+      </ol>
+    </div>
+    <div class="d-block">
+      <div class="d-label">Fix Plan</div>
+      <ol class="d-steps">
+        <li>ResizableImageView에서 <code>src</code> 값을 디버그 로그로 확인하여 실제 경로/값 파악.</li>
+        <li>로컬 파일 경로인 경우 <code>convertFileSrc()</code>로 Tauri asset URL로 변환.</li>
+        <li>이미지 로드 실패 시 fallback UI (에러 메시지 + 재시도 버튼) 표시.</li>
+        <li><code>img</code> 태그에 <code>onError</code> 핸들러 추가하여 경로 문제 감지.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<!-- #06 Table header color -->
+<div class="issue-card" id="i06">
+  <div class="ic-head" onclick="toggle(this)">
+    <span class="ic-num">#06</span>
+    <span class="ic-type bug">BUG</span>
+    <span class="ic-title">표 붙여넣기 시 첫 행 색상 깨짐</span>
+    <span class="ic-effort ef-s">S</span>
+    <span class="ic-arrow">&#9656;</span>
+  </div>
+  <div class="ic-detail">
+    <div class="d-block">
+      <div class="d-label">Root Cause</div>
+      <div class="d-text">
+        외부에서 붙여넣은 표의 첫 행이 <code>&lt;th&gt;</code>가 아닌 <code>&lt;td&gt;</code>로 파싱되거나,
+        외부 HTML에 포함된 <strong>인라인 스타일 <code>background-color: white</code></strong>가 테마 CSS를 덮어씁니다.<br><br>
+        <code>editor.css</code> line 465에서 <code>th</code>에 <code>var(--color-paper-soft)</code> 배경을 지정하지만,
+        붙여넣기 시 원본의 인라인 스타일이 우선합니다.
+        TipTap의 <code>TableHeader</code> extension (extensions.ts:149-163)에서 <code>backgroundColor</code> 속성을
+        attribute로 파싱하므로, 외부 white 배경이 그대로 저장됩니다.
+      </div>
+    </div>
+    <div class="d-block">
+      <div class="d-label">Fix Plan</div>
+      <ol class="d-steps">
+        <li>테이블 붙여넣기 시 <strong>인라인 background-color를 제거</strong>하는 paste transform 추가.
+          TipTap의 <code>transformPastedHTML</code> 옵션에서 <code>th/td</code>의 background-color 인라인 스타일 제거.</li>
+        <li>또는 <code>editor.css</code>에서 <code>th</code> 배경색에 <code>!important</code> 추가 (단, 사용자 커스텀 색상이 있으면 충돌 가능).</li>
+        <li>가장 좋은 방법: paste transform에서 첫 행(<code>thead</code>)의 배경색만 제거하고, 나머지 셀은 유지.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<!-- #07 Tasks markdown -->
+<div class="issue-card" id="i07">
+  <div class="ic-head" onclick="toggle(this)">
+    <span class="ic-num">#07</span>
+    <span class="ic-type bug">BUG</span>
+    <span class="ic-title">Tasks에서 마크다운 원문 노출</span>
+    <span class="ic-effort ef-s">S</span>
+    <span class="ic-arrow">&#9656;</span>
+  </div>
+  <div class="ic-detail">
+    <div class="d-block">
+      <div class="d-label">Root Cause</div>
+      <div class="d-text">
+        <code>TaskListView.tsx</code> line 465에서 task title을 <strong><code>&lt;span&gt;</code>에 plain text로 렌더링</strong>합니다.
+        마크다운 렌더링이나 strip 처리가 없어서 <code>[링크](URL)</code>이 그대로 보입니다.<br><br>
+        <code>[KGS]</code>가 <code>\[KGS\]</code>로 보이는 이유: task title이 Daily Log의 markdown에서 추출될 때,
+        대괄호가 마크다운 링크 문법으로 해석되지 않도록 <strong>escape 처리</strong>된 상태로 저장되기 때문입니다.
+      </div>
+    </div>
+    <div class="d-block">
+      <div class="d-label">Fix Plan</div>
+      <ol class="d-steps">
+        <li>Task title에서 마크다운 문법을 <strong>plain text로 변환하는 strip 함수</strong> 적용.
+          <code>[text](url)</code> &rarr; <code>text</code>, <code>\[text\]</code> &rarr; <code>[text]</code>.</li>
+        <li>정규식 예시: <code>title.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').replace(/\\([\[\]])/g, '$1')</code></li>
+        <li>Task 생성/수정 시점에서 title을 정규화하는 것도 고려 (저장 시 strip).</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<!-- #08 Daily log task duplicates -->
+<div class="issue-card" id="i08">
+  <div class="ic-head" onclick="toggle(this)">
+    <span class="ic-num">#08</span>
+    <span class="ic-type bug">BUG</span>
+    <span class="ic-title">Daily Log에서 Task 수정 시 중복 생성</span>
+    <span class="ic-effort ef-m">M</span>
+    <span class="ic-arrow">&#9656;</span>
+  </div>
+  <div class="ic-detail">
+    <div class="d-block">
+      <div class="d-label">Root Cause</div>
+      <div class="d-text">
+        Daily Log에서 task를 직접 수정하면 두 가지 경로가 동시에 실행됩니다:
+      </div>
+      <ol class="d-steps">
+        <li><code>detectTodoTitleChanges()</code> (dailyLogHelper.ts:591)가 제목 변경을 감지하고 <code>updateTodoTitle()</code>로 todos.json을 업데이트.</li>
+        <li>에디터의 onChange가 일반 텍스트 변경으로 인식하여 <code>- [ ] 수정된 텍스트</code>를 <strong>새 task로 등록</strong>하려고 시도.
+          <code>registerNewTodo()</code> (line 808)가 ID가 없는 체크리스트 항목을 발견하면 새 TASK-XXX를 생성.</li>
+      </ol>
+      <div class="d-text" style="margin-top:10px">
+        핵심: <strong>제목 수정 시 기존 ID가 유지되어야 하는데</strong>,
+        수정 과정에서 <code>[TASK-XXX]</code> 부분이 깨지면 ID 없는 항목으로 인식되어 새 task가 등록됩니다.
+        <code>deduplicateDailyLogBody()</code>가 있지만, 제목이 미묘하게 다르면 (오타 수정) 중복으로 인식하지 못합니다.
+      </div>
+    </div>
+    <div class="d-block">
+      <div class="d-label">Fix Plan</div>
+      <ol class="d-steps">
+        <li><code>registerNewTodo()</code>에서 새 task 생성 전, 기존 task와 <strong>유사도 비교</strong> (Levenshtein distance 또는 포함 관계)로 중복 방지.</li>
+        <li><code>HideTaskMeta</code> extension이 <code>[TASK-XXX]</code>를 숨기고 있으므로, 사용자가 제목만 수정해도 ID가 보존되는지 확인.
+          수정 시 ID prefix가 손상되지 않도록 <strong>decoration 방식으로 숨기되, 실제 텍스트는 유지</strong>.</li>
+        <li><code>detectTodoTitleChanges()</code>가 실행된 후에는 <code>registerNewTodo()</code>를 건너뛰도록 순서 보장.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- SECTION C: Improvements                            -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div class="section" id="s3">
+<div class="section-hdr">
+  <div class="section-marker" style="background:var(--improve)"></div>
+  <div class="section-title">UX Improvements <span class="accent">&mdash; 5 issues</span></div>
+</div>
+
+<!-- #09 Timer adjustments -->
+<div class="issue-card" id="i09">
+  <div class="ic-head" onclick="toggle(this)">
+    <span class="ic-num">#09</span>
+    <span class="ic-type improve">IMPROVE</span>
+    <span class="ic-title">진행 중 시간 조정 + 버튼 추가 (-1h, -5m, +5m)</span>
+    <span class="ic-effort ef-s">S</span>
+    <span class="ic-arrow">&#9656;</span>
+  </div>
+  <div class="ic-detail">
+    <div class="d-block">
+      <div class="d-label">현재 상태</div>
+      <div class="d-text">
+        코드 리뷰 결과, <code>addMinutes()</code>와 <code>subtractMinutes()</code>는 이미 <strong>타이머 실행 중에도 동작</strong>합니다
+        (useWorkhourTimerStore.ts:112-131). 현재 세션 시간을 계산한 후 baseElapsed에 반영하는 구조.<br><br>
+        그러나 <strong>UI에서 버튼이 비활성화</strong>되어 있거나, 버튼이 숨겨져 있을 가능성이 있습니다.
+        WorkhourTimer.tsx의 조정 버튼 영역(line 69-100)이 특정 조건에서만 표시되는지 확인 필요.
+      </div>
+    </div>
+    <div class="d-block">
+      <div class="d-label">Fix Plan</div>
+      <ol class="d-steps">
+        <li>타이머 실행 중에도 조정 버튼이 항상 활성화/표시되도록 UI 조건 수정.</li>
+        <li>버튼 추가: <code>-1h</code>, <code>-5m</code>, <code>+5m</code>.
+          기존 <code>-30m</code>, <code>-10m</code>, <code>+10m</code>, <code>+30m</code>, <code>+1h</code>에 추가.</li>
+        <li>레이아웃: 두 줄 그리드로 배치 (<code>-1h -30m -10m -5m | +5m +10m +30m +1h</code>).</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<!-- #10 Hub tags filtering -->
+<div class="issue-card" id="i10">
+  <div class="ic-head" onclick="toggle(this)">
+    <span class="ic-num">#10</span>
+    <span class="ic-type improve">IMPROVE</span>
+    <span class="ic-title">Hub: Topic 대신 Tags 필터 + PROJECT-only 노트 즉시 반영</span>
+    <span class="ic-effort ef-m">M</span>
+    <span class="ic-arrow">&#9656;</span>
+  </div>
+  <div class="ic-detail">
+    <div class="d-block">
+      <div class="d-label">Root Cause</div>
+      <div class="d-text">
+        <code>hubLoader.ts</code>의 <code>loadProjectHubData()</code> (line 132-205)에서
+        <code>findNotesForProject()</code>로 프로젝트 노트를 조회합니다.<br><br>
+        <code>db.ts</code> line 136-149의 <code>findNotesForProject()</code>는
+        <strong>전체 FTS 인덱스를 로드한 후 JS에서 필터링</strong>합니다:
+      </div>
+      <div class="d-code"><pre><span class="cm">// db.ts:142 - 전체를 가져온 후 필터</span>
+<span class="kw">const</span> all = <span class="kw">await</span> database.<span class="fn">select</span>&lt;HubNoteRow[]&gt;(
+  <span class="str">`SELECT * FROM notes_fts`</span>
+);
+<span class="kw">const</span> rows = all.<span class="fn">filter</span>(r => r.project && r.project.<span class="fn">includes</span>(projectName));</pre></div>
+      <div class="d-text" style="margin-top:10px">
+        PROJECT만 설정한 노트가 Hub에 안 보이는 이유: 노트가 <strong>FTS 인덱스에 아직 반영되지 않았을 때</strong>
+        (indexing 타이밍 이슈) 또는 frontmatter의 project 필드 형식이 다를 때 (string vs array).
+      </div>
+    </div>
+    <div class="d-block">
+      <div class="d-label">Fix Plan</div>
+      <ol class="d-steps">
+        <li>Hub 필터링을 <strong>Topic에서 Tags 기반</strong>으로 변경. TopicHubView를 TagHubView로 리팩토링.</li>
+        <li><code>findNotesForProject()</code>를 SQL WHERE 절로 변경하여 성능 개선:
+          <code>WHERE project LIKE '%projectName%'</code>.</li>
+        <li>노트 저장 시 <strong>즉시 FTS 인덱스 업데이트</strong> 호출. 현재는 배치 인덱싱일 수 있음.</li>
+        <li><code>normalizeProject()</code>로 project 필드를 항상 배열로 정규화하고, 인덱싱 시 쉼표 구분 문자열로 저장.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<!-- #11 Sidebar project notes -->
+<div class="issue-card" id="i11">
+  <div class="ic-head" onclick="toggle(this)">
+    <span class="ic-num">#11</span>
+    <span class="ic-type improve">IMPROVE</span>
+    <span class="ic-title">사이드바 프로젝트 버튼에 Notes도 표시</span>
+    <span class="ic-effort ef-s">S</span>
+    <span class="ic-arrow">&#9656;</span>
+  </div>
+  <div class="ic-detail">
+    <div class="d-block">
+      <div class="d-label">Root Cause</div>
+      <div class="d-text">
+        <code>SidebarProjectTree.tsx</code> line 18에서 프로젝트 클릭 시
+        <strong>항상 <code>setView('tasks')</code></strong>를 호출합니다.
+        NoteListView의 <code>filterProject</code>는 별도의 상태로, TaskStore의 filterProject와 연동되지 않습니다.
+      </div>
+      <div class="d-code"><pre><span class="cm">// SidebarProjectTree.tsx:16-18 - tasks로만 이동</span>
+<span class="fn">setFilterProject</span>(projectId);
+<span class="fn">setActiveProject</span>(projectId);
+<span class="fn">setView</span>(<span class="str">'tasks'</span>);  <span class="cm">// &lt;-- 항상 tasks</span></pre></div>
+    </div>
+    <div class="d-block">
+      <div class="d-label">Fix Plan</div>
+      <ol class="d-steps">
+        <li>프로젝트 클릭 시 <strong>Tasks + Notes를 동시에 보여주는 프로젝트 개요 뷰</strong> 생성.
+          상단에 최근 Notes, 하단에 Active Tasks 표시.</li>
+        <li>또는 간단하게: 프로젝트 클릭 시 <strong>Hub의 ProjectHubView로 이동</strong>
+          (<code>setView('hub')</code> + 해당 프로젝트 선택).
+          Hub에 이미 Notes와 Tasks가 함께 표시되는 구조가 있으므로 재활용.</li>
+        <li>NoteListView에도 <code>filterProject</code>를 AppStore의 <code>activeProject</code>와 연동.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<!-- #12 Line spacing -->
+<div class="issue-card" id="i12">
+  <div class="ic-head" onclick="toggle(this)">
+    <span class="ic-num">#12</span>
+    <span class="ic-type improve">IMPROVE</span>
+    <span class="ic-title">노트 줄 간격 불일치</span>
+    <span class="ic-effort ef-s">S</span>
+    <span class="ic-arrow">&#9656;</span>
+  </div>
+  <div class="ic-detail">
+    <div class="d-block">
+      <div class="d-label">Root Cause</div>
+      <div class="d-text">
+        <code>editor.css</code>에서 블록 타입별 <code>margin</code>과 <code>line-height</code>가 다릅니다:
+      </div>
+      <table class="sum-table" style="margin-top:8px">
+        <tr><th>Element</th><th>margin</th><th>line-height</th></tr>
+        <tr><td><code>p</code></td><td>0.25rem 0</td><td>1.65 (inherited)</td></tr>
+        <tr><td><code>li</code></td><td>0.15rem 0</td><td>1.65 (inherited)</td></tr>
+        <tr><td><code>li p</code></td><td>0</td><td>1.65 (inherited)</td></tr>
+        <tr><td><code>pre</code></td><td>0.75rem 0</td><td>1.6</td></tr>
+        <tr><td><code>task-item</code></td><td>special calc</td><td>calc(0.9375rem * 1.65)</td></tr>
+        <tr><td>Sidebar editor</td><td>smaller</td><td>1.5</td></tr>
+      </table>
+      <div class="d-text" style="margin-top:10px">
+        <code>p</code>의 margin(0.25rem)과 <code>li</code>의 margin(0.15rem) 차이가 줄 간격 불일치의 주 원인.
+        또한 <code>pre</code>의 line-height(1.6)이 base(1.65)와 다릅니다.
+      </div>
+    </div>
+    <div class="d-block">
+      <div class="d-label">Fix Plan</div>
+      <ol class="d-steps">
+        <li><code>p</code>와 <code>li</code>의 margin을 동일한 값으로 통일 (0.2rem 0 권장).</li>
+        <li><code>pre</code> line-height를 base와 동일하게 1.65로 수정.</li>
+        <li>task-item의 line-height 계산식 제거하고, base line-height 상속으로 변경.</li>
+        <li>Sidebar editor의 line-height도 base와 동일한 비율 유지 (1.65).</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<!-- #13 Tasks active filter -->
+<div class="issue-card" id="i13">
+  <div class="ic-head" onclick="toggle(this)">
+    <span class="ic-num">#13</span>
+    <span class="ic-type improve">IMPROVE</span>
+    <span class="ic-title">Tasks Active 필터 (Todo + In-progress, Done 제외)</span>
+    <span class="ic-effort ef-s">S</span>
+    <span class="ic-arrow">&#9656;</span>
+  </div>
+  <div class="ic-detail">
+    <div class="d-block">
+      <div class="d-label">현재 상태</div>
+      <div class="d-text">
+        <code>TaskListView.tsx</code> line 40-46에 4개 필터가 정의되어 있습니다:
+        <code>All</code>, <code>Todo</code>, <code>In Progress</code>, <code>Done</code>.<br>
+        필터 로직 (line 223-226): <code>filterStatus</code>가 null이면 전체 표시, 아니면 해당 status만 표시.<br><br>
+        <strong>"Active" 필터가 없어서</strong> Todo와 In-progress를 동시에 보려면 All을 선택해야 하고,
+        All에는 완료된 task도 포함됩니다.
+      </div>
+    </div>
+    <div class="d-block">
+      <div class="d-label">Fix Plan</div>
+      <div class="d-code"><pre><span class="cm">// statusFilters에 Active 추가</span>
+<span class="kw">const</span> statusFilters = [
+  { label: <span class="str">'All'</span>, value: <span class="kw">null</span> },
+<span class="add">  { label: 'Active', value: 'active' },  // NEW</span>
+  { label: <span class="str">'Todo'</span>, value: <span class="str">'todo'</span> },
+  { label: <span class="str">'In Progress'</span>, value: <span class="str">'in-progress'</span> },
+  { label: <span class="str">'Done'</span>, value: <span class="str">'done'</span> },
+];
+
+<span class="cm">// 필터 로직 수정</span>
+.<span class="fn">filter</span>((t) => {
+  <span class="kw">if</span> (!filterStatus) <span class="kw">return true</span>;
+<span class="add">  if (filterStatus === 'active') return t.status !== 'done';</span>
+  <span class="kw">return</span> t.status === filterStatus;
+})</pre></div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- SECTION D: Feature Requests                        -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div class="section" id="s4">
+<div class="section-hdr">
+  <div class="section-marker" style="background:var(--feature)"></div>
+  <div class="section-title">Feature Requests <span class="accent">&mdash; 4 issues</span></div>
+</div>
+
+<!-- #14 Drag/drop image -->
+<div class="issue-card" id="i14">
+  <div class="ic-head" onclick="toggle(this)">
+    <span class="ic-num">#14</span>
+    <span class="ic-type feature">FEATURE</span>
+    <span class="ic-title">드래그/드롭 이미지 첨부</span>
+    <span class="ic-effort ef-s">S</span>
+    <span class="ic-arrow">&#9656;</span>
+  </div>
+  <div class="ic-detail">
+    <div class="d-block">
+      <div class="d-label">현재 상태</div>
+      <div class="d-text">
+        <code>NoteEditor.tsx</code> line 462-474에 이미 <strong>drop 이벤트 핸들러가 존재</strong>합니다.
+        파일을 드롭하면 base64로 변환하여 삽입하는 로직이 있습니다.
+        <strong>동작하지 않는다면</strong> Tauri의 WebView drop 이벤트 전파 문제일 가능성이 높습니다.
+      </div>
+    </div>
+    <div class="d-block">
+      <div class="d-label">Fix Plan</div>
+      <ol class="d-steps">
+        <li>Tauri의 <code>tauri://file-drop</code> 이벤트를 활용하여 네이티브 파일 드롭을 처리.</li>
+        <li>WebView의 기본 drop 이벤트가 Tauri에 의해 차단되는지 확인.
+          필요 시 <code>tauri.conf.json</code>의 <code>fileDropEnabled</code> 설정 조정.</li>
+        <li>드롭된 파일을 <code>attachments/</code>에 복사 후 <code>convertFileSrc()</code>로 URL 생성하여 삽입.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<!-- #15 Block drag/drop -->
+<div class="issue-card" id="i15">
+  <div class="ic-head" onclick="toggle(this)">
+    <span class="ic-num">#15</span>
+    <span class="ic-type feature">FEATURE</span>
+    <span class="ic-title">블록 단위 드래그/드롭 및 들여쓰기</span>
+    <span class="ic-effort ef-l">L</span>
+    <span class="ic-arrow">&#9656;</span>
+  </div>
+  <div class="ic-detail">
+    <div class="d-block">
+      <div class="d-label">구현 방안</div>
+      <div class="d-text">
+        TipTap Pro의 <code>DragHandle</code> 확장은 유료($149/year)입니다.
+        대안으로 <strong>커스텀 ProseMirror Plugin</strong>으로 구현합니다.
+      </div>
+      <ol class="d-steps">
+        <li><strong>DragHandle Decoration Plugin</strong> 생성: ProseMirror의 <code>DecorationSet</code>를 사용하여
+          각 top-level 노드 왼쪽에 드래그 핸들 위젯(&#8942;&#8942; 6-dot grip) 추가.</li>
+        <li><strong>드래그 시작</strong>: 핸들 mousedown 시 해당 블록의 NodeRange를 selection으로 설정하고
+          ProseMirror의 기본 드래그 동작 활성화.</li>
+        <li><strong>드롭 위치 표시</strong>: dragover 시 대상 위치에 파란색 라인 인디케이터 표시.
+          <code>view.posAtCoords()</code>로 드롭 위치 계산.</li>
+        <li><strong>블록 이동</strong>: drop 시 <code>tr.delete(from, to).insert(dropPos, slice)</code>로
+          ProseMirror transaction 실행.</li>
+        <li><strong>들여쓰기</strong>: Tab/Shift+Tab 키 바인딩 강화.
+          리스트 외에도 paragraph, heading에 indent level 속성 추가 가능.</li>
+      </ol>
+    </div>
+    <div class="d-block">
+      <div class="d-label">CSS 스케치</div>
+      <div class="d-code"><pre><span class="cm">/* 드래그 핸들 스타일 */</span>
+.drag-handle {
+  position: absolute;
+  left: -24px; top: 2px;
+  width: 18px; height: 18px;
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 0.15s;
+  color: var(--color-text-dim);
+}
+.ProseMirror > *:hover > .drag-handle,
+.drag-handle:hover { opacity: 0.6; }
+.drag-handle:active { cursor: grabbing; opacity: 1; }
+
+<span class="cm">/* 드롭 인디케이터 */</span>
+.drop-indicator {
+  height: 2px;
+  background: var(--color-accent);
+  border-radius: 1px;
+  pointer-events: none;
+}</pre></div>
+    </div>
+  </div>
+</div>
+
+<!-- #16 PDF export -->
+<div class="issue-card" id="i16">
+  <div class="ic-head" onclick="toggle(this)">
+    <span class="ic-num">#16</span>
+    <span class="ic-type feature">FEATURE</span>
+    <span class="ic-title">PDF 텍스트 선택 가능하게 내보내기</span>
+    <span class="ic-effort ef-m">M</span>
+    <span class="ic-arrow">&#9656;</span>
+  </div>
+  <div class="ic-detail">
+    <div class="d-block">
+      <div class="d-label">현재 상태</div>
+      <div class="d-text">
+        현재 PDF 내보내기 기능이 <strong>구현되어 있지 않습니다</strong>.
+        "PDF 저장하면 이미지로 저장되나?"라는 피드백은 브라우저의 <code>Ctrl+P</code>(인쇄) 기능을 사용한 것으로 추정됩니다.
+        Tauri WebView의 인쇄 기능은 제한적이어서 이미지 기반 렌더링이 될 수 있습니다.
+      </div>
+    </div>
+    <div class="d-block">
+      <div class="d-label">구현 방안</div>
+      <ol class="d-steps">
+        <li><strong>방법 A: print CSS + window.print()</strong> &mdash; <code>@media print</code> 스타일시트를 추가하고
+          Tauri의 WebView print 기능 활용. 텍스트 선택 가능한 PDF 생성. 가장 간단하지만 레이아웃 제어가 제한적.</li>
+        <li><strong>방법 B: html2pdf.js</strong> &mdash; HTML을 Canvas로 렌더링 후 PDF 변환.
+          단, 이 방식은 <strong>이미지 기반</strong>이므로 텍스트 선택 불가. 비추천.</li>
+        <li><strong>방법 C: Rust 백엔드 PDF 생성</strong> &mdash; <code>printpdf</code> 또는 <code>typst</code> 크레이트로
+          마크다운을 직접 PDF로 변환. 텍스트 선택 가능, 고품질. 구현 비용이 가장 높음.</li>
+        <li><strong>추천: 방법 A</strong>를 먼저 구현하고, 레이아웃 문제가 심하면 방법 C로 전환.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<!-- #17 Project dashboard -->
+<div class="issue-card" id="i17">
+  <div class="ic-head" onclick="toggle(this)">
+    <span class="ic-num">#17</span>
+    <span class="ic-type feature">FEATURE</span>
+    <span class="ic-title">프로젝트별 대시보드 노트</span>
+    <span class="ic-effort ef-xl">XL</span>
+    <span class="ic-arrow">&#9656;</span>
+  </div>
+  <div class="ic-detail">
+    <div class="d-block">
+      <div class="d-label">현재 상태</div>
+      <div class="d-text">
+        Hub 시스템에 <code>ProjectHubView</code>가 있지만, 이것은 자동 수집된 타임라인/할 일 목록이지
+        <strong>사용자가 직접 편집하는 대시보드</strong>가 아닙니다.<br><br>
+        요청: 프로젝트별로 하드웨어 사양, 초기궤도, 모드별 자세 등 <strong>공통 정보를 정리하는 편집 가능한 공간</strong> +
+        하위에 관련 노트들이 연결되는 구조.
+      </div>
+    </div>
+    <div class="d-block">
+      <div class="d-label">구현 방안</div>
+      <ol class="d-steps">
+        <li><strong>프로젝트 대시보드 노트 타입</strong> 추가: <code>type: 'project-dashboard'</code>.
+          프로젝트당 1개, frontmatter에 <code>project: 'PROJECT-NAME'</code>.</li>
+        <li><strong>대시보드 템플릿</strong>: 하드웨어 개요, 궤도 파라미터, 운용 모드, 하위 시스템,
+          관련 문서 링크 등의 섹션이 미리 정의된 템플릿.</li>
+        <li><strong>관련 노트 자동 수집</strong>: 대시보드 하단에 같은 project를 가진 노트들을
+          타임라인/카테고리별로 자동 표시 (기존 HubView 로직 재활용).</li>
+        <li><strong>Hub 통합</strong>: ProjectHubView에서 대시보드 노트가 있으면 상단에 고정 표시,
+          없으면 "대시보드 만들기" 버튼 제공.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- SECTION E: Priority Matrix                         -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div class="section" id="s5">
+<div class="section-hdr">
+  <div class="section-marker" style="background:var(--text-dim)"></div>
+  <div class="section-title">Priority &amp; Effort Matrix</div>
+</div>
+
+<div class="d-block">
+<div class="d-label">Effort 기준: S = 1-2h, M = 3-6h, L = 1-2d, XL = 3d+</div>
+<table class="sum-table">
+  <tr><th>#</th><th>Title</th><th>Type</th><th>Effort</th><th>Priority</th></tr>
+  <tr><td>#07</td><td>Tasks 마크다운 원문 노출</td><td><span style="color:var(--bug)">BUG</span></td><td class="effort ef-s">S</td><td>P0 &mdash; 즉시</td></tr>
+  <tr><td>#02</td><td>프로젝트 코드 표시</td><td><span style="color:var(--bug)">BUG</span></td><td class="effort ef-s">S</td><td>P0 &mdash; 즉시</td></tr>
+  <tr><td>#06</td><td>표 첫 행 색상</td><td><span style="color:var(--bug)">BUG</span></td><td class="effort ef-s">S</td><td>P0 &mdash; 즉시</td></tr>
+  <tr><td>#12</td><td>줄 간격 불일치</td><td><span style="color:var(--improve)">IMPROVE</span></td><td class="effort ef-s">S</td><td>P0 &mdash; 즉시</td></tr>
+  <tr><td>#13</td><td>Tasks Active 필터</td><td><span style="color:var(--improve)">IMPROVE</span></td><td class="effort ef-s">S</td><td>P0 &mdash; 즉시</td></tr>
+  <tr style="border-top:1px solid var(--border-strong)"><td>#01</td><td>Timer 패널 닫으면 중단</td><td><span style="color:var(--bug)">BUG</span></td><td class="effort ef-m">M</td><td>P1 &mdash; 이번 주</td></tr>
+  <tr><td>#05</td><td>이미지 렌더링 안 됨</td><td><span style="color:var(--bug)">BUG</span></td><td class="effort ef-m">M</td><td>P1 &mdash; 이번 주</td></tr>
+  <tr><td>#04</td><td>Quick Memo 승격 중복</td><td><span style="color:var(--bug)">BUG</span></td><td class="effort ef-m">M</td><td>P1 &mdash; 이번 주</td></tr>
+  <tr><td>#08</td><td>Daily Log task 중복 생성</td><td><span style="color:var(--bug)">BUG</span></td><td class="effort ef-m">M</td><td>P1 &mdash; 이번 주</td></tr>
+  <tr><td>#03</td><td>사이드바 노트 수정 불가</td><td><span style="color:var(--bug)">BUG</span></td><td class="effort ef-m">M</td><td>P1 &mdash; 이번 주</td></tr>
+  <tr><td>#09</td><td>타이머 버튼 추가</td><td><span style="color:var(--improve)">IMPROVE</span></td><td class="effort ef-s">S</td><td>P1 &mdash; 이번 주</td></tr>
+  <tr style="border-top:1px solid var(--border-strong)"><td>#11</td><td>사이드바 프로젝트에 Notes</td><td><span style="color:var(--improve)">IMPROVE</span></td><td class="effort ef-s">S</td><td>P2 &mdash; 다음 주</td></tr>
+  <tr><td>#10</td><td>Hub Tags 필터링</td><td><span style="color:var(--improve)">IMPROVE</span></td><td class="effort ef-m">M</td><td>P2 &mdash; 다음 주</td></tr>
+  <tr><td>#14</td><td>드래그/드롭 이미지</td><td><span style="color:var(--feature)">FEATURE</span></td><td class="effort ef-s">S</td><td>P2 &mdash; 다음 주</td></tr>
+  <tr style="border-top:1px solid var(--border-strong)"><td>#16</td><td>PDF 텍스트 선택 가능</td><td><span style="color:var(--feature)">FEATURE</span></td><td class="effort ef-m">M</td><td>P3 &mdash; 이후</td></tr>
+  <tr><td>#15</td><td>블록 드래그/들여쓰기</td><td><span style="color:var(--feature)">FEATURE</span></td><td class="effort ef-l">L</td><td>P3 &mdash; 이후</td></tr>
+  <tr><td>#17</td><td>프로젝트 대시보드 노트</td><td><span style="color:var(--feature)">FEATURE</span></td><td class="effort ef-xl">XL</td><td>P3 &mdash; 이후</td></tr>
+</table>
+</div>
+
+<div class="d-block" style="margin-top:24px">
+<div class="d-label">추천 작업 순서</div>
+<ol class="d-steps">
+  <li><strong>Quick wins (P0, 각 1-2시간)</strong>: #07, #02, #06, #12, #13 &mdash; CSS 수정과 간단한 로직 변경. 하루 안에 모두 해결 가능.</li>
+  <li><strong>Core bugs (P1, 각 3-6시간)</strong>: #01, #05, #04, #08, #03, #09 &mdash; 타이머 구조 개선, 이미지 디버깅, 승격 로직 재설계. 일주일 내 해결.</li>
+  <li><strong>UX enhancements (P2)</strong>: #11, #10, #14 &mdash; 사이드바/Hub 개선. 다음 주.</li>
+  <li><strong>Editor overhaul (P3)</strong>: #15, #16, #17 &mdash; 블록 에디터 고도화. Notion-like 경험의 핵심이지만 공수가 큼. 점진적 구현.</li>
+</ol>
+</div>
+
+</div>
+
+</div>
+
+<script>
+function toggle(head) {
+  head.closest('.issue-card').classList.toggle('expanded');
+}
+document.querySelectorAll('.toc a').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    const target = document.querySelector(a.getAttribute('href'));
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+});
+</script>

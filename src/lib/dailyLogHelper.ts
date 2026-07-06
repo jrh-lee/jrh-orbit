@@ -11,6 +11,12 @@ import { readJsonFile, writeJsonFile } from "./fileSystem";
 import { normalizeProject, NOTE_TYPE_LABELS, NOTE_TYPE_ICONS } from "../types/note";
 import type { NoteType } from "../types/note";
 import type { Task, TodosFile } from "../types/task";
+import {
+  parseTaskLine,
+  splitSubtaskId,
+  isCarryOverText,
+  findParentTaskId,
+} from "./taskSync";
 
 export interface ExistingNote {
   id: string;
@@ -33,8 +39,10 @@ export interface ActiveTodo {
   title: string;
   project: string;
   dueDate?: string;
+  /** yyyy-MM-dd — future-start tasks render dimmed with a (시작 M/D) badge */
+  startDate?: string;
   isOverdue: boolean;
-  subtasks?: { title: string; done: boolean }[];
+  subtasks?: { id: string; title: string; done: boolean }[];
 }
 
 const PROJECT_HEADING_RE = /^###\s+🛰️\s+(.+)$/;
@@ -42,11 +50,27 @@ const GENERAL_HEADING_RE = /^###\s+📌\s+GENERAL$/;
 const UNCHECKED_RE = /^- \[ \] (.+)$/;
 const TODO_ID_RE = /^\\?\[([^\]\\]+)\\?\]\s*/;
 
+/** Write todos.json and immediately nudge task views. The fs watcher has an
+ *  800ms debounce and write locks, so relying on it leaves the Tasks tab
+ *  stale when the user switches views right after an edit. */
+async function writeTodosFile(dataDir: string, data: TodosFile): Promise<void> {
+  await writeJsonFile(dataDir, FILES.todos, data);
+  window.dispatchEvent(new CustomEvent("tasks-changed"));
+}
+
 function extractProjectFromContext(lines: string[], lineIndex: number): string {
   for (let i = lineIndex - 1; i >= 0; i--) {
+    if (GENERAL_HEADING_RE.test(lines[i])) return "GENERAL";
     const pm = lines[i].match(PROJECT_HEADING_RE);
     if (pm) return pm[1].trim();
-    if (GENERAL_HEADING_RE.test(lines[i])) return "GENERAL";
+    // User-typed headings without the 🛰️ emoji (### KCS) count too —
+    // strip any leading emoji/symbol cluster and use the rest as the name.
+    const gm = lines[i].match(/^###\s+(.+)$/);
+    if (gm) {
+      const name = gm[1].replace(/^[^\p{L}\p{N}]+\s*/u, "").trim();
+      if (name.toUpperCase() === "GENERAL") return "GENERAL";
+      if (name) return name;
+    }
     if (lines[i].startsWith("## ")) break;
   }
   return "GENERAL";
@@ -56,8 +80,6 @@ export async function getCarriedOverItems(
   dataDir: string,
   currentDate: Date,
 ): Promise<CarriedItem[]> {
-  const prevDate = subDays(currentDate, 1);
-  const prevKey = format(prevDate, "yyyy-MM-dd");
   const items: CarriedItem[] = [];
 
   const todosFile = await readJsonFile<TodosFile>(dataDir, FILES.todos).catch(() => null);
@@ -75,8 +97,20 @@ export async function getCarriedOverItems(
   }
 
   try {
-    const prevPath = await join(dataDir, FOLDERS.daily, `${prevKey}.md`);
-    const raw = await invoke<string>("read_note", { path: prevPath });
+    // The immediately-previous day may have no file (weekend, skipped days,
+    // creating a past date retroactively) — walk back up to 7 days to the
+    // most recent daily log that actually exists.
+    let raw: string | null = null;
+    for (let back = 1; back <= 7 && raw === null; back++) {
+      const key = format(subDays(currentDate, back), "yyyy-MM-dd");
+      try {
+        const p = await join(dataDir, FOLDERS.daily, `${key}.md`);
+        raw = await invoke<string>("read_note", { path: p });
+      } catch {
+        raw = null;
+      }
+    }
+    if (raw === null) return items;
     const { body } = splitFrontmatter(raw);
     const lines = body.split("\n");
 
@@ -137,9 +171,10 @@ export async function getActiveTodos(
 
   const today = new Date(dateKey + "T00:00:00");
 
+  // Future-start tasks are included too — they render dimmed with a
+  // (시작 M/D) badge so they can be started (and completed) early.
   return todosFile.todos
     .filter((t: Task) => t.status !== "done")
-    .filter((t: Task) => !t.startDate || t.startDate <= dateKey)
     .map((t: Task) => {
       const isOverdue = t.dueDate ? new Date(t.dueDate) <= today : false;
       const project = t.projectId
@@ -150,8 +185,9 @@ export async function getActiveTodos(
         title: t.title,
         project,
         dueDate: t.dueDate,
+        startDate: t.startDate,
         isOverdue,
-        subtasks: t.subtasks?.length ? t.subtasks.map(s => ({ title: s.title, done: s.done })) : undefined,
+        subtasks: t.subtasks?.length ? t.subtasks.map(s => ({ id: s.id, title: s.title, done: s.done })) : undefined,
       };
     });
 }
@@ -191,6 +227,11 @@ export async function getExistingNotesForDate(
   return results;
 }
 
+function formatStartTag(startDate: string): string {
+  const [, m, d] = startDate.split("-");
+  return `${parseInt(m, 10)}/${parseInt(d, 10)}`;
+}
+
 function formatDueTag(dueDate: string, dateKey: string): string {
   const d = daysUntilDue(dueDate, dateKey);
   if (d < 0) return `⚠️ D+${Math.abs(d)}`;
@@ -224,6 +265,20 @@ export function buildDailyLogBody(
   const todoById = new Map<string, ActiveTodo>();
   for (const t of activeTodos) todoById.set(t.id, t);
 
+  // Subtask lines carry a `parentId.N` ref so checkbox toggles/edits in the
+  // daily note can sync back to the parent's subtasks[] in todos.json.
+  const subtaskRef = (parentId: string, st: { id: string }, idx: number): string => {
+    const sp = splitSubtaskId(st.id);
+    return sp && sp.parentId === parentId ? st.id : `${parentId}.${idx + 1}`;
+  };
+  const addSubtasks = (project: string, todo: ActiveTodo) => {
+    if (!todo.subtasks?.length) return;
+    todo.subtasks.forEach((st, idx) => {
+      const check = st.done ? "[x]" : "[ ]";
+      addToProject(project, `  - ${check} [${subtaskRef(todo.id, st, idx)}] ${st.title}`);
+    });
+  };
+
   for (const item of carriedItems) {
     const prefix = item.todoId ? `[${item.todoId}] ` : "";
     const check = item.done ? "[x]" : "[ ]";
@@ -239,6 +294,7 @@ export function buildDailyLogBody(
       cleanText += ` (${formatDueTag(matchedTodo.dueDate, dateKey)})`;
     }
     addToProject(item.project, `- ${check} ${prefix}${carryTag} ${cleanText}`);
+    if (matchedTodo) addSubtasks(item.project, matchedTodo);
     if (item.todoId) usedTodoIds.add(item.todoId);
     const stripped = item.text
       .replace(/\s*\((?:⚠️\s*)?D[+-]?\d+\)$/, "")
@@ -253,13 +309,11 @@ export function buildDailyLogBody(
     const dueTag = todo.dueDate
       ? ` (${formatDueTag(todo.dueDate, dateKey)})`
       : "";
-    addToProject(todo.project, `- [ ] [${todo.id}] ${todo.title}${dueTag}`);
-    if (todo.subtasks?.length) {
-      for (const st of todo.subtasks) {
-        const check = st.done ? "[x]" : "[ ]";
-        addToProject(todo.project, `  - ${check} ${st.title}`);
-      }
-    }
+    const startTag = todo.startDate && todo.startDate > dateKey
+      ? `(시작 ${formatStartTag(todo.startDate)}) `
+      : "";
+    addToProject(todo.project, `- [ ] [${todo.id}] ${startTag}${todo.title}${dueTag}`);
+    addSubtasks(todo.project, todo);
   }
 
   const lines: string[] = [];
@@ -338,7 +392,7 @@ export async function incrementCarryCount(
     return t;
   });
 
-  await writeJsonFile(dataDir, FILES.todos, {
+  await writeTodosFile(dataDir, {
     ...todosFile,
     lastModified: new Date().toISOString(),
     todos: updated,
@@ -404,22 +458,18 @@ export function generateDailyLogSummary(body: string): string {
  * the previous and current markdown body.
  */
 export function detectNewlyCheckedTodos(prev: string, next: string): string[] {
-  const checkedRe = /^- \[x\] \\?\[([^\]\\]+)\\?\]/;
-  const uncheckedRe = /^- \[ \] \\?\[([^\]\\]+)\\?\]/;
-
-  // Build set of unchecked todo IDs in previous body
+  // parseTaskLine handles indentation, so subtask lines ([TASK-011.1]) are included
   const prevUnchecked = new Set<string>();
   for (const line of prev.split("\n")) {
-    const m = line.match(uncheckedRe);
-    if (m) prevUnchecked.add(m[1]);
+    const p = parseTaskLine(line);
+    if (p?.id && !p.checked) prevUnchecked.add(p.id);
   }
 
-  // Find todo IDs that are checked in next body and were unchecked in prev body
   const newlyChecked: string[] = [];
   for (const line of next.split("\n")) {
-    const m = line.match(checkedRe);
-    if (m && prevUnchecked.has(m[1])) {
-      newlyChecked.push(m[1]);
+    const p = parseTaskLine(line);
+    if (p?.id && p.checked && prevUnchecked.has(p.id)) {
+      newlyChecked.push(p.id);
     }
   }
 
@@ -430,20 +480,17 @@ export function detectNewlyCheckedTodos(prev: string, next: string): string[] {
  * Detect todo IDs whose checkboxes changed from checked to unchecked (reopened).
  */
 export function detectNewlyUncheckedTodos(prev: string, next: string): string[] {
-  const checkedRe = /^- \[x\] \\?\[([^\]\\]+)\\?\]/;
-  const uncheckedRe = /^- \[ \] \\?\[([^\]\\]+)\\?\]/;
-
   const prevChecked = new Set<string>();
   for (const line of prev.split("\n")) {
-    const m = line.match(checkedRe);
-    if (m) prevChecked.add(m[1]);
+    const p = parseTaskLine(line);
+    if (p?.id && p.checked) prevChecked.add(p.id);
   }
 
   const newlyUnchecked: string[] = [];
   for (const line of next.split("\n")) {
-    const m = line.match(uncheckedRe);
-    if (m && prevChecked.has(m[1])) {
-      newlyUnchecked.push(m[1]);
+    const p = parseTaskLine(line);
+    if (p?.id && !p.checked && prevChecked.has(p.id)) {
+      newlyUnchecked.push(p.id);
     }
   }
 
@@ -451,12 +498,52 @@ export function detectNewlyUncheckedTodos(prev: string, next: string): string[] 
 }
 
 /**
+ * Set a subtask's done state. `subRef` is the `parentId.N` form used in daily
+ * notes: resolved first by exact subtask id, then positionally (index N-1) for
+ * legacy subtasks created with random ids.
+ */
+async function setSubtaskDone(
+  dataDir: string,
+  parentId: string,
+  subRef: string,
+  done: boolean,
+): Promise<void> {
+  const todosFile = await readJsonFile<TodosFile>(dataDir, FILES.todos);
+  if (!todosFile?.todos) return;
+
+  const subIndex = splitSubtaskId(subRef)?.subIndex ?? -1;
+  let changed = false;
+  const updated = todosFile.todos.map((t: Task) => {
+    if (t.id !== parentId || !t.subtasks?.length) return t;
+    let idx = t.subtasks.findIndex((s) => s.id === subRef);
+    if (idx < 0 && subIndex >= 1 && subIndex <= t.subtasks.length) idx = subIndex - 1;
+    if (idx < 0 || t.subtasks[idx].done === done) return t;
+    changed = true;
+    const subtasks = t.subtasks.map((s, i) =>
+      i === idx ? { ...s, done, status: done ? ("done" as const) : ("in-progress" as const) } : s,
+    );
+    return { ...t, subtasks, updatedAt: new Date().toISOString() };
+  });
+
+  if (!changed) return;
+  await writeTodosFile(dataDir, {
+    ...todosFile,
+    lastModified: new Date().toISOString(),
+    todos: updated,
+  });
+}
+
+/**
  * Reopen a todo in todos.json, setting status='in-progress' and clearing endDate.
+ * Accepts subtask refs (`parentId.N`) and toggles the subtask instead.
  */
 export async function reopenTodo(
   dataDir: string,
   todoId: string,
 ): Promise<void> {
+  const sub = splitSubtaskId(todoId);
+  if (sub) return setSubtaskDone(dataDir, sub.parentId, todoId, false);
+
   const todosFile = await readJsonFile<TodosFile>(dataDir, FILES.todos);
   if (!todosFile?.todos) return;
 
@@ -472,7 +559,7 @@ export async function reopenTodo(
     return t;
   });
 
-  await writeJsonFile(dataDir, FILES.todos, {
+  await writeTodosFile(dataDir, {
     ...todosFile,
     lastModified: new Date().toISOString(),
     todos: updated,
@@ -481,11 +568,15 @@ export async function reopenTodo(
 
 /**
  * Mark a todo as done in todos.json, setting status='done' and endDate to today.
+ * Accepts subtask refs (`parentId.N`) and toggles the subtask instead.
  */
 export async function completeTodo(
   dataDir: string,
   todoId: string,
 ): Promise<void> {
+  const sub = splitSubtaskId(todoId);
+  if (sub) return setSubtaskDone(dataDir, sub.parentId, todoId, true);
+
   const todosFile = await readJsonFile<TodosFile>(dataDir, FILES.todos);
   if (!todosFile?.todos) return;
 
@@ -502,19 +593,61 @@ export async function completeTodo(
     return t;
   });
 
-  await writeJsonFile(dataDir, FILES.todos, {
+  await writeTodosFile(dataDir, {
     ...todosFile,
     lastModified: new Date().toISOString(),
     todos: updated,
   });
 }
 
-const TODO_LINE_RE = /^- \[[ xX]\] \\?\[([^\]\\]+)\\?\]\s*(.*)$/;
-const TODO_CHECKBOX_RE = /^(- \[)([ xX])(\] )/;
+const TODO_CHECKBOX_RE = /^([ \t]*- \[)([ xX])(\] )/;
+
+/** Insert a task line at the end of its project section in the 작업 area,
+ *  creating the `### 🛰️ name` heading (before GENERAL) when missing. */
+function insertLineUnderProject(lines: string[], project: string, newLine: string): void {
+  let start = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].trim().match(/^###\s+(.+)$/);
+    if (!m) continue;
+    const name = m[1].replace(/^[^\p{L}\p{N}]+\s*/u, "").trim();
+    if (name === project || (project === "GENERAL" && name.toUpperCase() === "GENERAL")) {
+      start = i;
+      break;
+    }
+  }
+  if (start === -1) {
+    const heading = project === "GENERAL" ? "### 📌 GENERAL" : `### 🛰️ ${project}`;
+    let at = lines.findIndex((l) => GENERAL_HEADING_RE.test(l.trim()));
+    if (at === -1) {
+      const taskIdx = lines.findIndex((l) => /^## 작업/.test(l.trim()));
+      at = taskIdx >= 0 ? taskIdx + 1 : 0;
+    }
+    lines.splice(at, 0, heading, newLine);
+    return;
+  }
+  let end = lines.length;
+  for (let j = start + 1; j < lines.length; j++) {
+    const t = lines[j].trim();
+    if (/^###\s/.test(t) || /^## /.test(t) || /^---/.test(t)) {
+      end = j;
+      break;
+    }
+  }
+  let insertAt = end;
+  while (insertAt > start + 1 && lines[insertAt - 1].trim() === "") insertAt--;
+  lines.splice(insertAt, 0, newLine);
+}
 
 export async function syncDailyWithTodos(
   dataDir: string,
   dateKey: string,
+  /** Re-insert active tasks missing from the body (today's daily only) —
+   *  without this, a task whose line got lost never reappears. */
+  appendMissingActive = false,
+  /** Also re-insert tasks created within the last 10 minutes. Only for
+   *  explicit user actions in the Tasks tab — automatic load-time syncs must
+   *  keep the freshness guard so mid-typing junk doesn't resurrect. */
+  includeFresh = false,
 ): Promise<string | null> {
   const todosFile = await readJsonFile<TodosFile>(dataDir, FILES.todos);
   if (!todosFile?.todos) return null;
@@ -533,39 +666,86 @@ export async function syncDailyWithTodos(
   }
 
   const { frontmatter, body } = splitFrontmatter(raw);
-  let lines = body.split("\n");
+  // Future-start tasks are NOT removed — they stay visible (dimmed via the
+  // (시작 M/D) tag) so the user can start or complete them early.
+  const lines: string[] = body.split("\n");
   let changed = false;
 
-  // Remove TODO lines for tasks created after this daily log's date
-  lines = lines.filter((line) => {
-    const m = line.match(TODO_LINE_RE);
-    if (!m) return true;
-    const todo = todoMap.get(m[1]);
-    if (!todo) return true;
-    if (todo.startDate && todo.startDate > dateKey) {
-      changed = true;
-      return false;
+  // What checkbox state todos.json says a given ref should have.
+  const desiredDone = (id: string): boolean | undefined => {
+    const sub = splitSubtaskId(id);
+    if (sub) {
+      const parent = todoMap.get(sub.parentId);
+      if (!parent?.subtasks?.length) return undefined;
+      let st = parent.subtasks.find((s) => s.id === id);
+      if (!st && sub.subIndex >= 1 && sub.subIndex <= parent.subtasks.length) {
+        st = parent.subtasks[sub.subIndex - 1];
+      }
+      return st?.done;
     }
-    return true;
-  });
+    const todo = todoMap.get(id);
+    return todo ? todo.status === "done" : undefined;
+  };
 
   for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(TODO_LINE_RE);
-    if (!m) continue;
-    const todoId = m[1];
-    const todo = todoMap.get(todoId);
-    if (!todo) continue;
-
-    const isDone = todo.status === "done";
-    const checkMatch = lines[i].match(TODO_CHECKBOX_RE);
-    if (!checkMatch) continue;
-
-    const currentlyChecked = checkMatch[2] === "x" || checkMatch[2] === "X";
-    if (isDone && !currentlyChecked) {
-      lines[i] = lines[i].replace(TODO_CHECKBOX_RE, "$1x$3");
+    const p = parseTaskLine(lines[i]);
+    if (!p?.id) continue;
+    const isDone = desiredDone(p.id);
+    if (isDone !== undefined && isDone !== p.checked) {
+      lines[i] = lines[i].replace(TODO_CHECKBOX_RE, isDone ? "$1x$3" : "$1 $3");
       changed = true;
-    } else if (!isDone && currentlyChecked) {
-      lines[i] = lines[i].replace(TODO_CHECKBOX_RE, "$1 $3");
+    }
+
+    // Maintain the (시작 M/D) tag: present while the start date is in the
+    // future, removed automatically once the day arrives.
+    if (p.indent === 0) {
+      const todo = todoMap.get(p.id);
+      if (todo) {
+        const wantTag = !!(todo.startDate && todo.startDate > dateKey);
+        const hasTag = /^\\?\(시작 /.test(p.title);
+        if (wantTag && !hasTag) {
+          lines[i] = lines[i].replace(
+            /^([ \t]*- \[[ xX]\] \\?\[[^\]\\]+\\?\]\s*)/,
+            `$1(시작 ${formatStartTag(todo.startDate!)}) `,
+          );
+          changed = true;
+        } else if (!wantTag && hasTag) {
+          lines[i] = lines[i].replace(/\\?\(시작 [^)]*\\?\)\s*/, "");
+          changed = true;
+        }
+      }
+    }
+  }
+
+  if (appendMissingActive) {
+    const present = new Set<string>();
+    for (const line of lines) {
+      const p = parseTaskLine(line);
+      if (p?.id) {
+        present.add(p.id);
+        const sub = splitSubtaskId(p.id);
+        if (sub) present.add(sub.parentId);
+      }
+    }
+    const projectsFile = await readJsonFile<{ projects?: { id: string; name: string }[] }>(
+      dataDir,
+      FILES.projects,
+    );
+    const tenMinAgo = Date.now() - 10 * 60 * 1000;
+    for (const t of todosFile.todos) {
+      if (t.status === "done") continue;
+      if (present.has(t.id)) continue;
+      // Freshly created tasks are excluded: a mid-typing registration whose
+      // line the user just edited away would otherwise resurrect here and
+      // fight the pending deletion sync.
+      if (!includeFresh && t.createdAt && new Date(t.createdAt).getTime() > tenMinAgo) continue;
+      const projName = t.projectId
+        ? (projectsFile?.projects?.find((p) => p.id === t.projectId)?.name ?? t.projectId)
+        : "GENERAL";
+      const startTag = t.startDate && t.startDate > dateKey
+        ? `(시작 ${formatStartTag(t.startDate)}) `
+        : "";
+      insertLineUnderProject(lines, projName, `- [ ] [${t.id}] ${startTag}${t.title}`);
       changed = true;
     }
   }
@@ -583,6 +763,8 @@ export async function syncDailyWithTodos(
 function stripTodoMeta(raw: string): string {
   return raw
     .replace(/^\\?\(이월[^)]*\\?\)\s*/, "")
+    .replace(/^\\?\(시작 [^)]*\\?\)\s*/, "")
+    .replace(/^\\?\(이월[^)]*\\?\)\s*/, "")
     .replace(/\s*\((?:⚠️\s*)?D[+-]?\d+\)$/, "")
     .replace(/\s*\(⚠️\s*D-Day\)$/, "")
     .trim();
@@ -594,19 +776,18 @@ export function detectTodoTitleChanges(
 ): { id: string; title: string }[] {
   const prevTitles = new Map<string, string>();
   for (const line of prev.split("\n")) {
-    const m = line.trim().match(TODO_LINE_RE);
-    if (m) prevTitles.set(m[1], stripTodoMeta(m[2]));
+    const p = parseTaskLine(line);
+    if (p?.id) prevTitles.set(p.id, stripTodoMeta(p.title));
   }
 
   const changes: { id: string; title: string }[] = [];
   for (const line of next.split("\n")) {
-    const m = line.trim().match(TODO_LINE_RE);
-    if (!m) continue;
-    const [, id, rawTitle] = m;
-    const title = stripTodoMeta(rawTitle);
-    const prevTitle = prevTitles.get(id);
+    const p = parseTaskLine(line);
+    if (!p?.id) continue;
+    const title = stripTodoMeta(p.title);
+    const prevTitle = prevTitles.get(p.id);
     if (prevTitle !== undefined && prevTitle !== title && title) {
-      changes.push({ id, title });
+      changes.push({ id: p.id, title });
     }
   }
   return changes;
@@ -620,8 +801,18 @@ export async function updateTodoTitle(
   const todosFile = await readJsonFile<TodosFile>(dataDir, FILES.todos);
   if (!todosFile?.todos) return;
 
+  const sub = splitSubtaskId(todoId);
   let changed = false;
   const updated = todosFile.todos.map((t: Task) => {
+    if (sub) {
+      if (t.id !== sub.parentId || !t.subtasks?.length) return t;
+      let idx = t.subtasks.findIndex((s) => s.id === todoId);
+      if (idx < 0 && sub.subIndex >= 1 && sub.subIndex <= t.subtasks.length) idx = sub.subIndex - 1;
+      if (idx < 0 || t.subtasks[idx].title === newTitle) return t;
+      changed = true;
+      const subtasks = t.subtasks.map((s, i) => (i === idx ? { ...s, title: newTitle } : s));
+      return { ...t, subtasks, updatedAt: new Date().toISOString() };
+    }
     if (t.id === todoId && t.title !== newTitle) {
       changed = true;
       return { ...t, title: newTitle, updatedAt: new Date().toISOString() };
@@ -630,11 +821,39 @@ export async function updateTodoTitle(
   });
 
   if (!changed) return;
-  await writeJsonFile(dataDir, FILES.todos, {
+  await writeTodosFile(dataDir, {
     ...todosFile,
     lastModified: new Date().toISOString(),
     todos: updated,
   });
+}
+
+/**
+ * Normalize user-typed project headings in the 작업 section to the generated
+ * format: `### KCS` → `### 🛰️ KCS`, `### general` → `### 📌 GENERAL`.
+ * Headings that already start with an emoji/symbol are left alone.
+ */
+export function normalizeProjectHeadings(
+  body: string,
+): { body: string; changed: boolean } {
+  const lines = body.split("\n");
+  let changed = false;
+  let inTaskSection = false;
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (/^## /.test(trimmed)) {
+      inTaskSection = /^## 작업/.test(trimmed);
+      continue;
+    }
+    if (!inTaskSection) continue;
+    const m = trimmed.match(/^###\s+(.+)$/);
+    if (!m) continue;
+    const name = m[1].trim();
+    if (!name || !/^[\p{L}\p{N}]/u.test(name)) continue; // already emoji-prefixed
+    lines[i] = name.toUpperCase() === "GENERAL" ? "### 📌 GENERAL" : `### 🛰️ ${name}`;
+    changed = true;
+  }
+  return { body: changed ? lines.join("\n") : body, changed };
 }
 
 export function resolveProjectIdsInBody(
@@ -759,32 +978,102 @@ export function buildCarriedOverMeta(
   return [{ from: prevDateKey, items: items.map((i) => i.text) }];
 }
 
+export interface NewCheckboxItem {
+  /** Text of the new item, without the `- [ ] ` prefix. */
+  text: string;
+  /** Set when the line is indented under an ID-bearing task — register as its subtask. */
+  parentId?: string;
+}
+
 /**
  * Detect new unchecked checkbox items added between prev and next markdown body.
- * Returns the raw text (without the `- [ ] ` prefix) of newly added items.
- * Excludes items that already have a TODO ID `[TASK-xxx]` or carry-over `(이월)` prefix.
+ * Top-level items become new main tasks; indented items under an ID-bearing task
+ * are reported with that task's id as `parentId` (→ registerNewSubtask).
+ * Indented items whose parent has no ID yet are skipped — they're picked up on a
+ * later cycle once the parent's ID has been injected.
+ * Excludes items that already have a TODO ID or a carry-over `(이월)` prefix.
  */
-export function detectNewCheckboxItems(prev: string, next: string): string[] {
+export function detectNewCheckboxItems(prev: string, next: string): NewCheckboxItem[] {
   const prevLines = new Set(prev.split("\n").map((l) => l.trim()));
-  const results: string[] = [];
+  const results: NewCheckboxItem[] = [];
+  const nextLines = next.split("\n");
 
-  for (const line of next.split("\n")) {
-    const trimmed = line.trim();
-    const m = trimmed.match(/^- \[ \] (.+)$/);
-    if (!m) continue;
-    const text = m[1];
-    // Skip if already present in previous body
-    if (prevLines.has(trimmed)) continue;
-    // Skip items that already have a TODO ID like [TASK-xxx] or \[TASK-xxx\] (escaped by markdown serializer)
-    if (/^\\?\[[^\]\\]+\\?\]\s/.test(text)) continue;
+  for (let i = 0; i < nextLines.length; i++) {
+    const p = parseTaskLine(nextLines[i]);
+    if (!p || p.checked) continue;
+    // Skip items that already have a TODO ID
+    if (p.id) continue;
     // Skip carry-over items (escaped or unescaped)
-    if (/^\\?\(이월/.test(text)) continue;
+    if (isCarryOverText(p.title)) continue;
     // Skip empty, whitespace-only, or zero-width-space-only items
-    if (text.replace(/[​‌‍﻿]/g, "").trim() === "") continue;
-    results.push(text);
+    if (p.title.replace(/[​‌‍﻿]/g, "").trim() === "") continue;
+
+    if (p.indent > 0) {
+      // Indented items: ID-less lines under an ID-bearing task are always
+      // candidates, even if present in the previous body — the parent may
+      // have gotten its ID only after this line first appeared, so the
+      // "new vs prev" diff would never see it again. The caller's in-flight
+      // map guards against duplicate registration.
+      const parentId = findParentTaskId(nextLines, i);
+      if (!parentId) continue;
+      results.push({ text: p.title, parentId });
+    } else {
+      // Skip if already present in previous body
+      if (prevLines.has(nextLines[i].trim())) continue;
+      results.push({ text: p.title });
+    }
   }
 
   return results;
+}
+
+/**
+ * Register a new subtask under `parentId` in todos.json.
+ * The subtask id is `${parentId}.${n}` so daily-note lines can reference it.
+ * Returns the new subtask id, or null when the parent doesn't exist.
+ */
+export async function registerNewSubtask(
+  dataDir: string,
+  parentId: string,
+  title: string,
+): Promise<string | null> {
+  const todosFile = await readJsonFile<TodosFile>(dataDir, FILES.todos);
+  if (!todosFile?.todos) return null;
+
+  const now = new Date().toISOString();
+  let newId: string | null = null;
+  let alreadyExists: string | null = null;
+  const updated = todosFile.todos.map((t: Task) => {
+    if (t.id !== parentId) return t;
+    const subs = t.subtasks ?? [];
+    // Idempotency: detection may re-report a line whose registration already
+    // happened (e.g. after a reload cleared the in-flight map).
+    const existing = subs.find((s) => s.title.trim() === title.trim());
+    if (existing) {
+      alreadyExists = existing.id;
+      return t;
+    }
+    let maxN = subs.length;
+    for (const s of subs) {
+      const sp = splitSubtaskId(s.id);
+      if (sp && sp.parentId === parentId && sp.subIndex > maxN) maxN = sp.subIndex;
+    }
+    newId = `${parentId}.${maxN + 1}`;
+    return {
+      ...t,
+      subtasks: [...subs, { id: newId, title, done: false }],
+      updatedAt: now,
+    };
+  });
+
+  if (alreadyExists) return alreadyExists;
+  if (!newId) return null;
+  await writeTodosFile(dataDir, {
+    ...todosFile,
+    lastModified: now,
+    todos: updated,
+  });
+  return newId;
 }
 
 /**
@@ -813,6 +1102,35 @@ export async function registerNewTodo(
   const todosFile = await readJsonFile<TodosFile>(dataDir, FILES.todos);
   const existing = todosFile?.todos ?? [];
 
+  // Idempotency: the load-time orphan sweep may re-report a line whose task
+  // already exists (e.g. its ID injection was lost). Reuse the existing task.
+  const dup = existing.find((t) => t.status !== "done" && t.title.trim() === title.trim());
+  if (dup) return dup.id;
+
+  // Daily headings carry the project NAME — resolve to the project id so
+  // filters/links in the Tasks tab match (projectId must store the id).
+  // GENERAL also resolves if the user has an actual project named GENERAL.
+  // Matching order: exact (case-insensitive) → unique prefix/substring
+  // (### AJC matches project AJC2) → unresolved names stay unassigned rather
+  // than storing a garbage projectId string.
+  let projectId: string | undefined;
+  const projectsFile = await readJsonFile<{ projects?: { id: string; name: string }[] }>(
+    dataDir,
+    FILES.projects,
+  );
+  const projects = projectsFile?.projects ?? [];
+  const q = project.trim().toLowerCase();
+  const exact = projects.find((p) => p.id === project || p.name.trim().toLowerCase() === q);
+  if (exact) {
+    projectId = exact.id;
+  } else if (q && project !== "GENERAL") {
+    const partial = projects.filter((p) => {
+      const n = p.name.trim().toLowerCase();
+      return n.startsWith(q) || q.startsWith(n) || n.includes(q);
+    });
+    if (partial.length === 1) projectId = partial[0].id;
+  }
+
   // Determine next sequence number
   let maxSeq = 0;
   for (const t of existing) {
@@ -831,7 +1149,7 @@ export async function registerNewTodo(
   const newTask: Task = {
     id: newId,
     title,
-    projectId: project === "GENERAL" ? undefined : project,
+    projectId,
     status: "in-progress",
     priority: 2,
     startDate: today,
@@ -846,13 +1164,60 @@ export async function registerNewTodo(
 
   const updatedTodos = [...existing, newTask];
 
-  await writeJsonFile(dataDir, FILES.todos, {
+  await writeTodosFile(dataDir, {
     version: todosFile?.version ?? 1,
     lastModified: now,
     todos: updatedTodos,
   });
 
   return newId;
+}
+
+/**
+ * Delete a todo (or a subtask, for `parentId.N` refs) from todos.json.
+ * Done main tasks are kept — deleting a completed line from the daily is
+ * treated as view cleanup, not history deletion.
+ */
+export async function deleteTodoById(
+  dataDir: string,
+  todoId: string,
+): Promise<boolean> {
+  const todosFile = await readJsonFile<TodosFile>(dataDir, FILES.todos);
+  if (!todosFile?.todos) return false;
+
+  const sub = splitSubtaskId(todoId);
+  let changed = false;
+  let todos: Task[];
+  if (sub) {
+    const subIndex = sub.subIndex;
+    todos = todosFile.todos.map((t: Task) => {
+      if (t.id !== sub.parentId || !t.subtasks?.length) return t;
+      let idx = t.subtasks.findIndex((s) => s.id === todoId);
+      if (idx < 0 && subIndex >= 1 && subIndex <= t.subtasks.length) idx = subIndex - 1;
+      if (idx < 0 || t.subtasks[idx].done) return t;
+      changed = true;
+      return {
+        ...t,
+        subtasks: t.subtasks.filter((_, i) => i !== idx),
+        updatedAt: new Date().toISOString(),
+      };
+    });
+  } else {
+    todos = todosFile.todos.filter((t: Task) => {
+      if (t.id !== todoId) return true;
+      if (t.status === "done") return true;
+      changed = true;
+      return false;
+    });
+  }
+
+  if (!changed) return false;
+  await writeTodosFile(dataDir, {
+    ...todosFile,
+    lastModified: new Date().toISOString(),
+    todos,
+  });
+  return true;
 }
 
 const TODO_SECTION_MAP: Record<string, string[]> = {
@@ -941,7 +1306,7 @@ export async function registerNoteTodo(
     source_section: sourceSection,
   };
 
-  await writeJsonFile(dataDir, FILES.todos, {
+  await writeTodosFile(dataDir, {
     version: todosFile?.version ?? 1,
     lastModified: now,
     todos: [...existing, newTask],

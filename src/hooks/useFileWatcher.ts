@@ -20,12 +20,14 @@ type SyncEvent =
   | 'links-changed'
   | 'subsystems-changed'
   | 'topics-changed'
-  | 'workhours-changed';
+  | 'workhours-changed'
+  | 'calendar-changed';
 
 const JSON_FILE_EVENTS: Record<string, SyncEvent> = {
   'todos.json': 'tasks-changed',
   'projects.json': 'projects-changed',
   'ddays.json': 'ddays-changed',
+  'calendar.json': 'calendar-changed',
   'playlist.json': 'playlist-changed',
   'links.json': 'links-changed',
   'subsystems.json': 'subsystems-changed',

@@ -12,11 +12,13 @@ import { GraphView } from '../graph/GraphView';
 import { SettingsView } from '../settings/SettingsView';
 import { HubView } from '../hub/HubView';
 import { DashboardView } from '../dashboard/DashboardView';
+import { CalendarView } from '../calendar/CalendarView';
 
 const views = {
   daily: DailyLog,
   notes: NoteListView,
   tasks: TaskListView,
+  calendar: CalendarView,
   search: SearchView,
   statistics: StatisticsView,
   graph: GraphView,

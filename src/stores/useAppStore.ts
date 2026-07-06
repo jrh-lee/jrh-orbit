@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 export type WindowMode = 'dock' | 'sidebar' | 'expanded';
-export type AppView = 'daily' | 'notes' | 'tasks' | 'search' | 'statistics' | 'graph' | 'settings' | 'hub' | 'dashboard';
+export type AppView = 'daily' | 'notes' | 'tasks' | 'calendar' | 'search' | 'statistics' | 'graph' | 'settings' | 'hub' | 'dashboard';
 export type Theme = 'light' | 'dark' | 'spreadsheet' | 'cyberpunk' | 'forest' | 'ocean' | 'paper' | 'terminal' | 'solarized' | 'buddybuddy';
 
 const STORAGE_KEY = 'jrh-orbit-data-dir';
@@ -14,6 +14,8 @@ interface AppState {
   theme: Theme;
   pendingNotePath: string | null;
   pendingTagFilter: string | null;
+  /** yyyy-MM-dd — date the Daily view should jump to on next open */
+  pendingDailyDate: string | null;
   activeProject: string | null;
   hubTarget: { type: 'project'; name: string } | { type: 'topic'; name: string } | null;
 
@@ -24,6 +26,8 @@ interface AppState {
   setTheme: (theme: Theme) => void;
   openNote: (path: string) => void;
   clearPendingNote: () => void;
+  openDaily: (date: string) => void;
+  clearPendingDailyDate: () => void;
   filterByTag: (tag: string) => void;
   filterByTaskTag: (tag: string) => void;
   clearPendingTagFilter: () => void;
@@ -43,6 +47,7 @@ export const useAppStore = create<AppState>((set) => ({
   theme: 'light',
   pendingNotePath: null,
   pendingTagFilter: null,
+  pendingDailyDate: null,
   activeProject: null,
   hubTarget: null,
 
@@ -60,6 +65,8 @@ export const useAppStore = create<AppState>((set) => ({
   },
   openNote: (path) => set({ view: 'notes', pendingNotePath: path }),
   clearPendingNote: () => set({ pendingNotePath: null }),
+  openDaily: (date) => set({ view: 'daily', pendingDailyDate: date }),
+  clearPendingDailyDate: () => set({ pendingDailyDate: null }),
   filterByTag: (tag) => set({ view: 'notes', pendingTagFilter: tag }),
   filterByTaskTag: (tag) => set({ view: 'tasks', pendingTagFilter: tag }),
   clearPendingTagFilter: () => set({ pendingTagFilter: null }),

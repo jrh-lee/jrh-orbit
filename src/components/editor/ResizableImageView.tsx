@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback } from 'react';
 import { NodeViewWrapper } from '@tiptap/react';
 import type { NodeViewProps } from '@tiptap/react';
+import { NodeSelection } from '@tiptap/pm/state';
 
 const ALIGN_OPTIONS = [
   { value: 'left', icon: 'align-left', title: 'Align left' },
@@ -27,15 +28,27 @@ function AlignIcon({ type }: { type: TextAlign }) {
   );
 }
 
-export function ResizableImageView({ node, updateAttributes, selected }: NodeViewProps) {
+export function ResizableImageView({ node, updateAttributes, selected, editor, getPos }: NodeViewProps) {
+  // `selected` is true whenever the selection RANGE covers this image — e.g.
+  // selecting a list item that contains it. Only show the selected style when
+  // the image itself is the node selection.
+  const isDirectlySelected = selected && (() => {
+    try {
+      const sel = editor.state.selection;
+      return sel instanceof NodeSelection && sel.from === getPos();
+    } catch { return false; }
+  })();
   const imgRef = useRef<HTMLImageElement>(null);
   const [resizing, setResizing] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
+  const [captionOpen, setCaptionOpen] = useState(false);
 
   const align: TextAlign = node.attrs.textAlign ?? 'center';
   const caption: string = node.attrs.caption ?? '';
+  // Caption input is opt-in: shown only when a caption exists or the user opened it
+  const showCaption = captionOpen || caption.length > 0;
 
   /* ── Right-corner resize ── */
   const handleResizeRight = useCallback((e: React.MouseEvent) => {
@@ -79,7 +92,7 @@ export function ResizableImageView({ node, updateAttributes, selected }: NodeVie
     document.addEventListener('mouseup', onMouseUp);
   }, [updateAttributes]);
 
-  const showControls = selected || hovered;
+  const showControls = isDirectlySelected || hovered;
 
   return (
     <NodeViewWrapper
@@ -110,6 +123,26 @@ export function ResizableImageView({ node, updateAttributes, selected }: NodeVie
               <AlignIcon type={opt.value} />
             </button>
           ))}
+          <button
+            type="button"
+            title={showCaption ? '캡션 제거' : '캡션 추가'}
+            className={`image-align-btn ${showCaption ? 'active' : ''}`}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (showCaption) {
+                setCaptionOpen(false);
+                updateAttributes({ caption: '' });
+              } else {
+                setCaptionOpen(true);
+              }
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+              <rect x="2" y="3" width="12" height="8" rx="1" />
+              <line x1="4" y1="14" x2="12" y2="14" />
+            </svg>
+          </button>
         </div>
 
         {/* ── Image ── */}
@@ -125,6 +158,9 @@ export function ResizableImageView({ node, updateAttributes, selected }: NodeVie
               <line x1="2" y1="2" x2="22" y2="22" stroke="currentColor" strokeWidth="1.5" />
             </svg>
             <span className="text-[11px]">이미지를 불러올 수 없습니다</span>
+            <span className="text-[9px] text-ink-3/70 max-w-full truncate px-2" title={node.attrs.src ?? ''}>
+              {(node.attrs.src ?? '').startsWith('data:') ? '(내장 이미지 데이터 손상)' : (node.attrs.src ?? '(경로 없음)')}
+            </span>
             <button
               className="px-2 py-0.5 text-[10px] rounded border border-border text-ink-3 hover:text-ink-2 hover:bg-paper-muted transition-colors"
               onClick={(e) => { e.preventDefault(); setLoadError(false); setRetryKey(k => k + 1); }}
@@ -139,7 +175,7 @@ export function ResizableImageView({ node, updateAttributes, selected }: NodeVie
             src={node.attrs.src}
             alt={node.attrs.alt ?? ''}
             title={node.attrs.title ?? undefined}
-            className={`resizable-image-img ${selected ? 'selected' : ''} ${resizing ? 'resizing' : ''}`}
+            className={`resizable-image-img ${isDirectlySelected ? 'selected' : ''} ${resizing ? 'resizing' : ''}`}
             style={{ width: node.attrs.width ? `${node.attrs.width}px` : undefined }}
             draggable={false}
             onError={() => setLoadError(true)}
@@ -156,18 +192,24 @@ export function ResizableImageView({ node, updateAttributes, selected }: NodeVie
           className={`image-resize-handle image-resize-handle--left ${showControls ? 'visible' : ''}`}
         />
 
-        {/* ── Caption ── */}
-        <input
-          type="text"
-          className="image-caption-input"
-          placeholder="Add a caption..."
-          value={caption}
-          onChange={(e) => updateAttributes({ caption: e.target.value })}
-          onKeyDown={(e) => {
-            // Prevent editor key bindings from firing inside the caption
-            e.stopPropagation();
-          }}
-        />
+        {/* ── Caption (opt-in via toolbar button) ── */}
+        {showCaption && (
+          <input
+            type="text"
+            className="image-caption-input"
+            placeholder="캡션 입력..."
+            value={caption}
+            autoFocus={captionOpen && caption.length === 0}
+            onChange={(e) => updateAttributes({ caption: e.target.value })}
+            onBlur={() => {
+              if (!caption.trim()) setCaptionOpen(false);
+            }}
+            onKeyDown={(e) => {
+              // Prevent editor key bindings from firing inside the caption
+              e.stopPropagation();
+            }}
+          />
+        )}
       </div>
     </NodeViewWrapper>
   );
