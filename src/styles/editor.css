@@ -361,8 +361,9 @@
 
 .ProseMirror li.ProseMirror-selectednode {
   outline: 2px solid var(--color-chrome, #6366f1) !important;
-  outline-offset: -1px;
-  border-radius: 3px;
+  /* 코드블록 등 내부 박스의 테두리와 겹치지 않게 바깥으로 띄움 */
+  outline-offset: 4px;
+  border-radius: 6px;
   background: rgba(99, 102, 241, 0.04);
 }
 
@@ -431,8 +432,8 @@
 
 .ProseMirror .ProseMirror-selectednode {
   outline: 2px solid var(--color-chrome, #6366f1) !important;
-  outline-offset: 1px;
-  border-radius: 3px;
+  outline-offset: 4px;
+  border-radius: 6px;
 }
 
 img.ProseMirror-separator {
