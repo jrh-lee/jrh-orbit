@@ -190,6 +190,12 @@ export const Columns = Node.create({
       // 단 사이 경계를 드래그해서 너비 조절 — 퍼센트로 저장
       new Plugin({
         key: new PluginKey('columnResize'),
+        view() {
+          // 비정상 종료(과거 버전 포함)로 남은 고아 오버레이 청소
+          document.querySelectorAll('.col-resize-line, .col-resize-guide').forEach((el) => el.remove());
+          document.body.classList.remove('col-resizing');
+          return {};
+        },
         props: {
           handleDOMEvents: {
             mousemove(view, event) {
