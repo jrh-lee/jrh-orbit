@@ -361,10 +361,11 @@
 
 .ProseMirror li.ProseMirror-selectednode {
   outline: 2px solid var(--color-chrome, #6366f1) !important;
-  /* 코드블록 등 내부 박스의 테두리와 겹치지 않게 바깥으로 띄움 */
-  outline-offset: 4px;
+  /* 코드블록 등 내부 박스의 테두리와 겹치지 않게 바깥으로 띄움.
+     면 틴트는 li의 빈 영역까지 칠해져 거대해 보여서 제거 — 외곽선만 */
+  outline-offset: 2px;
   border-radius: 6px;
-  background: rgba(99, 102, 241, 0.04);
+  background: none;
 }
 
 .ProseMirror .ProseMirror-dropcursor {
@@ -432,7 +433,7 @@
 
 .ProseMirror .ProseMirror-selectednode {
   outline: 2px solid var(--color-chrome, #6366f1) !important;
-  outline-offset: 4px;
+  outline-offset: 2px;
   border-radius: 6px;
 }
 
