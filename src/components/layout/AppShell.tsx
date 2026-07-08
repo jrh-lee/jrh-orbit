@@ -19,6 +19,7 @@ import { MusicEngine } from '../productivity/MusicPlayer';
 import { MorningBriefing } from '../productivity/MorningBriefing';
 import { EveningReminder } from '../productivity/EveningReminder';
 import { EventReminder } from '../productivity/EventReminder';
+import { QuickSwitcher } from '../search/QuickSwitcher';
 import { QuickCapture } from '../productivity/QuickCapture';
 import { ClipboardCapture } from '../productivity/ClipboardCapture';
 import { ReviewScheduler } from '../productivity/ReviewScheduler';
@@ -92,6 +93,7 @@ export function AppShell() {
       {mode === 'sidebar' && <SidebarMode />}
       {mode === 'expanded' && <ExpandedMode />}
       {mode === 'expanded' && <StatusBar />}
+      {mode === 'expanded' && <QuickSwitcher />}
       <MusicEngine />
       <MorningBriefing />
       <EveningReminder />

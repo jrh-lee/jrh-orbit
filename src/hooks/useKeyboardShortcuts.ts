@@ -75,6 +75,12 @@ export function useKeyboardShortcuts() {
       const mode = useAppStore.getState().mode;
       if (mode !== 'expanded') return;
 
+      if (code === 'KeyP' && !e.shiftKey) {
+        e.preventDefault(); // 브라우저 인쇄 대화상자 차단
+        window.dispatchEvent(new CustomEvent('quick-switcher-open'));
+        return;
+      }
+
       // 한국어 키보드의 ₩ 키는 레이아웃에 따라 code/key가 달라 넓게 매칭
       if (code === 'Backslash' || code === 'IntlYen' || code === 'IntlBackslash' || e.key === '\\' || e.key === '₩') {
         e.preventDefault();

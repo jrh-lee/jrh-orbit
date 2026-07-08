@@ -220,6 +220,26 @@ export async function findNotesByTopic(topic: string, excludeId?: string): Promi
   }
 }
 
+export interface SwitcherNoteRow {
+  path: string;
+  id: string;
+  title: string;
+  note_type: string;
+  updated: string;
+}
+
+/** All indexed notes, most recently updated first — for the Ctrl+P switcher. */
+export async function listNotesForSwitcher(): Promise<SwitcherNoteRow[]> {
+  const database = await getDb();
+  try {
+    return await database.select<SwitcherNoteRow[]>(
+      `SELECT path, id, title, note_type, updated FROM notes_fts ORDER BY updated DESC`,
+    );
+  } catch {
+    return [];
+  }
+}
+
 export async function debugFts(): Promise<{ path: string; id: string; title: string; project: string; topic: string }[]> {
   const database = await getDb();
   return database.select(
