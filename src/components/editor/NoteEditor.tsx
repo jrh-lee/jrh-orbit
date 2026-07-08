@@ -351,7 +351,7 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
   const [wikiResults, setWikiResults] = useState<SearchResult[]>([]);
   const [wikiIndex, setWikiIndex] = useState(0);
   const wikiSearchRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; linkPos: number | null } | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; linkPos: number | null; linkHref: string | null } | null>(null);
   const ctxMenuRef = useRef<HTMLDivElement>(null);
   const [linkPrompt, setLinkPrompt] = useState<{ x: number; y: number; from: number; to: number } | null>(null);
 
@@ -474,18 +474,20 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
           // Detect a link under the right-click point so the menu can offer
           // 링크 제거 — links are easy to create but were impossible to remove
           let linkPos: number | null = null;
+          let linkHref: string | null = null;
           const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
           if (at) {
             const node = view.state.doc.nodeAt(at.pos);
             const $pos = view.state.doc.resolve(at.pos);
-            if (
-              node?.marks.some((mk) => mk.type.name === 'link') ||
-              $pos.marks().some((mk) => mk.type.name === 'link')
-            ) {
+            const linkMark =
+              node?.marks.find((mk) => mk.type.name === 'link') ??
+              $pos.marks().find((mk) => mk.type.name === 'link');
+            if (linkMark) {
               linkPos = at.pos;
+              linkHref = linkMark.attrs.href ?? null;
             }
           }
-          setCtxMenu({ x: event.clientX, y: event.clientY, linkPos });
+          setCtxMenu({ x: event.clientX, y: event.clientY, linkPos, linkHref });
           return true;
         },
         click(view, event) {
@@ -813,7 +815,19 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
           onMouseLeave={() => setCtxMenu(null)}
         >
           {[
+            { label: '잘라내기', action: () => { document.execCommand('cut'); }, key: 'Ctrl+X' },
+            { label: '복사', action: () => { document.execCommand('copy'); }, key: 'Ctrl+C' },
+            { label: '붙여넣기', action: () => { navigator.clipboard.readText().then(t => editor.commands.insertContent(t)); }, key: 'Ctrl+V' },
+            null,
+            // 링크 위에서는 복사/제거, 아니면 삽입 — 같은 자리에 하나의 그룹으로
             ...(ctxMenu.linkPos !== null ? [
+              {
+                label: '링크 복사',
+                action: () => {
+                  if (ctxMenu.linkHref) navigator.clipboard.writeText(ctxMenu.linkHref).catch(() => {});
+                },
+                key: '',
+              },
               {
                 label: '링크 제거',
                 action: () => {
@@ -825,20 +839,16 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
                 },
                 key: '',
               },
-              null,
-            ] : []),
-            { label: '잘라내기', action: () => { document.execCommand('cut'); }, key: 'Ctrl+X' },
-            { label: '복사', action: () => { document.execCommand('copy'); }, key: 'Ctrl+C' },
-            { label: '붙여넣기', action: () => { navigator.clipboard.readText().then(t => editor.commands.insertContent(t)); }, key: 'Ctrl+V' },
-            null,
-            {
-              label: '링크 삽입',
-              action: () => {
-                const { from, to } = editor.state.selection;
-                setLinkPrompt({ x: ctxMenu.x, y: Math.min(ctxMenu.y, window.innerHeight - 60), from, to });
+            ] : [
+              {
+                label: '링크 삽입',
+                action: () => {
+                  const { from, to } = editor.state.selection;
+                  setLinkPrompt({ x: ctxMenu.x, y: Math.min(ctxMenu.y, window.innerHeight - 60), from, to });
+                },
+                key: '',
               },
-              key: '',
-            },
+            ]),
             null,
             { label: '전체 선택', action: () => editor.commands.selectAll(), key: 'Ctrl+A' },
             null,
