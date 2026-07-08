@@ -115,7 +115,10 @@ function findColumnBoundary(view: EditorView, e: MouseEvent): {
 export const Columns = Node.create({
   name: 'columns',
   group: 'block',
-  content: 'column column+',
+  // column+ (2개 강제 아님): 단 하나만 남는 상태를 스키마상 허용해야
+  // "마지막 단 빼내기 → 행 자동 해제"가 가능하다 (아래 appendTransaction이
+  // 1단 행을 즉시 풀어버리므로 실제로 지속되지는 않음)
+  content: 'column+',
   isolating: true,
 
   parseHTML() {
@@ -165,6 +168,25 @@ export const Columns = Node.create({
 
   addProseMirrorPlugins() {
     return [
+      // 단이 하나만 남은 행은 자동 해제 — 컬럼을 밖으로 빼내거나 지웠을 때
+      // 빈 껍데기가 남지 않도록
+      new Plugin({
+        key: new PluginKey('columnsNormalize'),
+        appendTransaction: (transactions, _oldState, newState) => {
+          if (!transactions.some((t) => t.docChanged)) return null;
+          let tr: ReturnType<typeof newState.tr.setMeta> | null = null;
+          newState.doc.descendants((node, pos) => {
+            if (node.type.name !== 'columns') return true;
+            if (node.childCount === 1) {
+              tr = tr ?? newState.tr;
+              const from = tr.mapping.map(pos);
+              tr.replaceWith(from, from + node.nodeSize, node.child(0).content);
+            }
+            return false; // columns는 중첩되지 않음
+          });
+          return tr;
+        },
+      }),
       // 단 사이 경계를 드래그해서 너비 조절 — 퍼센트로 저장
       new Plugin({
         key: new PluginKey('columnResize'),

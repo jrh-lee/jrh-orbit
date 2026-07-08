@@ -457,7 +457,7 @@ export const DragHandle = Extension.create({
             // The heading-fold arrow lives in the gutter — this capture-phase
             // listener would swallow its clicks before they reach the button.
             // Element, not HTMLElement: clicking the arrow graphic targets an SVG node.
-            if (event.target instanceof Element && event.target.closest('.heading-fold-arrow')) return;
+            if (event.target instanceof Element && event.target.closest('.heading-fold-arrow, .md-toggle-arrow')) return;
             const inGutter = isInLeftGutter(editorView, event.clientX, event.clientY);
             if (!inGutter) return;
 
@@ -489,6 +489,15 @@ export const DragHandle = Extension.create({
               }
             }
 
+            beginDrag(event, block, multiSpan);
+          };
+
+          /** 실제 드래그 세션 — 거터와 컬럼 내부 ⠿ 핸들이 공유 */
+          const beginDrag = (
+            event: MouseEvent,
+            block: BlockInfo,
+            multiSpan: { from: number; to: number } | null,
+          ) => {
             event.preventDefault();
             event.stopImmediatePropagation();
 
@@ -510,7 +519,9 @@ export const DragHandle = Extension.create({
             // Folded heading: drag the whole governed section (until the next
             // heading of the same/higher level), not just the heading line.
             let srcRangeEnd = multiSpan ? multiSpan.to : srcPos + srcNodeSize;
-            if (!multiSpan && srcNodeType === 'heading' && block.node.attrs.folded === true) {
+            // 접힌 헤딩의 범위 확장은 최상위 헤딩만 (컬럼 안 헤딩은 단일 이동)
+            if (!multiSpan && srcNodeType === 'heading' && block.node.attrs.folded === true
+                && editorView.state.doc.resolve(srcPos).depth === 0) {
               const docNow = editorView.state.doc;
               const level: number = block.node.attrs.level ?? 1;
               let pos = srcRangeEnd;
@@ -613,6 +624,14 @@ export const DragHandle = Extension.create({
                       delFrom = $src2.before($src2.depth);
                       delTo = delFrom + $src2.parent.nodeSize;
                     }
+                    // 단의 마지막 블록이면 그 단도 함께 제거
+                    {
+                      const $del = doc.resolve(delFrom);
+                      if ($del.parent.type.name === 'column' && $del.parent.childCount === 1) {
+                        delFrom = $del.before();
+                        delTo = delFrom + $del.parent.nodeSize;
+                      }
+                    }
                     const columnType = editorView.state.schema.nodes.column;
                     const columnsType = editorView.state.schema.nodes.columns;
                     if (!columnType || !columnsType) return;
@@ -647,6 +666,8 @@ export const DragHandle = Extension.create({
                       }
                     } else {
                       const insertAt = colPlan.kind === 'col-after' ? colPlan.pos + colPlan.node.nodeSize : colPlan.pos;
+                      // 제거 범위가 단 전체로 확장된 경우 그 안으로의 이동은 무효
+                      if (insertAt >= delFrom && insertAt <= delTo) return;
                       if (insertAt <= delFrom) {
                         tr.insert(insertAt, payload);
                         tr.delete(tr.mapping.map(delFrom), tr.mapping.map(delTo));
@@ -730,6 +751,15 @@ export const DragHandle = Extension.create({
                   delFrom = $src.before($src.depth);
                   delTo = delFrom + $src.parent.nodeSize;
                 }
+                // 단의 마지막 블록을 빼내면 그 단도 함께 제거
+                // (1단만 남은 행은 Columns의 normalize가 자동 해제)
+                {
+                  const $del = doc.resolve(delFrom);
+                  if ($del.parent.type.name === 'column' && $del.parent.childCount === 1) {
+                    delFrom = $del.before();
+                    delTo = delFrom + $del.parent.nodeSize;
+                  }
+                }
 
                 if (insertAt === delFrom || insertAt === delTo) return;
                 if (insertAt > delFrom && insertAt < delTo) return;
@@ -757,9 +787,68 @@ export const DragHandle = Extension.create({
 
           editorView.dom.addEventListener('mousedown', onMouseDown, true);
 
+          // ── 컬럼 내부 블록용 ⠿ 호버 핸들 ──
+          // 왼쪽 거터는 컬럼 행 전체를 잡으므로, 단 안의 개별 블록은
+          // 블록 왼쪽에 나타나는 핸들로 잡아서 꺼내거나 재배치한다.
+          const colHandle = document.createElement('div');
+          colHandle.className = 'col-block-handle';
+          colHandle.textContent = '⠿';
+          colHandle.style.display = 'none';
+          document.body.appendChild(colHandle);
+          let colHoverPos: number | null = null;
+
+          const hideColHandle = () => { colHandle.style.display = 'none'; colHoverPos = null; };
+
+          const onHover = (e: MouseEvent) => {
+            if (editorView.dom.classList.contains('block-dragging')) { hideColHandle(); return; }
+            const colEl = (e.target as HTMLElement)?.closest?.('.md-column') as HTMLElement | null;
+            if (!colEl || !editorView.dom.contains(colEl)) { hideColHandle(); return; }
+            let targetEl: HTMLElement | null = null;
+            for (const child of Array.from(colEl.children) as HTMLElement[]) {
+              const r = child.getBoundingClientRect();
+              if (e.clientY >= r.top && e.clientY <= r.bottom) { targetEl = child; break; }
+            }
+            if (!targetEl) { hideColHandle(); return; }
+            try {
+              const inner = editorView.posAtDOM(targetEl, 0);
+              const $p = editorView.state.doc.resolve(inner);
+              let d = $p.depth;
+              while (d > 0 && $p.node(d - 1).type.name !== 'column') d--;
+              if (d === 0) { hideColHandle(); return; }
+              colHoverPos = $p.before(d);
+            } catch { hideColHandle(); return; }
+            const r = targetEl.getBoundingClientRect();
+            colHandle.style.display = 'flex';
+            colHandle.style.left = `${r.left - 17}px`;
+            colHandle.style.top = `${r.top + 1}px`;
+          };
+          const onLeave = (e: MouseEvent) => {
+            // 핸들 자체로 이동하는 중이면 유지 (핸들은 body 소속이라 leave로 잡힘)
+            if (e.relatedTarget === colHandle) return;
+            hideColHandle();
+          };
+          colHandle.addEventListener('mouseleave', () => hideColHandle());
+
+          const onColHandleDown = (event: MouseEvent) => {
+            if (event.button !== 0 || colHoverPos === null) return;
+            const node = editorView.state.doc.nodeAt(colHoverPos);
+            const dom = editorView.nodeDOM(colHoverPos);
+            if (!node || !(dom instanceof HTMLElement)) return;
+            const info: BlockInfo = { pos: colHoverPos, node, dom };
+            hideColHandle();
+            beginDrag(event, info, null);
+          };
+
+          editorView.dom.addEventListener('mousemove', onHover);
+          editorView.dom.addEventListener('mouseleave', onLeave);
+          colHandle.addEventListener('mousedown', onColHandleDown);
+
           return {
             destroy() {
               editorView.dom.removeEventListener('mousedown', onMouseDown, true);
+              editorView.dom.removeEventListener('mousemove', onHover);
+              editorView.dom.removeEventListener('mouseleave', onLeave);
+              colHandle.remove();
               dropLine?.remove();
               dropLine = null;
             },

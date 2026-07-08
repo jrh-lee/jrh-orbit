@@ -1034,6 +1034,79 @@ body.col-resizing * {
   pointer-events: none;
 }
 
+/* ── 토글 블록 (Notion식) ── */
+.ProseMirror .md-toggle {
+  position: relative;
+  margin: 0.25rem 0;
+}
+/* 화살표는 드래그 거터 위치에, 요약 첫 줄 높이에 고정 */
+.md-toggle-arrow {
+  position: absolute;
+  left: -1.55rem;
+  top: 0;
+  width: 1.45rem;
+  height: calc(var(--editor-font-size) * var(--editor-line-height));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-ink-3);
+  cursor: pointer;
+  opacity: 0.45;
+  transition: opacity 0.12s, color 0.12s;
+}
+.md-toggle-arrow svg {
+  transition: transform 0.12s;
+  pointer-events: none;
+}
+.md-toggle-arrow.open svg {
+  transform: rotate(90deg);
+}
+.md-toggle-arrow:hover {
+  opacity: 1;
+  color: var(--color-ink);
+}
+/* 자식 구성: [화살표 위젯, 요약 문단, 내용...] — 접히면 내용 숨김 */
+.ProseMirror .md-toggle[data-open='false'] > *:nth-child(n + 3) {
+  display: none;
+}
+.ProseMirror .md-toggle[data-open='false'] > p:nth-child(2)::after {
+  content: '⋯';
+  margin-left: 0.5em;
+  color: var(--color-ink-3);
+  opacity: 0.7;
+  font-size: 0.85em;
+}
+/* 내용은 노션처럼 들여쓰기 */
+.ProseMirror .md-toggle > *:nth-child(n + 3) {
+  margin-left: 1.4rem;
+}
+
+/* 컬럼 내부 블록용 ⠿ 드래그 핸들 */
+.col-block-handle {
+  position: fixed;
+  z-index: 60;
+  width: 15px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--color-ink-3);
+  cursor: grab;
+  user-select: none;
+  border-radius: 3px;
+}
+.col-block-handle:hover {
+  color: var(--color-ink);
+  background: var(--color-paper-muted);
+}
+.col-block-handle:active {
+  cursor: grabbing;
+}
+
 /* 컬럼 리사이즈 중 비율 가이드 */
 .col-resize-guide {
   position: fixed;

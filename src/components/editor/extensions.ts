@@ -25,6 +25,7 @@ import { DragHandle } from './extensions/DragHandle';
 import { HeadingFold } from './extensions/HeadingFold';
 import { SlashCommand } from './extensions/SlashCommand';
 import { Columns, Column } from './extensions/Columns';
+import { Toggle } from './extensions/Toggle';
 import { common, createLowlight } from 'lowlight';
 import { CodeBlockView } from './CodeBlockView';
 import { ResizableImageView } from './ResizableImageView';
@@ -337,6 +338,7 @@ export function getExtensions(opts?: ExtensionOptions | string) {
     SlashCommand,
     Columns,
     Column,
+    Toggle,
     Markdown.configure({
       html: true,
       transformPastedText: true,

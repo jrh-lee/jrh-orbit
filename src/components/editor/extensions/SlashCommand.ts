@@ -54,6 +54,10 @@ const ITEMS: SlashItem[] = [
     run: (e, r) => e.chain().focus().deleteRange(r).toggleBlockquote().run(),
   },
   {
+    title: '토글', icon: '▸', keywords: ['toggle', '토글', '접기', 'fold'],
+    run: (e, r) => (e.chain().focus().deleteRange(r) as any).insertToggle().run(),
+  },
+  {
     title: '2단 컬럼', icon: '▥', keywords: ['columns', 'col', '2단', '단', '컬럼', '분할'],
     run: (e, r) => (e.chain().focus().deleteRange(r) as any).insertColumns(2).run(),
   },

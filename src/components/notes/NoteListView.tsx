@@ -1017,6 +1017,8 @@ mark{background:#fff3a8;padding:0 2px;border-radius:2px;-webkit-print-color-adju
 p{margin:.25rem 0}
 .md-columns{display:flex;gap:14pt;page-break-inside:avoid}
 .md-column{flex:1 1 0;min-width:0}
+.md-toggle-arrow{display:none}
+.md-toggle > *:nth-child(n+3){margin-left:14pt}
 .katex,.math-display{page-break-inside:avoid}
 @media print{
   body{margin:0;padding:0}
