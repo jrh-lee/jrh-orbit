@@ -10,6 +10,9 @@ export interface CalendarEvent {
   endTime?: string;
   memo?: string;
   color?: string;
+  /** Minutes before start to fire a notification (0 = at start). Absent = no reminder.
+   *  All-day events (no startTime) treat the start as 09:00. */
+  reminderMinutes?: number;
   source: 'local' | 'google';
   /** Google event id — set only for source: 'google' */
   googleId?: string;

@@ -56,6 +56,8 @@ interface ProjectHubData {
   timeline: TimelineEntry[];
   decisions: TimelineEntry[];
   todos: Task[];
+  /** Open main tasks + open subtasks */
+  openTodoCount: number;
   milestones: DDayItem[];
   topicLinks: TopicLink[];
   dashboardNote: DashboardNote | null;

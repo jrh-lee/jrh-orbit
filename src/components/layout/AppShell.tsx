@@ -18,6 +18,7 @@ import { ExpandedMode } from './ExpandedMode';
 import { MusicEngine } from '../productivity/MusicPlayer';
 import { MorningBriefing } from '../productivity/MorningBriefing';
 import { EveningReminder } from '../productivity/EveningReminder';
+import { EventReminder } from '../productivity/EventReminder';
 import { QuickCapture } from '../productivity/QuickCapture';
 import { ClipboardCapture } from '../productivity/ClipboardCapture';
 import { ReviewScheduler } from '../productivity/ReviewScheduler';
@@ -59,6 +60,7 @@ export function AppShell() {
         .then(() => initDataFiles(dataDir))
         .then(() => buildIndex(dataDir))
         .then(() => {
+          window.dispatchEvent(new CustomEvent('search-index-ready'));
           autoArchiveQuickMemos(dataDir).catch(() => {});
           processRecurringTodos(dataDir).catch(() => {});
           (window as any).__debugFts = () => debugFts().then(r => { console.table(r); return r; });
@@ -93,6 +95,7 @@ export function AppShell() {
       <MusicEngine />
       <MorningBriefing />
       <EveningReminder />
+      <EventReminder />
       <QuickCapture />
       {clipboardEnabled && <ClipboardCapture />}
       <ReviewScheduler />

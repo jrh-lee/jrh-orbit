@@ -280,6 +280,9 @@ export function NoteListView() {
   const fmRef = useRef('');
   const lastWriteTime = useRef(0);
   const prevBodyRef = useRef('');
+  /** Set when a note click updates activeProject — the filter-sync effect
+   *  must not react to it (selecting a note must never change the list filter) */
+  const skipFilterSyncRef = useRef(false);
 
   const handleListResize = useCallback((delta: number) => {
     setListWidth((w) => Math.min(NOTELIST_MAX, Math.max(NOTELIST_MIN, w + delta)));
@@ -552,6 +555,10 @@ export function NoteListView() {
   }, [pendingTagFilter]);
 
   useEffect(() => {
+    if (skipFilterSyncRef.current) {
+      skipFilterSyncRef.current = false;
+      return;
+    }
     const proj = activeProject ? projects.find(p => p.id === activeProject)?.name ?? '' : '';
     setFilterProject(proj);
   }, [activeProject, projects]);
@@ -653,7 +660,13 @@ export function NoteListView() {
         status: fields.status ?? 'draft',
       });
       setTagInput('');
-      if (noteProject.length > 0) setActiveProject(noteProject[0]);
+      if (noteProject.length > 0) {
+        const proj = projects.find(p => p.name === noteProject[0]);
+        if (proj && proj.id !== activeProject) {
+          skipFilterSyncRef.current = true;
+          setActiveProject(proj.id);
+        }
+      }
     } catch {
       setBody('');
     }

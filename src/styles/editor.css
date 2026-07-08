@@ -903,6 +903,8 @@ img.ProseMirror-separator {
 .heading-fold-arrow svg {
   transform: rotate(90deg);
   transition: transform 0.12s;
+  /* Clicks must always target the button, never the svg/path */
+  pointer-events: none;
 }
 .heading-fold-arrow.folded svg {
   transform: rotate(0deg);

@@ -43,6 +43,7 @@ export function CalendarView() {
   const [ddays, setDdays] = useState<DDayEvent[]>([]);
   const [newTitle, setNewTitle] = useState('');
   const [newTime, setNewTime] = useState('');
+  const [newReminder, setNewReminder] = useState('');
   const [newEndDate, setNewEndDate] = useState('');
   const [googleEvents, setGoogleEvents] = useState<CalendarEvent[]>([]);
   const [googleConnected, setGoogleConnected] = useState(false);
@@ -244,13 +245,15 @@ export function CalendarView() {
       // multi-day: end date must be after the start to count
       ...(newEndDate && newEndDate > selected ? { endDate: newEndDate } : {}),
       ...(newTime ? { startTime: newTime } : {}),
+      ...(newReminder !== '' ? { reminderMinutes: parseInt(newReminder, 10) } : {}),
       source: 'local',
     };
     persistEvents([...events, ev]);
     setNewTitle('');
     setNewTime('');
     setNewEndDate('');
-  }, [newTitle, newTime, newEndDate, selected, events, persistEvents]);
+    setNewReminder('');
+  }, [newTitle, newTime, newEndDate, newReminder, selected, events, persistEvents]);
 
   const removeEvent = useCallback((id: string) => {
     persistEvents(events.filter((e) => e.id !== id));
@@ -497,6 +500,9 @@ export function CalendarView() {
               {it.kind === 'due' && <span className="text-[9px] text-ink-3 shrink-0">마감</span>}
               {it.kind === 'dday' && <span className="text-[9px] text-ink-3 shrink-0">D-Day</span>}
               {it.kind === 'google' && <span className="text-[9px] text-ink-3 shrink-0">{it.event?.calendarName ?? 'Google'}</span>}
+              {it.kind === 'event' && it.event?.reminderMinutes !== undefined && (
+                <span className="text-[9px] shrink-0" title={`알림: ${it.event.reminderMinutes === 0 ? '정시' : it.event.reminderMinutes >= 1440 ? `${it.event.reminderMinutes / 1440}일 전` : it.event.reminderMinutes >= 60 ? `${it.event.reminderMinutes / 60}시간 전` : `${it.event.reminderMinutes}분 전`}`}>⏰</span>
+              )}
               {it.kind === 'event' && it.event && (
                 <button
                   onClick={() => removeEvent(it.event!.id)}
@@ -534,6 +540,19 @@ export function CalendarView() {
             title="종료일 (선택 — 여러 날 일정)"
             className="text-[11px] px-1.5 py-1 rounded border border-border bg-paper text-ink-2 w-[120px] shrink-0"
           />
+          <select
+            value={newReminder}
+            onChange={(e) => setNewReminder(e.target.value)}
+            title="알림 (선택) — 시간이 없는 일정은 오전 9시 기준"
+            className="text-[11px] px-1 py-1 rounded border border-border bg-paper text-ink-2 w-[86px] shrink-0"
+          >
+            <option value="">🔕 알림</option>
+            <option value="0">정시</option>
+            <option value="10">10분 전</option>
+            <option value="30">30분 전</option>
+            <option value="60">1시간 전</option>
+            <option value="1440">1일 전</option>
+          </select>
           <button
             onClick={addEvent}
             className="px-2.5 py-1 text-xs rounded-lg border border-border text-ink-2 hover:bg-paper-soft transition-colors shrink-0"

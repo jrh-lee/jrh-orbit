@@ -13,7 +13,7 @@ export function SidebarProjectTree() {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    const load = async () => {
       const map: Record<string, string> = {};
       for (const p of projects) {
         try {
@@ -23,8 +23,18 @@ export function SidebarProjectTree() {
         } catch { /* skip */ }
       }
       if (!cancelled) setDashboards(map);
-    })();
-    return () => { cancelled = true; };
+    };
+    load();
+    // The first pass often races the FTS build at startup (empty index) —
+    // re-query when the index is ready or notes change.
+    const onReady = () => load();
+    window.addEventListener('search-index-ready', onReady);
+    window.addEventListener('notes-changed', onReady);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('search-index-ready', onReady);
+      window.removeEventListener('notes-changed', onReady);
+    };
   }, [projects]);
 
   const handleProjectClick = (projectId: string) => {

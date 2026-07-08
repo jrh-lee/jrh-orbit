@@ -183,6 +183,10 @@ export async function loadProjectHubData(dataDir: string, projectName: string) {
   const projectTodos = allTodos.filter(
     (t) => (t.projectId === projectName || (projectId && t.projectId === projectId)) && t.status !== 'done',
   );
+  const openTodoCount = projectTodos.reduce(
+    (sum, t) => sum + 1 + (t.subtasks?.filter((st) => !st.done && st.status !== 'done').length ?? 0),
+    0,
+  );
 
   const links = linksFile || {};
   const topicLinkMap = new Map<string, number>();
@@ -227,6 +231,7 @@ export async function loadProjectHubData(dataDir: string, projectName: string) {
     timeline,
     decisions,
     todos: projectTodos,
+    openTodoCount,
     milestones,
     topicLinks,
     dashboardNote,

@@ -157,7 +157,7 @@ export function ProjectHubView() {
               {data.experiments.length > 0 && <span>🧪 {data.experiments.length}개 실험</span>}
               <span>📂 {data.topics.length}개 토픽</span>
               <span>📄 {data.timeline.filter((e) => e.type !== 'daily-inline').length}개 노트</span>
-              <span>📋 {data.todos.length}개 열린 TODO</span>
+              <span>📋 {data.openTodoCount}개 열린 TODO</span>
             </div>
           </div>
         </div>
