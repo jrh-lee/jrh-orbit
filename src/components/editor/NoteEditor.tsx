@@ -660,6 +660,31 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
     return () => { editorRef.current = null; };
   }, [editor, editorRef]);
 
+  /** 위/아래에 줄 삽입 — 커서가 리스트 항목 안이면 같은 종류의 항목을 그 줄
+   *  바로 옆에 삽입한다. before(1)로 최상위 블록(리스트 전체) 옆에 넣으면
+   *  현재 줄이 아니라 리스트 밖에 줄이 생긴다. */
+  const insertLineNear = useCallback((where: 'above' | 'below') => {
+    if (!editor) return;
+    const { $from } = editor.state.selection;
+    let itemDepth = 0;
+    for (let d = $from.depth; d > 0; d--) {
+      const name = $from.node(d).type.name;
+      if (name === 'listItem' || name === 'taskItem') { itemDepth = d; break; }
+    }
+    if (itemDepth > 0) {
+      const itemNode = $from.node(itemDepth);
+      const pos = where === 'above' ? $from.before(itemDepth) : $from.after(itemDepth);
+      const attrs = itemNode.type.name === 'taskItem' ? { ...itemNode.attrs, checked: false } : itemNode.attrs;
+      const empty = itemNode.type.createAndFill(attrs);
+      if (!empty) return;
+      editor.view.dispatch(editor.state.tr.insert(pos, empty));
+      editor.chain().focus().setTextSelection(pos + 2).run();
+    } else {
+      const pos = where === 'above' ? $from.before(1) : $from.after(1);
+      editor.chain().focus().insertContentAt(pos, { type: 'paragraph' }).setTextSelection(pos + 1).run();
+    }
+  }, [editor]);
+
   const applyLink = useCallback((raw: string) => {
     const lp = linkPrompt;
     setLinkPrompt(null);
@@ -856,8 +881,8 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
             { label: '다시 실행', action: () => editor.commands.redo(), key: 'Ctrl+Y' },
             null,
             { label: '블록 삭제', action: () => editor.commands.deleteNode(editor.state.selection.$from.parent.type.name), key: '' },
-            { label: '위에 줄 삽입', action: () => { const pos = editor.state.selection.$from.before(1); editor.chain().focus().insertContentAt(pos, { type: 'paragraph' }).run(); }, key: '' },
-            { label: '아래에 줄 삽입', action: () => { const $from = editor.state.selection.$from; const pos = $from.after(1); editor.chain().focus().insertContentAt(pos, { type: 'paragraph' }).run(); }, key: '' },
+            { label: '위에 줄 삽입', action: () => insertLineNear('above'), key: '' },
+            { label: '아래에 줄 삽입', action: () => insertLineNear('below'), key: '' },
           ].map((item, i) =>
             item === null ? (
               <div key={i} className="h-px bg-border my-1" />
