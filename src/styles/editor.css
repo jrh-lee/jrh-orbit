@@ -971,6 +971,23 @@ img.ProseMirror-separator {
   cursor: inherit;
 }
 
+/* 리사이즈 중 커서를 어디서든 ↔로 고정 (에디터의 text 커서가 이기지 않게) */
+body.col-resizing,
+body.col-resizing * {
+  cursor: col-resize !important;
+}
+
+/* 노션식 경계 세로선 (리사이즈 중) */
+.col-resize-line {
+  position: fixed;
+  z-index: 99;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--color-chrome);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
 /* 컬럼 리사이즈 중 비율 가이드 */
 .col-resize-guide {
   position: fixed;

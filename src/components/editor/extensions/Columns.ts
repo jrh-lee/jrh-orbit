@@ -186,22 +186,44 @@ export const Columns = Node.create({
               if (!boundary) return false;
               event.preventDefault();
 
-              const { leftEl, rightEl, leftPos, rightPos, rowEl } = boundary;
+              const { leftEl, rightEl, rowEl } = boundary;
               const startX = event.clientX;
               const leftStart = leftEl.getBoundingClientRect().width;
               const rightStart = rightEl.getBoundingClientRect().width;
+              const allCols = (Array.from(rowEl.children) as HTMLElement[])
+                .filter(c => c.classList?.contains('md-column'));
               // Percentages are relative to the row's total column width
-              const totalColWidth = (Array.from(rowEl.children) as HTMLElement[])
-                .filter(c => c.classList?.contains('md-column'))
-                .reduce((s, c) => s + c.getBoundingClientRect().width, 0);
+              const snapshots = allCols.map(c => c.getBoundingClientRect().width);
+              const totalColWidth = snapshots.reduce((s, w) => s + w, 0);
               const pairTotal = leftStart + rightStart;
               const MIN = 60; // px
 
-              // 드래그 중 비율 가이드 (몇 % : 몇 %)
+              // 조절 중인 두 단 외의 단들은 현재 너비로 고정 — 안 그러면
+              // 남는 공간이 변하며 다른 단들까지 같이 움직인다
+              allCols.forEach((c, i) => {
+                if (c !== leftEl && c !== rightEl) {
+                  c.style.flex = `0 1 ${(snapshots[i] / totalColWidth) * 100}%`;
+                }
+              });
+
+              // 드래그 중 비율 가이드 + 노션식 경계 세로선
               const guide = document.createElement('div');
               guide.className = 'col-resize-guide';
               document.body.appendChild(guide);
-              document.body.style.cursor = 'col-resize';
+              const line = document.createElement('div');
+              line.className = 'col-resize-line';
+              document.body.appendChild(line);
+              document.body.classList.add('col-resizing');
+
+              const updateLine = () => {
+                const lr = leftEl.getBoundingClientRect();
+                const rr = rightEl.getBoundingClientRect();
+                const rowR = rowEl.getBoundingClientRect();
+                line.style.left = `${(lr.right + rr.left) / 2 - 1.5}px`;
+                line.style.top = `${rowR.top}px`;
+                line.style.height = `${rowR.height}px`;
+              };
+              updateLine();
 
               const onMove = (ev: MouseEvent) => {
                 const dx = Math.max(MIN - leftStart, Math.min(ev.clientX - startX, pairTotal - MIN - leftStart));
@@ -212,22 +234,37 @@ export const Columns = Node.create({
                 guide.textContent = `${Math.round(leftPct)}% : ${Math.round(rightPct)}%`;
                 guide.style.left = `${ev.clientX + 12}px`;
                 guide.style.top = `${ev.clientY - 28}px`;
+                updateLine();
               };
               const onUp = (ev: MouseEvent) => {
                 document.removeEventListener('mousemove', onMove);
                 document.removeEventListener('mouseup', onUp);
                 guide.remove();
-                document.body.style.cursor = '';
+                line.remove();
+                document.body.classList.remove('col-resizing');
                 const dx = Math.max(MIN - leftStart, Math.min(ev.clientX - startX, pairTotal - MIN - leftStart));
                 const leftPct = Math.round(((leftStart + dx) / totalColWidth) * 1000) / 10;
                 const rightPct = Math.round(((rightStart - dx) / totalColWidth) * 1000) / 10;
                 try {
-                  const leftNode = view.state.doc.nodeAt(leftPos);
-                  const rightNode = view.state.doc.nodeAt(rightPos);
-                  if (leftNode?.type.name !== 'column' || rightNode?.type.name !== 'column') return;
-                  const tr = view.state.tr
-                    .setNodeMarkup(leftPos, undefined, { ...leftNode.attrs, width: leftPct })
-                    .setNodeMarkup(rightPos, undefined, { ...rightNode.attrs, width: rightPct });
+                  // 모든 단의 너비를 확정 저장 (조절한 두 단 = 새 값, 나머지 = 스냅샷)
+                  const rowPos = view.posAtDOM(rowEl, 0) - 1;
+                  const rowNode = view.state.doc.nodeAt(rowPos);
+                  if (rowNode?.type.name !== 'columns') return;
+                  const widths = allCols.map((c, i) => {
+                    if (c === leftEl) return leftPct;
+                    if (c === rightEl) return rightPct;
+                    return Math.round((snapshots[i] / totalColWidth) * 1000) / 10;
+                  });
+                  const tr = view.state.tr;
+                  let off = rowPos + 1;
+                  let i = 0;
+                  rowNode.forEach((col) => {
+                    if (col.type.name === 'column' && widths[i] !== undefined) {
+                      tr.setNodeMarkup(off, undefined, { ...col.attrs, width: widths[i] });
+                    }
+                    off += col.nodeSize;
+                    i++;
+                  });
                   view.dispatch(tr);
                 } catch { /* resize commit failed — live styles stay until next render */ }
               };
