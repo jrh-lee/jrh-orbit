@@ -436,16 +436,27 @@
   border-radius: 6px;
 }
 
-/* 표: overflow 래퍼가 바깥 외곽선을 잘라버려 강조가 안 보임 —
-   표 자체는 안쪽 외곽선, 래퍼가 선택될 땐 그대로 */
-.ProseMirror table.ProseMirror-selectednode {
-  outline: 2px solid var(--color-chrome, #6366f1) !important;
-  outline-offset: -2px;
+/* 표: prosemirror-tables가 표의 노드 선택을 셀 선택(CellSelection)으로
+   변환해버려 -selectednode 강조가 아예 안 붙는다 — 셀 선택을 시각화 */
+.ProseMirror .selectedCell {
+  position: relative;
 }
-.ProseMirror .tableWrapper:has(> table.ProseMirror-selectednode) {
+.ProseMirror .selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(99, 102, 241, 0.12);
+  pointer-events: none;
+}
+.ProseMirror .tableWrapper:has(.selectedCell) {
   outline: 2px solid var(--color-chrome, #6366f1);
   outline-offset: 3px;
   border-radius: 6px;
+}
+/* 만에 하나 노드 선택이 유지되는 경우도 커버 */
+.ProseMirror table.ProseMirror-selectednode {
+  outline: 2px solid var(--color-chrome, #6366f1) !important;
+  outline-offset: -2px;
 }
 
 img.ProseMirror-separator {

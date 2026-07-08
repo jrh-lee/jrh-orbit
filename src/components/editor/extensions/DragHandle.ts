@@ -502,6 +502,22 @@ export const DragHandle = Extension.create({
             const onDragStart = (ev: DragEvent) => { ev.preventDefault(); ev.stopImmediatePropagation(); };
             document.addEventListener('dragstart', onDragStart, true);
 
+            // If the drag aborts without a mouseup (native drag slipped
+            // through, window lost focus), listeners must still be torn down —
+            // stale ones acted as a zombie drag that moved blocks on the next
+            // click.
+            const cancelDrag = () => {
+              document.removeEventListener('mousemove', onMove);
+              document.removeEventListener('mouseup', onUp);
+              document.removeEventListener('dragstart', onDragStart, true);
+              document.removeEventListener('dragend', cancelDrag, true);
+              window.removeEventListener('blur', cancelDrag);
+              editorView.dom.classList.remove('block-dragging');
+              hideDropLine();
+            };
+            document.addEventListener('dragend', cancelDrag, true);
+            window.addEventListener('blur', cancelDrag);
+
             const onMove = (e: MouseEvent) => {
               // X counts too — make-columns drags are mostly horizontal
               if (!dragging && (Math.abs(e.clientY - startY) > 5 || Math.abs(e.clientX - startX) > 8)) {
@@ -538,11 +554,7 @@ export const DragHandle = Extension.create({
             };
 
             const onUp = (e: MouseEvent) => {
-              document.removeEventListener('mousemove', onMove);
-              document.removeEventListener('mouseup', onUp);
-              document.removeEventListener('dragstart', onDragStart, true);
-              editorView.dom.classList.remove('block-dragging');
-              hideDropLine();
+              cancelDrag();
               if (!dragging) return;
 
               try {
