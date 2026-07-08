@@ -227,7 +227,7 @@ function planColumnsDrop(view: EditorView, clientX: number, clientY: number): Co
   if (clientY < rect.top - 4 || clientY > rect.bottom + 4) return null;
 
   if (top.node.type.name === 'columns') {
-    if (clientX >= rect.right - COL_EDGE && clientX <= rect.right + 12) {
+    if (clientX >= rect.right - COL_EDGE && clientX <= rect.right + 40) {
       return { kind: 'new-column', pos: top.pos, node: top.node, dom: top.dom };
     }
     // inside a specific column → before/after one of its direct child blocks
@@ -263,7 +263,7 @@ function planColumnsDrop(view: EditorView, clientX: number, clientY: number): Co
   }
 
   // normal top-level block: right edge → make a new 2-column row
-  if (clientX >= rect.right - COL_EDGE && clientX <= rect.right + 12) {
+  if (clientX >= rect.right - COL_EDGE && clientX <= rect.right + 40) {
     return { kind: 'make-columns', pos: top.pos, node: top.node, dom: top.dom };
   }
   return null;
@@ -583,6 +583,18 @@ export const DragHandle = Extension.create({
                       const cNode = tr.doc.nodeAt(cPos);
                       if (!cNode || cNode.type.name !== 'columns') return;
                       tr.insert(cPos + cNode.nodeSize - 1, columnType.create(null, payload));
+                      // 고정 너비가 남아 있으면 새 단이 화면 밖으로 밀림 —
+                      // 전부 지워서 1/n 균등 분배로 리셋
+                      const cNode2 = tr.doc.nodeAt(cPos);
+                      if (cNode2) {
+                        let off = cPos + 1;
+                        cNode2.forEach((col) => {
+                          if (col.attrs.width) {
+                            tr.setNodeMarkup(off, undefined, { ...col.attrs, width: null });
+                          }
+                          off += col.nodeSize;
+                        });
+                      }
                     } else {
                       const insertAt = colPlan.kind === 'col-after' ? colPlan.pos + colPlan.node.nodeSize : colPlan.pos;
                       if (insertAt <= delFrom) {

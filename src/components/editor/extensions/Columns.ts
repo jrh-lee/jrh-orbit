@@ -38,7 +38,7 @@ export function setupColumnsMarkdownIt(md: MarkdownIt) {
       if (token.nesting !== 1) return '</div>\n';
       const m = token.info.trim().match(/^column\s+([\d.]+)/);
       const width = m ? parseFloat(m[1]) : null;
-      const widthAttr = width ? ` data-width="${width}" style="flex: 0 0 ${width}%"` : '';
+      const widthAttr = width ? ` data-width="${width}" style="flex: 0 1 ${width}%"` : '';
       return `<div data-type="column" class="md-column"${widthAttr}>\n`;
     },
   });
@@ -60,7 +60,8 @@ export const Column = Node.create({
         },
         renderHTML: (attrs) => {
           if (!attrs.width) return {};
-          return { 'data-width': String(attrs.width), style: `flex: 0 0 ${attrs.width}%` };
+          // shrink 허용(0 1) — 고정 너비 합이 100%를 넘어도 행이 화면을 넘지 않음
+          return { 'data-width': String(attrs.width), style: `flex: 0 1 ${attrs.width}%` };
         },
       },
     };
@@ -170,6 +171,8 @@ export const Columns = Node.create({
         props: {
           handleDOMEvents: {
             mousemove(view, event) {
+              // 블록 드래그 중에는 리사이즈 커서/점선이 끼어들지 않게
+              if (view.dom.classList.contains('block-dragging')) return false;
               const boundary = findColumnBoundary(view, event);
               view.dom.querySelectorAll('.md-columns.col-resize-hover').forEach(el => {
                 if (!boundary || el !== boundary.rowEl) el.classList.remove('col-resize-hover');
@@ -194,14 +197,27 @@ export const Columns = Node.create({
               const pairTotal = leftStart + rightStart;
               const MIN = 60; // px
 
+              // 드래그 중 비율 가이드 (몇 % : 몇 %)
+              const guide = document.createElement('div');
+              guide.className = 'col-resize-guide';
+              document.body.appendChild(guide);
+              document.body.style.cursor = 'col-resize';
+
               const onMove = (ev: MouseEvent) => {
                 const dx = Math.max(MIN - leftStart, Math.min(ev.clientX - startX, pairTotal - MIN - leftStart));
-                leftEl.style.flex = `0 0 ${((leftStart + dx) / totalColWidth) * 100}%`;
-                rightEl.style.flex = `0 0 ${((rightStart - dx) / totalColWidth) * 100}%`;
+                const leftPct = ((leftStart + dx) / totalColWidth) * 100;
+                const rightPct = ((rightStart - dx) / totalColWidth) * 100;
+                leftEl.style.flex = `0 1 ${leftPct}%`;
+                rightEl.style.flex = `0 1 ${rightPct}%`;
+                guide.textContent = `${Math.round(leftPct)}% : ${Math.round(rightPct)}%`;
+                guide.style.left = `${ev.clientX + 12}px`;
+                guide.style.top = `${ev.clientY - 28}px`;
               };
               const onUp = (ev: MouseEvent) => {
                 document.removeEventListener('mousemove', onMove);
                 document.removeEventListener('mouseup', onUp);
+                guide.remove();
+                document.body.style.cursor = '';
                 const dx = Math.max(MIN - leftStart, Math.min(ev.clientX - startX, pairTotal - MIN - leftStart));
                 const leftPct = Math.round(((leftStart + dx) / totalColWidth) * 1000) / 10;
                 const rightPct = Math.round(((rightStart - dx) / totalColWidth) * 1000) / 10;
