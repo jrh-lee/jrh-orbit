@@ -284,6 +284,13 @@ function planColumnsDrop(view: EditorView, clientX: number, clientY: number): Co
   return null;
 }
 
+/** 본문 스크롤 영역 rect — 고정 오버레이는 이 밖(툴바/메타 영역)으로
+ *  나가면 안 된다. 화면보다 큰 블록이 스크롤로 잘려 있을 때 필요. */
+function contentClipRect(dom: HTMLElement): DOMRect | null {
+  const scroller = dom.closest('.overflow-y-auto') as HTMLElement | null;
+  return scroller?.getBoundingClientRect() ?? null;
+}
+
 function drawColDropLine(line: HTMLElement, plan: ColPlan): void {
   const rect = plan.dom.getBoundingClientRect();
   if (plan.kind === 'make-columns' || plan.kind === 'new-column') {
@@ -292,10 +299,14 @@ function drawColDropLine(line: HTMLElement, plan: ColPlan): void {
     const pmEl = plan.dom.closest('.ProseMirror') as HTMLElement | null;
     const maxX = pmEl ? pmEl.getBoundingClientRect().right - 18 : window.innerWidth - 14;
     const x = Math.min(rect.right - 8, maxX);
-    line.style.top = `${rect.top}px`;
+    // 세로 방향은 본문 스크롤 영역으로 클립 (툴바 위까지 침범 금지)
+    const clip = contentClipRect(plan.dom);
+    const top = clip ? Math.max(rect.top, clip.top + 2) : rect.top;
+    const bottom = clip ? Math.min(rect.bottom, clip.bottom - 2) : rect.bottom;
+    line.style.top = `${top}px`;
     line.style.left = `${x}px`;
     line.style.width = '3px';
-    line.style.height = `${rect.height}px`;
+    line.style.height = `${Math.max(0, bottom - top)}px`;
   } else {
     line.style.height = '';
     const top = plan.kind === 'col-before' ? rect.top : rect.bottom;

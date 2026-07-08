@@ -363,7 +363,7 @@
   outline: 2px solid var(--color-chrome, #6366f1) !important;
   /* 코드블록 등 내부 박스의 테두리와 겹치지 않게 바깥으로 띄움.
      면 틴트는 li의 빈 영역까지 칠해져 거대해 보여서 제거 — 외곽선만 */
-  outline-offset: 2px;
+  outline-offset: 4px;
   border-radius: 6px;
   background: none;
 }
@@ -433,7 +433,7 @@
 
 .ProseMirror .ProseMirror-selectednode {
   outline: 2px solid var(--color-chrome, #6366f1) !important;
-  outline-offset: 2px;
+  outline-offset: 4px;
   border-radius: 6px;
 }
 
