@@ -1,7 +1,14 @@
 import { create } from 'zustand';
+import { format } from 'date-fns';
+import { addWorkhourSession, loadDailyWorkhour } from '../lib/workhour';
+import { useAppStore } from './useAppStore';
 
 const STORAGE_KEY = 'jrh-orbit-workhour-timer';
 const SAVE_EVERY_TICKS = 30;
+
+/** The work day rolls over at 06:00, not midnight — working past midnight
+ *  still counts (and records) as the previous day. */
+const DAY_START_HOUR = 6;
 
 interface Saved {
   baseElapsed: number;
@@ -11,7 +18,7 @@ interface Saved {
 }
 
 function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  return format(new Date(Date.now() - DAY_START_HOUR * 3600 * 1000), 'yyyy-MM-dd');
 }
 
 function load(): Saved {
@@ -42,9 +49,16 @@ interface WorkhourTimerState {
   running: boolean;
   startedAt: number | null;
   baseElapsed: number;
+  date: string;
 
   start: () => void;
   pause: () => void;
+  /** 종료: stop the timer and record today's accumulated time to the
+   *  workhours file. Only the gap between the timer total and what's already
+   *  in the file gets written, so repeat play→종료 cycles accumulate and
+   *  pomodoro/manual sessions are never double-counted.
+   *  Returns recorded minutes, or null when recording wasn't possible. */
+  finish: () => Promise<number | null>;
   reset: () => void;
   addMinutes: (min: number) => void;
   subtractMinutes: (min: number) => void;
@@ -75,9 +89,23 @@ if (initial.running && initial.startedAt) {
   initialElapsed += Math.floor((Date.now() - initial.startedAt) / 1000);
 }
 
+let finishing = false;
+
 export const useWorkhourTimerStore = create<WorkhourTimerState>((set, get) => {
   if (initial.running) {
     setTimeout(() => startInterval(), 0);
+  }
+
+  // The date-change reset in load() only runs at app start. When the app
+  // stays open past midnight, this resets the counter for the new day
+  // (yesterday's unrecorded time is dropped — 종료 preserves it to the file).
+  function rolloverIfNeeded() {
+    const s = get();
+    const t = today();
+    if (s.date === t) return;
+    const startedAt = s.running ? Date.now() : null;
+    set({ date: t, baseElapsed: 0, elapsed: 0, startedAt });
+    save({ baseElapsed: 0, running: s.running, startedAt, date: t });
   }
 
   return {
@@ -85,8 +113,10 @@ export const useWorkhourTimerStore = create<WorkhourTimerState>((set, get) => {
     running: initial.running,
     startedAt: initial.running ? initial.startedAt : null,
     baseElapsed: initial.running ? initial.baseElapsed : initialElapsed,
+    date: initial.date,
 
     start: () => {
+      rolloverIfNeeded();
       const now = Date.now();
       const { baseElapsed } = get();
       set({ running: true, startedAt: now });
@@ -95,6 +125,7 @@ export const useWorkhourTimerStore = create<WorkhourTimerState>((set, get) => {
     },
 
     pause: () => {
+      rolloverIfNeeded();
       stopInterval();
       const { baseElapsed, startedAt } = get();
       const session = startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0;
@@ -103,13 +134,43 @@ export const useWorkhourTimerStore = create<WorkhourTimerState>((set, get) => {
       save({ baseElapsed: newBase, running: false, startedAt: null, date: today() });
     },
 
+    finish: async () => {
+      rolloverIfNeeded();
+      get().pause();
+      if (finishing) return null;
+      finishing = true;
+      try {
+        const { dataDir } = useAppStore.getState();
+        if (!dataDir) return null;
+        const totalMinutes = Math.round(get().baseElapsed / 60);
+        const workDay = today();
+        const daily = await loadDailyWorkhour(dataDir, workDay);
+        const delta = totalMinutes - daily.total_minutes;
+        if (delta <= 0) return 0;
+        await addWorkhourSession(dataDir, {
+          project: 'GENERAL',
+          startedAt: new Date().toISOString(),
+          durationMinutes: delta,
+          source: 'timer',
+          note: '근무 타이머 종료 기록',
+        }, workDay);
+        window.dispatchEvent(new CustomEvent('workhour-manual-added'));
+        return delta;
+      } catch {
+        return null;
+      } finally {
+        finishing = false;
+      }
+    },
+
     reset: () => {
       stopInterval();
-      set({ elapsed: 0, running: false, startedAt: null, baseElapsed: 0 });
+      set({ elapsed: 0, running: false, startedAt: null, baseElapsed: 0, date: today() });
       save({ baseElapsed: 0, running: false, startedAt: null, date: today() });
     },
 
     addMinutes: (min: number) => {
+      rolloverIfNeeded();
       const added = min * 60;
       set(s => {
         const newBase = s.baseElapsed + added;
@@ -120,6 +181,7 @@ export const useWorkhourTimerStore = create<WorkhourTimerState>((set, get) => {
     },
 
     subtractMinutes: (min: number) => {
+      rolloverIfNeeded();
       const sub = min * 60;
       set(s => {
         const newBase = Math.max(0, s.baseElapsed - sub);
@@ -131,6 +193,7 @@ export const useWorkhourTimerStore = create<WorkhourTimerState>((set, get) => {
     },
 
     tick: () => {
+      rolloverIfNeeded();
       const { startedAt, baseElapsed } = get();
       if (!startedAt) return;
       const sessionSeconds = Math.floor((Date.now() - startedAt) / 1000);

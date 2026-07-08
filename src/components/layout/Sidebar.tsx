@@ -128,7 +128,7 @@ const navItems: { view: AppView; label: string; icon: React.ReactNode }[] = [
 ];
 
 export function Sidebar() {
-  const { view, setView } = useAppStore();
+  const { view, setView, toggleSidebar } = useAppStore();
   const [openSections, setOpenSections] = useState({ projects: true, dday: true, tags: false });
   const [projectAdding, setProjectAdding] = useState(false);
   const [ddayAdding, setDdayAdding] = useState(false);
@@ -138,7 +138,16 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="w-full h-full bg-paper-soft flex flex-col min-h-0">
+    <aside className="w-full h-full bg-paper-soft flex flex-col min-h-0 relative group/sidebar">
+      <button
+        onClick={toggleSidebar}
+        title="사이드바 숨기기 (Ctrl+\)"
+        className="absolute right-1 top-2 z-10 p-1 rounded text-ink-3 opacity-0 group-hover/sidebar:opacity-100 hover:text-ink hover:bg-paper-muted/60 transition-all"
+      >
+        <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M10 3L6 7l4 4M6 3L2 7l4 4" />
+        </svg>
+      </button>
       <nav className="p-1.5 space-y-px" role="navigation" aria-label="Main navigation">
         {navItems.map((item) => (
           <button

@@ -10,7 +10,7 @@ export async function getDb(): Promise<Database> {
   return db;
 }
 
-const FTS_SCHEMA_VERSION = 3;
+const FTS_SCHEMA_VERSION = 4;
 
 async function initSchema(db: Database): Promise<void> {
   await db.execute(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)`);
@@ -27,7 +27,7 @@ async function initSchema(db: Database): Promise<void> {
 
   await db.execute(`
     CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
-      path, id, title, note_type, project, subsystem, topic, tags, status, content, created, updated
+      path, id, title, note_type, project, subsystem, topic, experiment, tags, status, content, created, updated
     )
   `);
 }
@@ -55,6 +55,7 @@ export function indexNote(
   content: string,
   created: string,
   updated: string,
+  experiment: string = '',
 ): Promise<void> {
   const job = writeQueue.then(async () => {
     const database = await getDb();
@@ -66,9 +67,9 @@ export function indexNote(
 
     await database.execute(`DELETE FROM notes_fts WHERE path = $1`, [path]);
     await database.execute(
-      `INSERT INTO notes_fts (path, id, title, note_type, project, subsystem, topic, tags, status, content, created, updated)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-      [path, id, title, noteType, projectStr, subsystemStr, topic, tagsStr, status, content, created, updated],
+      `INSERT INTO notes_fts (path, id, title, note_type, project, subsystem, topic, experiment, tags, status, content, created, updated)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+      [path, id, title, noteType, projectStr, subsystemStr, topic, experiment, tagsStr, status, content, created, updated],
     );
   });
   writeQueue = job.catch(() => {});
@@ -150,17 +151,20 @@ export interface HubNoteRow {
   note_type: string;
   project: string;
   topic: string;
+  experiment: string;
   tags: string;
   content: string;
   created: string;
   updated: string;
 }
 
+const HUB_ROW_COLS = 'path, id, title, note_type, project, topic, experiment, tags, content, created, updated';
+
 export async function findNotesForProject(projectName: string): Promise<HubNoteRow[]> {
   const database = await getDb();
   try {
     const all = await database.select<HubNoteRow[]>(
-      `SELECT path, id, title, note_type, project, topic, tags, content, created, updated FROM notes_fts`,
+      `SELECT ${HUB_ROW_COLS} FROM notes_fts`,
     );
     const rows = all.filter(r => r.project && r.project.includes(projectName));
     console.log(`[findNotesForProject] "${projectName}": ${all.length} total, ${rows.length} matched`);
@@ -175,13 +179,30 @@ export async function findNotesForTopic(topicName: string): Promise<HubNoteRow[]
   const database = await getDb();
   try {
     const all = await database.select<HubNoteRow[]>(
-      `SELECT path, id, title, note_type, project, topic, tags, content, created, updated FROM notes_fts`,
+      `SELECT ${HUB_ROW_COLS} FROM notes_fts`,
     );
     const rows = all.filter(r => r.topic === topicName);
     console.log(`[findNotesForTopic] "${topicName}": ${all.length} total, ${rows.length} matched`);
     return rows.sort((a, b) => (a.created || '').localeCompare(b.created || ''));
   } catch (e) {
     console.error('[findNotesForTopic] query failed:', e);
+    return [];
+  }
+}
+
+export async function findNotesForExperiment(experimentName: string, projectName?: string): Promise<HubNoteRow[]> {
+  const database = await getDb();
+  try {
+    const all = await database.select<HubNoteRow[]>(
+      `SELECT ${HUB_ROW_COLS} FROM notes_fts`,
+    );
+    const rows = all.filter(r =>
+      r.experiment === experimentName &&
+      (!projectName || (r.project && r.project.includes(projectName)))
+    );
+    return rows.sort((a, b) => (a.created || '').localeCompare(b.created || ''));
+  } catch (e) {
+    console.error('[findNotesForExperiment] query failed:', e);
     return [];
   }
 }

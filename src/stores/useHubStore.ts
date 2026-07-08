@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { TopicEntry } from '../types/dataFiles';
 import type { Task } from '../types/task';
 import type { NoteType } from '../types/note';
+import type { Experiment } from '../types/experiment';
 
 export interface TimelineEntry {
   date: string;
@@ -41,9 +42,17 @@ export interface DashboardNote {
   summary: string;
 }
 
+export interface ExperimentSummary {
+  id: string;
+  name: string;
+  status: Experiment['status'];
+  noteCount: number;
+}
+
 interface ProjectHubData {
   projectName: string;
   topics: TopicEntry[];
+  experiments: ExperimentSummary[];
   timeline: TimelineEntry[];
   decisions: TimelineEntry[];
   todos: Task[];
@@ -60,14 +69,24 @@ interface TopicHubData {
   relatedTopics: TopicEntry[];
 }
 
+interface ExperimentHubData {
+  meta: Experiment;
+  projectName: string;
+  timeline: TimelineEntry[];
+  conclusions: ConclusionEntry[];
+  todos: Task[];
+}
+
 interface HubState {
   projectHubData: ProjectHubData | null;
   topicHubData: TopicHubData | null;
+  experimentHubData: ExperimentHubData | null;
   loading: boolean;
   filterTags: string[];
 
   setProjectHubData: (data: ProjectHubData | null) => void;
   setTopicHubData: (data: TopicHubData | null) => void;
+  setExperimentHubData: (data: ExperimentHubData | null) => void;
   setLoading: (loading: boolean) => void;
   setFilterTags: (tags: string[]) => void;
   toggleFilterTag: (tag: string) => void;
@@ -77,11 +96,13 @@ interface HubState {
 export const useHubStore = create<HubState>((set) => ({
   projectHubData: null,
   topicHubData: null,
+  experimentHubData: null,
   loading: false,
   filterTags: [],
 
-  setProjectHubData: (data) => set({ projectHubData: data, topicHubData: null, filterTags: [] }),
-  setTopicHubData: (data) => set({ topicHubData: data, projectHubData: null, filterTags: [] }),
+  setProjectHubData: (data) => set({ projectHubData: data, topicHubData: null, experimentHubData: null, filterTags: [] }),
+  setTopicHubData: (data) => set({ topicHubData: data, projectHubData: null, experimentHubData: null, filterTags: [] }),
+  setExperimentHubData: (data) => set({ experimentHubData: data, projectHubData: null, topicHubData: null, filterTags: [] }),
   setLoading: (loading) => set({ loading }),
   setFilterTags: (tags) => set({ filterTags: tags }),
   toggleFilterTag: (tag) => set((s) => ({
@@ -89,5 +110,5 @@ export const useHubStore = create<HubState>((set) => ({
       ? s.filterTags.filter(t => t !== tag)
       : [...s.filterTags, tag],
   })),
-  clear: () => set({ projectHubData: null, topicHubData: null, loading: false, filterTags: [] }),
+  clear: () => set({ projectHubData: null, topicHubData: null, experimentHubData: null, loading: false, filterTags: [] }),
 }));

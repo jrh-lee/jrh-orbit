@@ -56,7 +56,7 @@ function dashboardTemplate(projectName: string): string {
 }
 
 export function ProjectHubView() {
-  const { dataDir, openNote, openTopicHub, goHubLanding } = useAppStore();
+  const { dataDir, openNote, openTopicHub, openExperimentHub, goHubLanding } = useAppStore();
   const data = useHubStore((s) => s.projectHubData);
   const filterTags = useHubStore((s) => s.filterTags);
   const toggleFilterTag = useHubStore((s) => s.toggleFilterTag);
@@ -153,6 +153,7 @@ export function ProjectHubView() {
           <div>
             <h1 className="text-lg font-semibold text-ink">{data.projectName}</h1>
             <div className="flex items-center gap-3 mt-1 text-[11px] text-ink-3">
+              {data.experiments.length > 0 && <span>🧪 {data.experiments.length}개 실험</span>}
               <span>📂 {data.topics.length}개 토픽</span>
               <span>📄 {data.timeline.filter((e) => e.type !== 'daily-inline').length}개 노트</span>
               <span>📋 {data.todos.length}개 열린 TODO</span>
@@ -219,6 +220,29 @@ export function ProjectHubView() {
       )}
 
       <div className="flex-1 py-4 space-y-6">
+        {data.experiments.length > 0 && (
+          <section className="px-6">
+            <h2 className="text-[11px] font-semibold text-ink-3 uppercase tracking-wider mb-2">🧪 Experiments</h2>
+            <div className="flex flex-wrap gap-1.5">
+              {data.experiments.map((ex) => (
+                <button
+                  key={ex.id}
+                  onClick={() => openExperimentHub(ex.name, data.projectName)}
+                  className={`px-2.5 py-1.5 rounded-lg border text-xs flex items-center gap-1.5 transition-colors ${
+                    ex.status === 'active'
+                      ? 'border-border text-ink-2 hover:border-chrome/60 hover:text-ink'
+                      : 'border-border/50 text-ink-3 opacity-70 hover:opacity-100'
+                  }`}
+                >
+                  <span className="truncate max-w-[180px]">{ex.name}</span>
+                  <span className="text-[9px] text-ink-3">{ex.noteCount}</span>
+                  {ex.status === 'done' && <span className="text-[9px] text-chrome">✓</span>}
+                  {ex.status === 'archived' && <span className="text-[9px]">📦</span>}
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
         <TopicMap topics={data.topics} topicLinks={data.topicLinks} onOpenTopic={openTopicHub} />
         <MilestoneBar milestones={data.milestones} />
         <ProjectTimeline entries={filteredTimeline} onOpen={handleOpen} />

@@ -92,6 +92,17 @@ export function DockMode() {
             {formatWorkhour(workhour.elapsed)}
           </span>
         </button>
+        {(workhour.running || workhour.elapsed > 0) && (
+          <button
+            onClick={() => workhour.finish()}
+            className="p-0.5 text-ink-3 hover:text-red-500 transition-colors"
+            title="근무 종료 — 오늘 누적 시간을 기록"
+          >
+            <svg width="8" height="8" viewBox="0 0 10 10" fill="currentColor">
+              <rect x="1" y="1" width="8" height="8" rx="1" />
+            </svg>
+          </button>
+        )}
 
         <div className="w-px h-4 bg-border" />
 

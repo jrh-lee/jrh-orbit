@@ -26,7 +26,7 @@ export interface WorkhourSession {
   startedAt: string;
   endedAt?: string;
   durationMinutes: number;
-  source: 'pomodoro' | 'manual' | 'manual-timer';
+  source: 'pomodoro' | 'manual' | 'manual-timer' | 'timer';
   note?: string;
 }
 

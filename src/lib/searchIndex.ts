@@ -14,12 +14,13 @@ export async function reindexNote(filePath: string, fallbackType: string): Promi
   const noteType = fields.type ? String(normalizeLegacyType(fields.type)) : fallbackType;
   const project = normalizeProject(fields.project);
   const subsystem = Array.isArray(fields.subsystem) ? fields.subsystem : [];
-  const topic = fields.topic ?? fields.experiment ?? '';
+  const topic = fields.topic ?? '';
+  const experiment = fields.experiment ?? '';
   const tags = Array.isArray(fields.tags) ? fields.tags : [];
   const status = fields.status ?? '';
   const created = fields.created ?? '';
   const updated = fields.updated ?? '';
-  await indexNote(filePath, id, title, noteType, project, subsystem, topic, tags, status, body, created, updated);
+  await indexNote(filePath, id, title, noteType, project, subsystem, topic, tags, status, body, created, updated, experiment);
 }
 
 export async function buildIndex(dataDir: string): Promise<void> {
@@ -52,13 +53,14 @@ export async function buildIndex(dataDir: string): Promise<void> {
         const noteType = fields.type ? String(normalizeLegacyType(fields.type)) : fallbackType;
         const project = normalizeProject(fields.project);
         const subsystem = Array.isArray(fields.subsystem) ? fields.subsystem : [];
-        const topic = fields.topic ?? fields.experiment ?? '';
+        const topic = fields.topic ?? '';
+        const experiment = fields.experiment ?? '';
         const tags = Array.isArray(fields.tags) ? fields.tags : [];
         const status = fields.status ?? '';
         const created = fields.created ?? '';
         const updated = fields.updated ?? '';
 
-        await indexNote(filePath, id, title, noteType, project, subsystem, topic, tags, status, body, created, updated);
+        await indexNote(filePath, id, title, noteType, project, subsystem, topic, tags, status, body, created, updated, experiment);
       } catch {
         continue;
       }

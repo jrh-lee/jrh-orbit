@@ -17,6 +17,7 @@ export const FOLDERS = {
 export const FILES = {
   todos: 'data/todos.json',
   projects: 'data/projects.json',
+  experiments: 'data/experiments.json',
   tags: 'data/tags.json',
   topics: 'data/topics.json',
   links: 'data/links.json',

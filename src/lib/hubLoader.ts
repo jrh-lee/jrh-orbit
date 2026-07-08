@@ -1,14 +1,16 @@
 import { readJsonFile, readNote, listNotes } from './fileSystem';
 import { FILES, FOLDERS } from './constants';
-import { findNotesForProject, findNotesForTopic, type HubNoteRow } from './db';
+import { findNotesForProject, findNotesForTopic, findNotesForExperiment, type HubNoteRow } from './db';
 import type { TopicsFile, LinksFile } from '../types/dataFiles';
 import type { TodosFile } from '../types/task';
 import type { NoteType } from '../types/note';
+import type { ExperimentsFile } from '../types/experiment';
 import type {
   TimelineEntry,
   ConclusionEntry,
   TopicLink,
   DDayItem,
+  ExperimentSummary,
 } from '../stores/useHubStore';
 
 function extractSummary(content: string): string {
@@ -131,11 +133,13 @@ async function parseDailyInlineTopics(
 }
 
 export async function loadProjectHubData(dataDir: string, projectName: string) {
-  const [topicsFile, todosFile, linksFile, ddaysFile] = await Promise.all([
+  const [topicsFile, todosFile, linksFile, ddaysFile, experimentsFile, projectsFile] = await Promise.all([
     readJsonFile<TopicsFile>(dataDir, FILES.topics),
     readJsonFile<TodosFile>(dataDir, FILES.todos),
     readJsonFile<LinksFile>(dataDir, FILES.links),
     readJsonFile<{ events: { id: string; name: string; targetDate: string }[] }>(dataDir, FILES.ddays),
+    readJsonFile<ExperimentsFile>(dataDir, FILES.experiments),
+    readJsonFile<{ projects: { id: string; name: string }[] }>(dataDir, FILES.projects),
   ]);
 
   const allTopics = topicsFile?.topics || [];
@@ -202,15 +206,73 @@ export async function loadProjectHubData(dataDir: string, projectName: string) {
     e.name.toLowerCase().includes(projectName.toLowerCase()),
   );
 
+  const projectId = projectsFile?.projects.find((p) => p.name === projectName)?.id;
+  const statusOrder: Record<string, number> = { active: 0, done: 1, archived: 2 };
+  const experiments: ExperimentSummary[] = (experimentsFile?.experiments || [])
+    .filter((e) => e.projectId === projectId)
+    .map((e) => ({
+      id: e.id,
+      name: e.name,
+      status: e.status,
+      noteCount: noteRows.filter((r) => r.experiment === e.name).length,
+    }))
+    .sort((a, b) => (statusOrder[a.status] ?? 0) - (statusOrder[b.status] ?? 0) || a.name.localeCompare(b.name));
+
   return {
     projectName,
     topics: projectTopics,
+    experiments,
     timeline,
     decisions,
     todos: projectTodos,
     milestones,
     topicLinks,
     dashboardNote,
+  };
+}
+
+export async function loadExperimentHubData(dataDir: string, experimentName: string, projectName: string) {
+  const [todosFile, experimentsFile, projectsFile] = await Promise.all([
+    readJsonFile<TodosFile>(dataDir, FILES.todos),
+    readJsonFile<ExperimentsFile>(dataDir, FILES.experiments),
+    readJsonFile<{ projects: { id: string; name: string }[] }>(dataDir, FILES.projects),
+  ]);
+
+  const projectId = projectsFile?.projects.find((p) => p.name === projectName)?.id;
+  const meta = (experimentsFile?.experiments || []).find(
+    (e) => e.name === experimentName && (!projectId || e.projectId === projectId),
+  ) ?? {
+    // Orphan experiment names in frontmatter still get a usable hub
+    id: '',
+    name: experimentName,
+    projectId: projectId ?? '',
+    status: 'active' as const,
+    createdAt: '',
+  };
+
+  const noteRows = deduplicateRows(await findNotesForExperiment(experimentName, projectName));
+
+  const timeline: TimelineEntry[] = noteRows.map(rowToTimelineEntry);
+  timeline.sort((a, b) => a.date.localeCompare(b.date));
+
+  const conclusions: ConclusionEntry[] = [];
+  for (const row of noteRows) {
+    conclusions.push(...extractConclusions(row.content, row.id, row.path, row.created?.slice(0, 10) || ''));
+  }
+  conclusions.sort((a, b) => b.date.localeCompare(a.date));
+
+  const allTodos = todosFile?.todos || [];
+  const noteIds = new Set(noteRows.map((r) => r.id).filter(Boolean));
+  const todos = allTodos.filter(
+    (t) => t.status !== 'done' && t.related_notes?.some((n) => noteIds.has(n)),
+  );
+
+  return {
+    meta,
+    projectName,
+    timeline,
+    conclusions: conclusions.slice(0, 20),
+    todos,
   };
 }
 

@@ -22,6 +22,7 @@ import { Markdown } from 'tiptap-markdown';
 import { SmartTransform } from './extensions/SmartTransform';
 import { SectionGuide, type SectionGuideMap } from './extensions/SectionGuide';
 import { DragHandle } from './extensions/DragHandle';
+import { HeadingFold } from './extensions/HeadingFold';
 import { common, createLowlight } from 'lowlight';
 import { CodeBlockView } from './CodeBlockView';
 import { ResizableImageView } from './ResizableImageView';
@@ -304,6 +305,7 @@ export function getExtensions(opts?: ExtensionOptions | string) {
       : []),
     HideTaskMeta,
     DragHandle,
+    HeadingFold,
     Markdown.configure({
       html: true,
       transformPastedText: true,

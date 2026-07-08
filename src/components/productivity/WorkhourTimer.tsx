@@ -8,13 +8,26 @@ function formatTime(seconds: number): string {
 }
 
 export function WorkhourTimer() {
-  const { elapsed, running, start, pause, reset, addMinutes, subtractMinutes } = useWorkhourTimerStore();
+  const { elapsed, running, start, pause, finish, reset, addMinutes, subtractMinutes } = useWorkhourTimerStore();
   const [showControls, setShowControls] = useState(false);
+  const [finishMsg, setFinishMsg] = useState<string | null>(null);
 
   const handleToggle = useCallback(() => {
     if (running) pause();
     else start();
   }, [running, start, pause]);
+
+  const handleFinish = useCallback(async () => {
+    const recorded = await finish();
+    if (recorded === null) {
+      setFinishMsg('기록 실패 — 데이터 폴더 확인');
+    } else if (recorded > 0) {
+      setFinishMsg(`${formatTime(recorded * 60)} 기록 완료`);
+    } else {
+      setFinishMsg('오늘 시간은 이미 모두 기록됨');
+    }
+    setTimeout(() => setFinishMsg(null), 4000);
+  }, [finish]);
 
   const handleReset = useCallback(() => {
     if (confirm('근무시간을 초기화하시겠습니까?')) reset();
@@ -56,6 +69,19 @@ export function WorkhourTimer() {
           </span>
         </button>
 
+        {/* 종료: stop + record today's time to workhours file */}
+        {(running || elapsed > 0) && (
+          <button
+            onClick={handleFinish}
+            className="w-5 h-5 flex items-center justify-center text-ink-3 hover:text-red-500 transition-colors rounded"
+            title="근무 종료 — 오늘 누적 시간을 기록"
+          >
+            <svg width="9" height="9" viewBox="0 0 10 10" fill="currentColor">
+              <rect x="1" y="1" width="8" height="8" rx="1" />
+            </svg>
+          </button>
+        )}
+
         {/* Reset */}
         <button
           onClick={handleReset}
@@ -67,6 +93,10 @@ export function WorkhourTimer() {
           </svg>
         </button>
       </div>
+
+      {finishMsg && (
+        <div className="mt-1 text-[10px] text-chrome">{finishMsg}</div>
+      )}
 
       {/* Expandable controls */}
       {showControls && (

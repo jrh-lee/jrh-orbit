@@ -164,6 +164,17 @@ export function TitleBar() {
             )}
             <span className={wh.running ? 'text-chrome' : ''}>{fmtWH(wh.elapsed)}</span>
           </button>
+          {(wh.running || wh.elapsed > 0) && (
+            <button
+              onClick={() => wh.finish()}
+              className="p-0.5 text-ink-3 hover:text-red-500 transition-colors"
+              title="근무 종료 — 오늘 누적 시간을 기록"
+            >
+              <svg width="6" height="6" viewBox="0 0 10 10" fill="currentColor">
+                <rect x="1" y="1" width="8" height="8" rx="1" />
+              </svg>
+            </button>
+          )}
           <div className="w-px h-3 bg-border shrink-0" />
           <span className="text-[9px] text-ink-3 tabular-nums leading-none">{new Date().getDate()}<span className="ml-0.5 text-[8px]">{new Date().toLocaleDateString('ko-KR', { weekday: 'short' })}</span></span>
           <button onClick={() => switchMode('dock')} className="p-1 rounded-md hover:bg-paper-soft text-ink-3 transition-colors" title="Dock">

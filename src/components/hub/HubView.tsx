@@ -1,14 +1,15 @@
 import { useEffect } from 'react';
 import { useAppStore } from '../../stores/useAppStore';
 import { useHubStore } from '../../stores/useHubStore';
-import { loadProjectHubData, loadTopicHubData } from '../../lib/hubLoader';
+import { loadProjectHubData, loadTopicHubData, loadExperimentHubData } from '../../lib/hubLoader';
 import { ProjectHubView } from './ProjectHubView';
 import { TopicHubView } from './TopicHubView';
+import { ExperimentHubView } from './ExperimentHubView';
 import { HubLanding } from './HubLanding';
 
 export function HubView() {
   const { dataDir, hubTarget } = useAppStore();
-  const { setProjectHubData, setTopicHubData, setLoading, loading } = useHubStore();
+  const { setProjectHubData, setTopicHubData, setExperimentHubData, setLoading, loading } = useHubStore();
 
   useEffect(() => {
     if (!dataDir || !hubTarget) return;
@@ -21,6 +22,9 @@ export function HubView() {
         if (hubTarget.type === 'project') {
           const data = await loadProjectHubData(dataDir, hubTarget.name);
           if (!cancelled) setProjectHubData(data);
+        } else if (hubTarget.type === 'experiment') {
+          const data = await loadExperimentHubData(dataDir, hubTarget.name, hubTarget.project);
+          if (!cancelled) setExperimentHubData(data);
         } else {
           const data = await loadTopicHubData(dataDir, hubTarget.name);
           if (!cancelled && data) setTopicHubData(data);
@@ -33,7 +37,7 @@ export function HubView() {
     })();
 
     return () => { cancelled = true; };
-  }, [dataDir, hubTarget, setProjectHubData, setTopicHubData, setLoading]);
+  }, [dataDir, hubTarget, setProjectHubData, setTopicHubData, setExperimentHubData, setLoading]);
 
   if (loading) {
     return (
@@ -49,6 +53,10 @@ export function HubView() {
 
   if (hubTarget.type === 'project') {
     return <ProjectHubView />;
+  }
+
+  if (hubTarget.type === 'experiment') {
+    return <ExperimentHubView />;
   }
 
   return <TopicHubView />;

@@ -75,6 +75,12 @@ export function useKeyboardShortcuts() {
       const mode = useAppStore.getState().mode;
       if (mode !== 'expanded') return;
 
+      if (code === 'Backslash') {
+        e.preventDefault();
+        useAppStore.getState().toggleSidebar();
+        return;
+      }
+
       if (code === 'Equal') {
         e.preventDefault();
         const cfg = useConfigStore.getState();

@@ -18,6 +18,7 @@ import { FILES } from '../../lib/constants';
 import { writeJsonFile } from '../../lib/fileSystem';
 import type { TodosFile } from '../../types/task';
 import type { TopicsFile, TopicEntry } from '../../types/dataFiles';
+import { useExperimentStore } from '../../stores/useExperimentStore';
 import { reindexNote } from '../../lib/searchIndex';
 import { indexNote, removeNoteIndex } from '../../lib/db';
 import { AutoSuggestionBanner } from './AutoSuggestionBanner';
@@ -41,6 +42,7 @@ interface NoteEntry {
   created: string;
   project: string[];
   topic: string;
+  experiment: string;
   subsystem: string[];
   tags: string[];
   status: NoteStatus;
@@ -51,6 +53,7 @@ interface NoteMeta {
   title: string;
   project: string[];
   topic: string;
+  experiment: string;
   subsystem: string[];
   tags: string[];
   status: NoteStatus;
@@ -206,6 +209,7 @@ function makeFrontmatter(noteType: NoteType, title: string, noteId: string): str
     date: today,
     project: [],
     topic: '',
+    experiment: '',
     tags: [],
     related: [`${today}-daily`],
     status: 'draft',
@@ -243,7 +247,7 @@ export function NoteListView() {
   const [activeNoteId, setActiveNoteId] = useState('');
   const [body, setBody] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [meta, setMeta] = useState<NoteMeta>({ title: '', project: [], topic: '', subsystem: [], tags: [], status: 'draft' });
+  const [meta, setMeta] = useState<NoteMeta>({ title: '', project: [], topic: '', experiment: '', subsystem: [], tags: [], status: 'draft' });
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
   const [tagInput, setTagInput] = useState('');
   const [tagHighlight, setTagHighlight] = useState(0);
@@ -263,6 +267,12 @@ export function NoteListView() {
   const [topicDropdownOpen, setTopicDropdownOpen] = useState(false);
   const [showNewTopicInput, setShowNewTopicInput] = useState(false);
   const [newTopicName, setNewTopicName] = useState('');
+  const experiments = useExperimentStore((s) => s.experiments);
+  const [experimentDropdownOpen, setExperimentDropdownOpen] = useState(false);
+  const [showNewExperimentInput, setShowNewExperimentInput] = useState(false);
+  const [newExperimentName, setNewExperimentName] = useState('');
+  const [groupView, setGroupView] = useState(() => localStorage.getItem('orbit-notes-group-view') === '1');
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [showTemplateEditor, setShowTemplateEditor] = useState(false);
   const [customTemplates, setCustomTemplates] = useState<CustomTemplate[]>([]);
   const fmRef = useRef('');
@@ -291,6 +301,32 @@ export function NoteListView() {
     return [...set].sort();
   }, [notes]);
 
+  /** Project ids matching the active note's project names */
+  const noteProjectIds = useMemo(
+    () => meta.project.map(name => projects.find(p => p.name === name)?.id).filter((x): x is string => !!x),
+    [meta.project, projects],
+  );
+
+  const relevantExperiments = useMemo(() => {
+    const order: Record<string, number> = { active: 0, done: 1, archived: 2 };
+    const list = noteProjectIds.length
+      ? experiments.filter(e => noteProjectIds.includes(e.projectId))
+      : experiments;
+    return [...list].sort((a, b) => (order[a.status] ?? 0) - (order[b.status] ?? 0) || a.name.localeCompare(b.name));
+  }, [experiments, noteProjectIds]);
+
+  async function handleCreateExperiment(name: string) {
+    const trimmed = name.trim();
+    if (!dataDir || !trimmed) return;
+    const projectId = noteProjectIds[0];
+    if (!projectId) return;
+    const exists = experiments.some(e => e.projectId === projectId && e.name === trimmed);
+    if (!exists) {
+      await useExperimentStore.getState().add(dataDir, { name: trimmed, projectId, status: 'active' });
+    }
+    updateMeta('experiment', trimmed);
+  }
+
   const filteredNotes = useMemo(() => {
     let list = notes;
     if (filterProject) list = list.filter(n => n.project.includes(filterProject));
@@ -302,11 +338,79 @@ export function NoteListView() {
     });
   }, [notes, filterProject, filterTag, sortBy]);
 
+  interface NoteGroup {
+    project: string;
+    direct: NoteEntry[];
+    experiments: { name: string; notes: NoteEntry[] }[];
+  }
+
+  const UNASSIGNED = '미지정';
+
+  const groupedNotes = useMemo((): NoteGroup[] | null => {
+    if (!groupView) return null;
+    const map = new Map<string, { direct: NoteEntry[]; exps: Map<string, NoteEntry[]> }>();
+    const seen: string[] = [];
+    const ensure = (p: string) => {
+      if (!map.has(p)) { map.set(p, { direct: [], exps: new Map() }); seen.push(p); }
+      return map.get(p)!;
+    };
+    for (const n of filteredNotes) {
+      const projList = n.project.length ? n.project : [UNASSIGNED];
+      for (const p of projList) {
+        const g = ensure(p);
+        if (n.experiment) {
+          if (!g.exps.has(n.experiment)) g.exps.set(n.experiment, []);
+          g.exps.get(n.experiment)!.push(n);
+        } else {
+          g.direct.push(n);
+        }
+      }
+    }
+    const projOrder = projects.map(p => p.name);
+    seen.sort((a, b) => {
+      if (a === UNASSIGNED) return 1;
+      if (b === UNASSIGNED) return -1;
+      const ia = projOrder.indexOf(a);
+      const ib = projOrder.indexOf(b);
+      if (ia !== -1 && ib !== -1) return ia - ib;
+      if (ia !== -1) return -1;
+      if (ib !== -1) return 1;
+      return a.localeCompare(b);
+    });
+    return seen.map(p => {
+      const g = map.get(p)!;
+      return {
+        project: p,
+        direct: g.direct,
+        experiments: [...g.exps.entries()]
+          .map(([name, ns]) => ({ name, notes: ns }))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      };
+    });
+  }, [groupView, filteredNotes, projects]);
+
+  function toggleGroup(key: string) {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function toggleGroupView() {
+    setGroupView(v => {
+      localStorage.setItem('orbit-notes-group-view', v ? '0' : '1');
+      return !v;
+    });
+  }
+
   useEffect(() => {
     if (!dataDir) return;
     loadNotes();
     loadTopics();
     loadCustomTemplates();
+    useExperimentStore.getState().load(dataDir).catch(() => {});
   }, [dataDir]);
 
   async function loadKnownTags(noteEntries?: NoteEntry[]) {
@@ -436,7 +540,7 @@ export function NoteListView() {
   }, [activeProject, projects]);
 
   useEffect(() => {
-    function handleClick() { setContextMenu(null); setTagDropdownOpen(false); setTopicDropdownOpen(false); setShowTemplateMenu(false); }
+    function handleClick() { setContextMenu(null); setTagDropdownOpen(false); setTopicDropdownOpen(false); setExperimentDropdownOpen(false); setShowTemplateMenu(false); }
     document.addEventListener('click', handleClick);
     return () => document.removeEventListener('click', handleClick);
   }, []);
@@ -476,6 +580,7 @@ export function NoteListView() {
           let created = '';
           let project: string[] = [];
           let topic = '';
+          let experiment = '';
           let subsystem: string[] = [];
           let tags: string[] = [];
           let status: NoteStatus = 'draft';
@@ -489,13 +594,14 @@ export function NoteListView() {
             updated = fields.updated ?? '';
             created = fields.created ?? '';
             project = normalizeProject(fields.project);
-            topic = fields.topic ?? fields.experiment ?? '';
+            topic = fields.topic ?? '';
+            experiment = fields.experiment ?? '';
             subsystem = Array.isArray(fields.subsystem) ? fields.subsystem : [];
             tags = Array.isArray(fields.tags) ? fields.tags : [];
             status = fields.status ?? 'draft';
             related = Array.isArray(fields.related) ? fields.related : (fields.related ? [fields.related] : []);
           } catch {}
-          return { path: f, filename, id, noteType, title, updated, created, project, topic, subsystem, tags, status, related };
+          return { path: f, filename, id, noteType, title, updated, created, project, topic, experiment, subsystem, tags, status, related };
         }),
       );
 
@@ -523,7 +629,8 @@ export function NoteListView() {
       setMeta({
         title: fields.title ?? 'Untitled',
         project: noteProject,
-        topic: fields.topic ?? fields.experiment ?? '',
+        topic: fields.topic ?? '',
+        experiment: fields.experiment ?? '',
         subsystem: Array.isArray(fields.subsystem) ? fields.subsystem : [],
         tags: fields.tags ?? [],
         status: fields.status ?? 'draft',
@@ -550,6 +657,8 @@ export function NoteListView() {
       fm = updateFrontmatterField(fm, 'subsystem', formatFrontmatterValue(value));
     } else if (field === 'topic') {
       fm = updateFrontmatterField(fm, 'topic', formatFrontmatterValue(value));
+    } else if (field === 'experiment') {
+      fm = updateFrontmatterField(fm, 'experiment', formatFrontmatterValue(value));
     } else if (field === 'status') {
       fm = updateFrontmatterField(fm, 'status', value as string);
     }
@@ -574,12 +683,18 @@ export function NoteListView() {
         body,
         noteEntry?.created ?? '',
         new Date().toISOString(),
+        updated.experiment,
       ).catch((e) => console.error('[indexNote] updateMeta failed:', e));
     }
 
     if (field === 'title') {
       setNotes(prev => prev.map(n =>
         n.path === activeNote ? { ...n, title: value as string } : n
+      ));
+    }
+    if (field === 'project' || field === 'topic' || field === 'experiment') {
+      setNotes(prev => prev.map(n =>
+        n.path === activeNote ? { ...n, [field]: value } : n
       ));
     }
     if (field === 'tags') {
@@ -673,7 +788,7 @@ export function NoteListView() {
       setBody(template.body);
       setActiveNote(fullPath);
       setActiveNoteId(noteId);
-      setMeta({ title, project: [], topic: '', subsystem: [], tags: [], status: 'draft' });
+      setMeta({ title, project: [], topic: '', experiment: '', subsystem: [], tags: [], status: 'draft' });
       setTagInput('');
     } catch (e) {
       setError(String(e));
@@ -694,7 +809,7 @@ export function NoteListView() {
         setActiveNote(null);
         setActiveNoteId('');
         setBody('');
-        setMeta({ title: '', project: [], topic: '', subsystem: [], tags: [], status: 'draft' });
+        setMeta({ title: '', project: [], topic: '', experiment: '', subsystem: [], tags: [], status: 'draft' });
       }
       await loadNotes();
     } catch (e) {
@@ -897,6 +1012,69 @@ ${content}
     }
   }, [meta, activeNote, notes, dataDir]);
 
+  const renderNoteItem = (note: NoteEntry, indent = 0) => (
+    <div key={note.path} className="relative group">
+      {renamingNote === note.path ? (
+        <div className="px-3 py-2 border-b border-border/30" style={indent ? { paddingLeft: 10 + indent * 12 } : undefined}>
+          <input
+            autoFocus
+            value={renameValue}
+            onChange={e => setRenameValue(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') commitRename(note.path);
+              if (e.key === 'Escape') setRenamingNote(null);
+            }}
+            onBlur={() => commitRename(note.path)}
+            className="w-full text-xs px-2 py-1 rounded border border-chrome bg-paper-soft text-ink focus:outline-none"
+          />
+        </div>
+      ) : (
+        <button
+          onClick={() => handleSelectNote(note.path)}
+          onContextMenu={(e) => handleContextMenu(e, note.path)}
+          className={`w-full text-left px-2.5 py-2 text-sm border-b border-border/30 transition-colors ${
+            activeNote === note.path
+              ? 'bg-chrome/20 text-ink'
+              : 'text-ink-2 hover:bg-paper-soft'
+          }`}
+          style={indent ? { paddingLeft: 10 + indent * 12 } : undefined}
+        >
+          <div className="font-medium text-xs truncate pr-6">
+            <span className="mr-0.5">{typeIconMap[note.noteType] ?? NOTE_TYPE_ICONS[note.noteType as NoteType] ?? '📝'}</span>
+            {note.title}
+          </div>
+          {note.updated && (
+            <div className="text-[10px] text-ink-3 mt-0.5 truncate pr-6">
+              {formatRelativeTime(note.updated)}
+            </div>
+          )}
+        </button>
+      )}
+      {renamingNote !== note.path && (
+        <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 flex gap-0.5 transition-opacity">
+          <button
+            onClick={(e) => { e.stopPropagation(); startRename(note.path); }}
+            title="Rename"
+            className="p-1 rounded text-ink-3 hover:text-ink hover:bg-paper-soft transition-colors"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M8.5 1.5l2 2L4 10H2v-2l6.5-6.5z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); handleDelete(note.path); }}
+            title="Delete"
+            className="p-1 rounded text-ink-3 hover:text-red-400 hover:bg-paper-soft transition-colors"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+            </svg>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="flex-1 flex min-h-0 min-w-0">
       <div style={{ width: listWidth }} className="shrink-0 border-r border-border flex flex-col">
@@ -957,7 +1135,7 @@ ${content}
               className="flex-1 min-w-0"
             />
           </div>
-          <div className="flex gap-0.5">
+          <div className="flex gap-0.5 items-center">
             {(['updated', 'created', 'title'] as const).map(s => (
               <button
                 key={s}
@@ -969,6 +1147,18 @@ ${content}
                 {s === 'updated' ? 'Recent' : s === 'created' ? 'Created' : 'A-Z'}
               </button>
             ))}
+            <button
+              onClick={toggleGroupView}
+              title="프로젝트/Experiment별 그룹"
+              className={`ml-auto px-1.5 py-0.5 text-[9px] rounded transition-colors flex items-center gap-0.5 ${
+                groupView ? 'bg-chrome/30 text-ink font-medium' : 'text-ink-3 hover:bg-paper-soft'
+              }`}
+            >
+              <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round">
+                <path d="M2 3h8M4 6h6M6 9h4" />
+              </svg>
+              그룹
+            </button>
           </div>
         </div>
 
@@ -978,67 +1168,57 @@ ${content}
               {notes.length === 0 ? 'No research notes yet.' : 'No notes match filters.'}
             </p>
           )}
-          {filteredNotes.map((note) => (
-            <div key={note.path} className="relative group">
-              {renamingNote === note.path ? (
-                <div className="px-3 py-2 border-b border-border/30">
-                  <input
-                    autoFocus
-                    value={renameValue}
-                    onChange={e => setRenameValue(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') commitRename(note.path);
-                      if (e.key === 'Escape') setRenamingNote(null);
-                    }}
-                    onBlur={() => commitRename(note.path)}
-                    className="w-full text-xs px-2 py-1 rounded border border-chrome bg-paper-soft text-ink focus:outline-none"
-                  />
-                </div>
-              ) : (
+          {!groupView && filteredNotes.map((note) => renderNoteItem(note))}
+
+          {groupView && groupedNotes && groupedNotes.map((g) => {
+            const pKey = `p:${g.project}`;
+            const pCollapsed = collapsedGroups.has(pKey);
+            const projColor = projects.find(p => p.name === g.project)?.color;
+            const count = g.direct.length + g.experiments.reduce((s, e) => s + e.notes.length, 0);
+            return (
+              <div key={g.project}>
                 <button
-                  onClick={() => handleSelectNote(note.path)}
-                  onContextMenu={(e) => handleContextMenu(e, note.path)}
-                  className={`w-full text-left px-2.5 py-2 text-sm border-b border-border/30 transition-colors ${
-                    activeNote === note.path
-                      ? 'bg-chrome/20 text-ink'
-                      : 'text-ink-2 hover:bg-paper-soft'
-                  }`}
+                  onClick={() => toggleGroup(pKey)}
+                  className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold text-ink-2 bg-paper-soft/70 border-b border-border/30 sticky top-0 z-10 hover:bg-paper-soft transition-colors"
                 >
-                  <div className="font-medium text-xs truncate pr-6">
-                    <span className="mr-0.5">{typeIconMap[note.noteType] ?? NOTE_TYPE_ICONS[note.noteType as NoteType] ?? '📝'}</span>
-                    {note.title}
-                  </div>
-                  {note.updated && (
-                    <div className="text-[10px] text-ink-3 mt-0.5 truncate pr-6">
-                      {formatRelativeTime(note.updated)}
-                    </div>
-                  )}
+                  <svg width="8" height="8" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+                    className={`shrink-0 transition-transform ${pCollapsed ? '' : 'rotate-90'}`}>
+                    <path d="M3 1.5L7.5 5 3 8.5" />
+                  </svg>
+                  {projColor && <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: projColor }} />}
+                  <span className="truncate">{g.project}</span>
+                  <span className="ml-auto text-[9px] text-ink-3 font-normal shrink-0">{count}</span>
                 </button>
-              )}
-              {renamingNote !== note.path && (
-                <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 flex gap-0.5 transition-opacity">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); startRename(note.path); }}
-                    title="Rename"
-                    className="p-1 rounded text-ink-3 hover:text-ink hover:bg-paper-soft transition-colors"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                      <path d="M8.5 1.5l2 2L4 10H2v-2l6.5-6.5z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleDelete(note.path); }}
-                    title="Delete"
-                    className="p-1 rounded text-ink-3 hover:text-red-400 hover:bg-paper-soft transition-colors"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                      <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-                    </svg>
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
+                {!pCollapsed && (
+                  <>
+                    {g.direct.map(n => renderNoteItem(n, 1))}
+                    {g.experiments.map(ex => {
+                      const eKey = `p:${g.project}/e:${ex.name}`;
+                      const eCollapsed = collapsedGroups.has(eKey);
+                      return (
+                        <div key={ex.name}>
+                          <button
+                            onClick={() => toggleGroup(eKey)}
+                            className="w-full flex items-center gap-1 pr-2.5 py-1 text-[10px] font-medium text-ink-3 border-b border-border/20 hover:bg-paper-soft/50 transition-colors"
+                            style={{ paddingLeft: 22 }}
+                          >
+                            <svg width="7" height="7" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+                              className={`shrink-0 transition-transform ${eCollapsed ? '' : 'rotate-90'}`}>
+                              <path d="M3 1.5L7.5 5 3 8.5" />
+                            </svg>
+                            <span className="mr-0.5">🧪</span>
+                            <span className="truncate">{ex.name}</span>
+                            <span className="ml-auto text-[9px] shrink-0">{ex.notes.length}</span>
+                          </button>
+                          {!eCollapsed && ex.notes.map(n => renderNoteItem(n, 2))}
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
+              </div>
+            );
+          })}
 
           {contextMenu && (() => {
             const ctxNote = notes.find(n => n.path === contextMenu.path);
@@ -1345,6 +1525,84 @@ ${content}
                         >
                           + New Topic
                         </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div className="w-px h-3 bg-border" />
+                <div className="flex items-center gap-1.5 relative">
+                  <span className="text-[10px] text-ink-3 uppercase tracking-wider">Experiment</span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setExperimentDropdownOpen(v => !v); setShowNewExperimentInput(false); }}
+                    className="text-xs text-ink-2 bg-paper-soft/40 rounded px-2 py-1 border border-transparent hover:border-border w-36 text-left truncate placeholder:text-ink-3"
+                  >
+                    {meta.experiment || <span className="text-ink-3">—</span>}
+                  </button>
+                  {experimentDropdownOpen && (
+                    <div className="absolute top-full left-0 mt-1 z-50 bg-paper border border-border rounded-lg shadow-lg py-1 min-w-[180px] max-h-48 overflow-y-auto"
+                      onClick={e => e.stopPropagation()}>
+                      {meta.experiment && (
+                        <button
+                          onMouseDown={e => {
+                            e.preventDefault();
+                            updateMeta('experiment', '');
+                            setExperimentDropdownOpen(false);
+                          }}
+                          className="w-full text-left px-2 py-1 text-xs text-ink-3 hover:bg-paper-soft transition-colors italic"
+                        >
+                          Clear experiment
+                        </button>
+                      )}
+                      {relevantExperiments.map(ex => (
+                        <button
+                          key={ex.id}
+                          onMouseDown={e => {
+                            e.preventDefault();
+                            updateMeta('experiment', ex.name);
+                            setExperimentDropdownOpen(false);
+                          }}
+                          className={`w-full text-left px-2 py-1 text-xs hover:bg-paper-soft transition-colors flex items-center justify-between ${
+                            meta.experiment === ex.name ? 'text-ink font-medium' : 'text-ink-2'
+                          }`}
+                        >
+                          <span className="truncate">{ex.name}</span>
+                          {ex.status !== 'active' && (
+                            <span className="text-[9px] text-ink-3 ml-1 shrink-0">{ex.status === 'done' ? '완료' : '보관'}</span>
+                          )}
+                        </button>
+                      ))}
+                      {relevantExperiments.length === 0 && (
+                        <div className="px-2 py-1 text-[10px] text-ink-3">No experiments yet</div>
+                      )}
+                      <div className="mx-2 my-0.5 border-t border-border/50" />
+                      {showNewExperimentInput ? (
+                        <div className="px-2 py-1 flex gap-1">
+                          <input
+                            autoFocus
+                            value={newExperimentName}
+                            onChange={e => setNewExperimentName(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter' && newExperimentName.trim()) {
+                                handleCreateExperiment(newExperimentName);
+                                setNewExperimentName('');
+                                setShowNewExperimentInput(false);
+                                setExperimentDropdownOpen(false);
+                              }
+                              if (e.key === 'Escape') { setShowNewExperimentInput(false); setNewExperimentName(''); }
+                            }}
+                            placeholder="Experiment name..."
+                            className="flex-1 text-xs px-1.5 py-0.5 rounded border border-border bg-paper-soft text-ink focus:outline-none min-w-0"
+                          />
+                        </div>
+                      ) : noteProjectIds.length > 0 ? (
+                        <button
+                          onMouseDown={e => { e.preventDefault(); setShowNewExperimentInput(true); }}
+                          className="w-full text-left px-2 py-1 text-xs text-chrome hover:bg-paper-soft transition-colors"
+                        >
+                          + New Experiment
+                        </button>
+                      ) : (
+                        <div className="px-2 py-1 text-[10px] text-ink-3 italic">프로젝트를 먼저 지정하세요</div>
                       )}
                     </div>
                   )}

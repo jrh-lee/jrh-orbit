@@ -31,7 +31,7 @@ const SIDEBAR_MIN = 140;
 const SIDEBAR_MAX = 300;
 
 export function ExpandedMode() {
-  const { view } = useAppStore();
+  const { view, sidebarHidden, toggleSidebar } = useAppStore();
   const zoomLevel = useConfigStore((s) => s.window.zoom_level);
   const ViewComponent = views[view];
   const [sidebarWidth, setSidebarWidth] = useState(180);
@@ -43,11 +43,26 @@ export function ExpandedMode() {
   const zoomStyle = zoomLevel !== 100 ? { zoom: zoomLevel / 100 } as React.CSSProperties : undefined;
 
   return (
-    <div className="flex-1 flex min-h-0" style={zoomStyle}>
-      <div style={{ width: sidebarWidth }} className="shrink-0 border-r border-border">
-        <Sidebar />
-      </div>
-      <ResizeHandle onResize={handleSidebarResize} />
+    <div className="flex-1 flex min-h-0 relative" style={zoomStyle}>
+      {!sidebarHidden && (
+        <>
+          <div style={{ width: sidebarWidth }} className="shrink-0 border-r border-border">
+            <Sidebar />
+          </div>
+          <ResizeHandle onResize={handleSidebarResize} />
+        </>
+      )}
+      {sidebarHidden && (
+        <button
+          onClick={toggleSidebar}
+          title="사이드바 표시 (Ctrl+\)"
+          className="absolute left-1 top-1.5 z-40 p-1 rounded-md text-ink-3/50 hover:text-ink hover:bg-paper-soft transition-colors"
+        >
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 3l4 4-4 4M8 3l4 4-4 4" />
+          </svg>
+        </button>
+      )}
       <main id="main-content" role="main" className="flex-1 flex flex-col min-h-0 min-w-0 bg-paper">
         <ViewComponent />
       </main>

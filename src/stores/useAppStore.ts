@@ -17,7 +17,13 @@ interface AppState {
   /** yyyy-MM-dd — date the Daily view should jump to on next open */
   pendingDailyDate: string | null;
   activeProject: string | null;
-  hubTarget: { type: 'project'; name: string } | { type: 'topic'; name: string } | null;
+  hubTarget:
+    | { type: 'project'; name: string }
+    | { type: 'topic'; name: string }
+    | { type: 'experiment'; name: string; project: string }
+    | null;
+  /** Expanded-mode focus mode: hides the left sidebar (Ctrl+\) */
+  sidebarHidden: boolean;
 
   setMode: (mode: WindowMode) => void;
   setView: (view: AppView) => void;
@@ -34,7 +40,9 @@ interface AppState {
   setActiveProject: (project: string | null) => void;
   openProjectHub: (projectName: string) => void;
   openTopicHub: (topicName: string) => void;
+  openExperimentHub: (experimentName: string, projectName: string) => void;
   goHubLanding: () => void;
+  toggleSidebar: () => void;
 }
 
 const savedDir = localStorage.getItem(STORAGE_KEY) || '';
@@ -50,6 +58,7 @@ export const useAppStore = create<AppState>((set) => ({
   pendingDailyDate: null,
   activeProject: null,
   hubTarget: null,
+  sidebarHidden: localStorage.getItem('orbit-sidebar-hidden') === '1',
 
   setMode: (mode) => set({ mode }),
   setView: (view) => set({ view }),
@@ -73,5 +82,11 @@ export const useAppStore = create<AppState>((set) => ({
   setActiveProject: (project) => set({ activeProject: project }),
   openProjectHub: (name) => set({ view: 'hub', hubTarget: { type: 'project', name } }),
   openTopicHub: (name) => set({ view: 'hub', hubTarget: { type: 'topic', name } }),
+  openExperimentHub: (name, project) => set({ view: 'hub', hubTarget: { type: 'experiment', name, project } }),
   goHubLanding: () => set({ hubTarget: null }),
+  toggleSidebar: () => set((s) => {
+    const next = !s.sidebarHidden;
+    localStorage.setItem('orbit-sidebar-hidden', next ? '1' : '0');
+    return { sidebarHidden: next };
+  }),
 }));

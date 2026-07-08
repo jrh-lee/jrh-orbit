@@ -32,6 +32,8 @@ export interface NoteMeta {
   date?: string;
   project: string | string[];
   topic?: string;
+  /** Experiment name (data/experiments.json) this note belongs to */
+  experiment?: string;
   subsystem?: string[];
   tags: string[];
   related?: string[];
