@@ -75,12 +75,6 @@ export function useKeyboardShortcuts() {
       const mode = useAppStore.getState().mode;
       if (mode !== 'expanded') return;
 
-      if (code === 'KeyP' && !e.shiftKey) {
-        e.preventDefault(); // 브라우저 인쇄 대화상자 차단
-        window.dispatchEvent(new CustomEvent('quick-switcher-open'));
-        return;
-      }
-
       // 한국어 키보드의 ₩ 키는 레이아웃에 따라 code/key가 달라 넓게 매칭
       if (code === 'Backslash' || code === 'IntlYen' || code === 'IntlBackslash' || e.key === '\\' || e.key === '₩') {
         e.preventDefault();
@@ -118,7 +112,23 @@ export function useKeyboardShortcuts() {
       }
     }
 
+    // Ctrl+P는 WebView2 인쇄 액셀러레이터보다 먼저 잡아야 해서 캡처 단계 전용
+    // 리스너로 등록 — 버블 단계 preventDefault로는 인쇄 다이얼로그가 뜰 수 있음.
+    function printIntercept(e: KeyboardEvent) {
+      const mod = isMac ? e.metaKey : e.ctrlKey;
+      if (!mod || e.shiftKey || e.altKey || e.code !== 'KeyP') return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (useAppStore.getState().mode === 'expanded') {
+        window.dispatchEvent(new CustomEvent('quick-switcher-open'));
+      }
+    }
+
     window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    window.addEventListener('keydown', printIntercept, true);
+    return () => {
+      window.removeEventListener('keydown', handler);
+      window.removeEventListener('keydown', printIntercept, true);
+    };
   }, [setView]);
 }

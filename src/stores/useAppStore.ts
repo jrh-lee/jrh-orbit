@@ -13,6 +13,8 @@ interface AppState {
   isSetupComplete: boolean;
   theme: Theme;
   pendingNotePath: string | null;
+  /** Block-link anchor (block text prefix) to scroll to after the note opens */
+  pendingNoteAnchor: string | null;
   pendingTagFilter: string | null;
   /** yyyy-MM-dd — date the Daily view should jump to on next open */
   pendingDailyDate: string | null;
@@ -30,7 +32,7 @@ interface AppState {
   setDataDir: (dir: string) => void;
   setSetupComplete: (complete: boolean) => void;
   setTheme: (theme: Theme) => void;
-  openNote: (path: string) => void;
+  openNote: (path: string, anchor?: string) => void;
   clearPendingNote: () => void;
   openDaily: (date: string) => void;
   clearPendingDailyDate: () => void;
@@ -54,6 +56,7 @@ export const useAppStore = create<AppState>((set) => ({
   isSetupComplete: !!savedDir,
   theme: 'light',
   pendingNotePath: null,
+  pendingNoteAnchor: null,
   pendingTagFilter: null,
   pendingDailyDate: null,
   activeProject: null,
@@ -72,8 +75,8 @@ export const useAppStore = create<AppState>((set) => ({
     document.documentElement.setAttribute('data-theme', theme);
     set({ theme });
   },
-  openNote: (path) => set({ view: 'notes', pendingNotePath: path }),
-  clearPendingNote: () => set({ pendingNotePath: null }),
+  openNote: (path, anchor) => set({ view: 'notes', pendingNotePath: path, pendingNoteAnchor: anchor ?? null }),
+  clearPendingNote: () => set({ pendingNotePath: null, pendingNoteAnchor: null }),
   openDaily: (date) => set({ view: 'daily', pendingDailyDate: date }),
   clearPendingDailyDate: () => set({ pendingDailyDate: null }),
   filterByTag: (tag) => set({ view: 'notes', pendingTagFilter: tag }),

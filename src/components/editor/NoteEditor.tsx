@@ -332,6 +332,12 @@ interface NoteEditorProps {
   editorRef?: MutableRefObject<Editor | null>;
   /** Fired when the editor loses focus — safe moment for doc normalization. */
   onEditorBlur?: () => void;
+  /** Frontmatter id of the note being edited — enables 블록 링크 복사 */
+  noteId?: string;
+  /** Block-link anchor to scroll to once content is loaded */
+  scrollAnchor?: string | null;
+  /** Called after the anchor scroll attempt finishes (found or not) */
+  onAnchorScrolled?: () => void;
 }
 
 interface WikiLinkState {
@@ -340,7 +346,7 @@ interface WikiLinkState {
   coords: { left: number; top: number };
 }
 
-export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsertion, sectionGuides, editorRef, onEditorBlur }: NoteEditorProps) {
+export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsertion, sectionGuides, editorRef, onEditorBlur, noteId, scrollAnchor, onAnchorScrolled }: NoteEditorProps) {
   const { dataDir, openNote } = useAppStore();
   const smartTransformEnabled = useConfigStore((s) => s.editor.smart_transform);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -351,9 +357,14 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
   const [wikiResults, setWikiResults] = useState<SearchResult[]>([]);
   const [wikiIndex, setWikiIndex] = useState(0);
   const wikiSearchRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; linkPos: number | null; linkHref: string | null } | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; linkPos: number | null; linkHref: string | null; blockAnchor: string | null } | null>(null);
   const ctxMenuRef = useRef<HTMLDivElement>(null);
   const [linkPrompt, setLinkPrompt] = useState<{ x: number; y: number; from: number; to: number } | null>(null);
+  // The click handler lives in the useEditor config closure — read fresh
+  // values through refs (the editor instance outlives prop changes).
+  const noteIdRef = useRef<string | undefined>(noteId);
+  noteIdRef.current = noteId;
+  const scrollToAnchorRef = useRef<(anchor: string) => boolean>(() => false);
 
   // Keep the context menu fully on-screen — right-clicking near the bottom
   // edge used to push it below the viewport.
@@ -475,6 +486,7 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
           // 링크 제거 — links are easy to create but were impossible to remove
           let linkPos: number | null = null;
           let linkHref: string | null = null;
+          let blockAnchor: string | null = null;
           const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
           if (at) {
             const node = view.state.doc.nodeAt(at.pos);
@@ -486,8 +498,17 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
               linkPos = at.pos;
               linkHref = linkMark.attrs.href ?? null;
             }
+            // Nearest textblock text = block-link anchor (text-prefix match on open)
+            for (let d = $pos.depth; d > 0; d--) {
+              const n = $pos.node(d);
+              if (n.isTextblock) {
+                const text = n.textContent.trim();
+                if (text) blockAnchor = text.slice(0, 60);
+                break;
+              }
+            }
           }
-          setCtxMenu({ x: event.clientX, y: event.clientY, linkPos, linkHref });
+          setCtxMenu({ x: event.clientX, y: event.clientY, linkPos, linkHref, blockAnchor });
           return true;
         },
         click(view, event) {
@@ -497,16 +518,22 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
             if (!href) return false;
             event.preventDefault();
             if (href.startsWith('note://')) {
-              const noteId = href.slice(7);
+              const [targetId, hashPart] = href.slice(7).split('#');
+              const anchor = hashPart ? decodeURIComponent(hashPart) : undefined;
+              // Same-note block link: just scroll, no navigation
+              if (anchor && noteIdRef.current && targetId === noteIdRef.current) {
+                scrollToAnchorRef.current(anchor);
+                return true;
+              }
               // Exact id lookup first — ranked FTS can return the daily log
               // (whose body embeds the id) instead of the target note.
-              getNoteByExactId(noteId).then(exact => {
+              getNoteByExactId(targetId).then(exact => {
                 if (exact) {
-                  openNote(exact.path);
+                  openNote(exact.path, anchor);
                   return;
                 }
-                searchNotes(noteId).then(results => {
-                  if (results.length > 0) openNote(results[0].path);
+                searchNotes(targetId).then(results => {
+                  if (results.length > 0) openNote(results[0].path, anchor);
                 });
               });
               return true;
@@ -659,6 +686,52 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
     editorRef.current = editor;
     return () => { editorRef.current = null; };
   }, [editor, editorRef]);
+
+  /** Find the block matching a block-link anchor (text prefix) and scroll to it. */
+  const scrollToAnchor = useCallback((anchor: string): boolean => {
+    if (!editor) return false;
+    const target = anchor.trim();
+    if (!target) return false;
+    const findBlock = (matcher: (text: string) => boolean): number | null => {
+      let found: number | null = null;
+      editor.state.doc.descendants((node, pos) => {
+        if (found !== null) return false;
+        if (node.isTextblock && matcher(node.textContent.trim())) {
+          found = pos;
+          return false;
+        }
+        return true;
+      });
+      return found;
+    };
+    const pos = findBlock((t) => !!t && t.startsWith(target))
+      ?? findBlock((t) => !!t && t.includes(target.slice(0, 20)));
+    if (pos === null) return false;
+    const dom = editor.view.nodeDOM(pos);
+    const el = dom instanceof HTMLElement ? dom : (dom as Node | null)?.parentElement ?? null;
+    if (!el) return false;
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    el.classList.add('block-link-flash');
+    setTimeout(() => el.classList.remove('block-link-flash'), 1600);
+    return true;
+  }, [editor]);
+  scrollToAnchorRef.current = scrollToAnchor;
+
+  // Block-link navigation: retry a few times while the note content loads
+  useEffect(() => {
+    if (!scrollAnchor || !editor) return;
+    let tries = 0;
+    let timer: ReturnType<typeof setTimeout>;
+    const attempt = () => {
+      if (scrollToAnchor(scrollAnchor) || ++tries >= 6) {
+        onAnchorScrolled?.();
+        return;
+      }
+      timer = setTimeout(attempt, 300);
+    };
+    timer = setTimeout(attempt, 150);
+    return () => clearTimeout(timer);
+  }, [scrollAnchor, editor, scrollToAnchor, onAnchorScrolled]);
 
   /** 위/아래에 줄 삽입 — 커서가 리스트 항목 안이면 같은 종류의 항목을 그 줄
    *  바로 옆에 삽입한다. before(1)로 최상위 블록(리스트 전체) 옆에 넣으면
@@ -874,6 +947,18 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
                 key: '',
               },
             ]),
+            ...(noteId && ctxMenu.blockAnchor ? [
+              {
+                label: '블록 링크 복사',
+                action: () => {
+                  const text = ctxMenu.blockAnchor!;
+                  const label = text.length > 30 ? `${text.slice(0, 30)}…` : text;
+                  const md = `[${label.replace(/([\[\]])/g, '\\$1')}](note://${noteId}#${encodeURIComponent(text)})`;
+                  navigator.clipboard.writeText(md).catch(() => {});
+                },
+                key: '',
+              },
+            ] : []),
             null,
             { label: '전체 선택', action: () => editor.commands.selectAll(), key: 'Ctrl+A' },
             null,

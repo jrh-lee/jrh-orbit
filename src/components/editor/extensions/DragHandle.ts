@@ -354,6 +354,22 @@ export const DragHandle = Extension.create({
             const srcPos = block.pos;
             const srcNodeSize = block.node.nodeSize;
             const srcNodeType = block.node.type.name;
+            // Folded heading: drag the whole governed section (until the next
+            // heading of the same/higher level), not just the heading line.
+            let srcRangeEnd = srcPos + srcNodeSize;
+            if (srcNodeType === 'heading' && block.node.attrs.folded === true) {
+              const docNow = editorView.state.doc;
+              const level: number = block.node.attrs.level ?? 1;
+              let pos = srcRangeEnd;
+              while (pos < docNow.content.size) {
+                const child = docNow.nodeAt(pos);
+                if (!child) break;
+                if (child.type.name === 'heading' && (child.attrs.level ?? 1) <= level) break;
+                pos += child.nodeSize;
+                srcRangeEnd = pos;
+              }
+            }
+            const isRangeDrag = srcRangeEnd > srcPos + srcNodeSize;
             const startY = event.clientY;
             let dragging = false;
 
@@ -375,7 +391,9 @@ export const DragHandle = Extension.create({
               const plan = planDrop(editorView, srcNodeType, rawTarget, e.clientY);
               if (plan.pos === srcPos) { hideDropLine(); return; }
               // dropping into/next to one's own subtree corrupts the doc — hide
-              if (plan.pos > srcPos && plan.pos < srcPos + srcNodeSize) { hideDropLine(); return; }
+              // (srcRangeEnd covers the folded section when range-dragging)
+              if (plan.pos > srcPos && plan.pos < srcRangeEnd) { hideDropLine(); return; }
+              if (isRangeDrag && plan.kind !== 'before' && plan.kind !== 'after') { hideDropLine(); return; }
 
               drawDropLine(dropLine, plan);
             };
@@ -405,6 +423,28 @@ export const DragHandle = Extension.create({
                 const plan = planDrop(editorView, srcNodeType, rawTarget, e.clientY);
                 if (plan.pos === srcPos) return;
                 if (import.meta.env.DEV) console.warn('[drag] plan:', plan.kind, plan.node.type.name, '@', plan.pos);
+
+                // Folded-heading section move: shift the whole block range.
+                // Only top-level before/after placements — a folded section
+                // can't nest inside list items.
+                if (isRangeDrag) {
+                  if (plan.kind !== 'before' && plan.kind !== 'after') return;
+                  if (doc.resolve(plan.pos).depth !== 0) return;
+                  const insertAt = plan.kind === 'after' ? plan.pos + plan.node.nodeSize : plan.pos;
+                  if (insertAt >= srcPos && insertAt <= srcRangeEnd) return;
+                  const content = doc.slice(srcPos, srcRangeEnd).content;
+                  const tr = editorView.state.tr;
+                  if (insertAt <= srcPos) {
+                    tr.insert(insertAt, content);
+                    tr.delete(tr.mapping.map(srcPos), tr.mapping.map(srcRangeEnd));
+                  } else {
+                    tr.delete(srcPos, srcRangeEnd);
+                    tr.insert(tr.mapping.map(insertAt), content);
+                  }
+                  editorView.dispatch(tr.scrollIntoView());
+                  editorView.focus();
+                  return;
+                }
 
                 const $src = doc.resolve(srcPos);
                 const srcIsItem = ITEM_NAMES.includes(srcNode.type.name);

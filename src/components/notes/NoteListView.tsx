@@ -241,7 +241,7 @@ function extractTitle(raw: string, filename: string): string {
 }
 
 export function NoteListView() {
-  const { dataDir, pendingNotePath, clearPendingNote, pendingTagFilter, clearPendingTagFilter, setActiveProject, activeProject } = useAppStore();
+  const { dataDir, pendingNotePath, pendingNoteAnchor, clearPendingNote, pendingTagFilter, clearPendingTagFilter, setActiveProject, activeProject } = useAppStore();
   const { projects } = useProjectStore();
   const [notes, setNotes] = useState<NoteEntry[]>([]);
   const [activeNote, setActiveNote] = useState<string | null>(null);
@@ -275,6 +275,7 @@ export function NoteListView() {
   const [groupView, setGroupView] = useState(() => localStorage.getItem('orbit-notes-group-view') === '1');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [listHidden, setListHidden] = useState(() => localStorage.getItem('orbit-notes-list-hidden') === '1');
+  const [scrollAnchor, setScrollAnchor] = useState<string | null>(null);
   const [showTemplateEditor, setShowTemplateEditor] = useState(false);
   const [customTemplates, setCustomTemplates] = useState<CustomTemplate[]>([]);
   const fmRef = useRef('');
@@ -545,6 +546,7 @@ export function NoteListView() {
   useEffect(() => {
     if (!pendingNotePath || notes.length === 0) return;
     handleSelectNote(pendingNotePath);
+    if (pendingNoteAnchor) setScrollAnchor(pendingNoteAnchor);
     clearPendingNote();
   }, [pendingNotePath, notes]);
 
@@ -1764,6 +1766,9 @@ ${content}
                   onChange={handleChange}
                   placeholder="Start writing..."
                   sectionGuides={activeGuideMap}
+                  noteId={activeNoteId || undefined}
+                  scrollAnchor={scrollAnchor}
+                  onAnchorScrolled={() => setScrollAnchor(null)}
                 />
               </div>
               {activeNoteId && (

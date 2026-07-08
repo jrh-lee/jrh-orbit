@@ -277,6 +277,32 @@ export function getExtensions(opts?: ExtensionOptions | string) {
       addNodeView() {
         return ReactNodeViewRenderer(ResizableImageView);
       },
+      addStorage() {
+        return {
+          markdown: {
+            // ![alt](src) drops width/caption/align — serialize as a raw
+            // <img> tag when any of them is set (html:true parses it back).
+            serialize(state: any, node: PmNode) {
+              const { src, alt, title, width, caption, textAlign } = node.attrs;
+              const hasExtras = !!width || !!caption || (textAlign && textAlign !== 'center');
+              if (hasExtras) {
+                const esc = (s: unknown) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+                let tag = `<img src="${esc(src)}"`;
+                if (alt) tag += ` alt="${esc(alt)}"`;
+                if (title) tag += ` title="${esc(title)}"`;
+                if (width) tag += ` width="${parseInt(String(width), 10)}"`;
+                if (caption) tag += ` data-caption="${esc(caption)}"`;
+                if (textAlign && textAlign !== 'center') tag += ` data-align="${esc(textAlign)}"`;
+                tag += '>';
+                state.write(tag);
+              } else {
+                state.write(`![${(alt || '').replace(/([\[\]])/g, '\\$1')}](${src}${title ? ` "${String(title).replace(/"/g, '\\"')}"` : ''})`);
+              }
+              state.closeBlock(node);
+            },
+          },
+        };
+      },
     }).configure({
       inline: false,
       allowBase64: true,
