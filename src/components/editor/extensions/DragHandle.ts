@@ -792,7 +792,13 @@ export const DragHandle = Extension.create({
           // 블록 왼쪽에 나타나는 핸들로 잡아서 꺼내거나 재배치한다.
           const colHandle = document.createElement('div');
           colHandle.className = 'col-block-handle';
-          colHandle.textContent = '⠿';
+          colHandle.title = '드래그하여 이동';
+          colHandle.innerHTML =
+            '<svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">'
+            + '<circle cx="3" cy="2.5" r="1.15"/><circle cx="7" cy="2.5" r="1.15"/>'
+            + '<circle cx="3" cy="7" r="1.15"/><circle cx="7" cy="7" r="1.15"/>'
+            + '<circle cx="3" cy="11.5" r="1.15"/><circle cx="7" cy="11.5" r="1.15"/>'
+            + '</svg>';
           colHandle.style.display = 'none';
           document.body.appendChild(colHandle);
           let colHoverPos: number | null = null;

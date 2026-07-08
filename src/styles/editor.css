@@ -1084,20 +1084,21 @@ body.col-resizing * {
   margin-left: 1.4rem;
 }
 
-/* 컬럼 내부 블록용 ⠿ 드래그 핸들 */
+/* 컬럼 내부 블록용 드래그 그립 핸들 */
 .col-block-handle {
   position: fixed;
   z-index: 60;
-  width: 15px;
-  height: 18px;
+  width: 16px;
+  height: 20px;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
-  line-height: 1;
   color: var(--color-ink-3);
   cursor: grab;
   user-select: none;
-  border-radius: 3px;
+  border-radius: 4px;
+  background: var(--color-paper);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 .col-block-handle:hover {
   color: var(--color-ink);
@@ -1105,6 +1106,9 @@ body.col-resizing * {
 }
 .col-block-handle:active {
   cursor: grabbing;
+}
+.col-block-handle svg {
+  pointer-events: none;
 }
 
 /* 컬럼 리사이즈 중 비율 가이드 */

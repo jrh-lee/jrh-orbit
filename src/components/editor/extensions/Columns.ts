@@ -289,12 +289,16 @@ export const Columns = Node.create({
                 guide.style.top = `${ev.clientY - 28}px`;
                 updateLine();
               };
-              const onUp = (ev: MouseEvent) => {
+              const cleanup = () => {
                 document.removeEventListener('mousemove', onMove);
                 document.removeEventListener('mouseup', onUp);
+                window.removeEventListener('blur', cleanup);
                 guide.remove();
                 line.remove();
                 document.body.classList.remove('col-resizing');
+              };
+              const onUp = (ev: MouseEvent) => {
+                cleanup();
                 try {
                   const { leftPct, rightPct } = calcPcts(ev.clientX);
                   applyWidths(leftPct, rightPct, true);
@@ -302,6 +306,7 @@ export const Columns = Node.create({
               };
               document.addEventListener('mousemove', onMove);
               document.addEventListener('mouseup', onUp);
+              window.addEventListener('blur', cleanup);
               return true;
             },
           },
