@@ -852,6 +852,9 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
   }, [editor]);
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
+    // Drops on the editor content bubble up AFTER editorProps.handleDrop
+    // already inserted the image — handling them here too doubled every image.
+    if ((e.target as HTMLElement)?.closest?.('.ProseMirror')) return;
     const files = e.dataTransfer?.files;
     if (!files?.length || !editor) return;
     // OS-explorer drops need dragDropEnabled:false in tauri.conf.json —

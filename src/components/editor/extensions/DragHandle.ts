@@ -171,6 +171,7 @@ function planDrop(_view: EditorView, srcTypeName: string, target: BlockInfo, cli
 }
 
 function drawDropLine(line: HTMLElement, plan: DropPlan): void {
+  line.style.height = '';
   const rect = plan.dom.getBoundingClientRect();
   const isItem = ITEM_NAMES.includes(plan.node.type.name);
   if (plan.kind === 'into-first' || plan.kind === 'into-last') {
@@ -185,6 +186,99 @@ function drawDropLine(line: HTMLElement, plan: DropPlan): void {
     const top = plan.kind === 'before'
       ? (isItem ? itemFirstLineRect(plan.dom).top : rect.top)
       : rect.bottom;
+    line.style.top = `${top - 1}px`;
+    line.style.left = `${rect.left}px`;
+    line.style.width = `${rect.width}px`;
+  }
+  line.style.opacity = '1';
+}
+
+/* ── Columns drop integration (Notion-style) ──
+   - drop at the right edge of a normal block → wrap both into a 2-column row
+   - drop at the right edge of a columns row → append a new column
+   - drop inside a column → insert before/after the inner block             */
+
+interface ColPlan {
+  kind: 'make-columns' | 'new-column' | 'col-before' | 'col-after';
+  pos: number;
+  node: PmNode;
+  dom: HTMLElement;
+}
+
+const COL_EDGE = 36;
+
+function topLevelBlockAt(view: EditorView, clientY: number): BlockInfo | null {
+  const block = resolveBlock(view, clientY);
+  if (!block) return null;
+  try {
+    const $p = view.state.doc.resolve(block.pos);
+    const topPos = $p.depth > 0 ? $p.before(1) : block.pos;
+    const topNode = view.state.doc.nodeAt(topPos);
+    const topDom = view.nodeDOM(topPos);
+    if (!topNode || !(topDom instanceof HTMLElement)) return null;
+    return { pos: topPos, node: topNode, dom: topDom };
+  } catch { return null; }
+}
+
+function planColumnsDrop(view: EditorView, clientX: number, clientY: number): ColPlan | null {
+  const top = topLevelBlockAt(view, clientY);
+  if (!top) return null;
+  const rect = top.dom.getBoundingClientRect();
+  if (clientY < rect.top - 4 || clientY > rect.bottom + 4) return null;
+
+  if (top.node.type.name === 'columns') {
+    if (clientX >= rect.right - COL_EDGE && clientX <= rect.right + 12) {
+      return { kind: 'new-column', pos: top.pos, node: top.node, dom: top.dom };
+    }
+    // inside a specific column → before/after one of its direct child blocks
+    const cols = Array.from(top.dom.children).filter(
+      (c) => (c as HTMLElement).classList?.contains('md-column'),
+    ) as HTMLElement[];
+    for (const colEl of cols) {
+      const cr = colEl.getBoundingClientRect();
+      if (clientX < cr.left || clientX > cr.right) continue;
+      let colPos: number;
+      try { colPos = view.posAtDOM(colEl, 0) - 1; } catch { return null; }
+      const colNode = view.state.doc.nodeAt(colPos);
+      if (!colNode || colNode.type.name !== 'column') return null;
+      let best: ColPlan | null = null;
+      let bestDist = Infinity;
+      let offsetAcc = 0;
+      colNode.forEach((child) => {
+        const childPos = colPos + 1 + offsetAcc;
+        offsetAcc += child.nodeSize;
+        const dom = view.nodeDOM(childPos);
+        if (!(dom instanceof HTMLElement)) return;
+        const r = dom.getBoundingClientRect();
+        const mid = r.top + r.height / 2;
+        const dist = clientY < r.top ? r.top - clientY : clientY > r.bottom ? clientY - r.bottom : 0;
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = { kind: clientY > mid ? 'col-after' : 'col-before', pos: childPos, node: child, dom };
+        }
+      });
+      return best;
+    }
+    return null;
+  }
+
+  // normal top-level block: right edge → make a new 2-column row
+  if (clientX >= rect.right - COL_EDGE && clientX <= rect.right + 12) {
+    return { kind: 'make-columns', pos: top.pos, node: top.node, dom: top.dom };
+  }
+  return null;
+}
+
+function drawColDropLine(line: HTMLElement, plan: ColPlan): void {
+  const rect = plan.dom.getBoundingClientRect();
+  if (plan.kind === 'make-columns' || plan.kind === 'new-column') {
+    line.style.top = `${rect.top}px`;
+    line.style.left = `${rect.right + 4}px`;
+    line.style.width = '3px';
+    line.style.height = `${rect.height}px`;
+  } else {
+    line.style.height = '';
+    const top = plan.kind === 'col-before' ? rect.top : rect.bottom;
     line.style.top = `${top - 1}px`;
     line.style.left = `${rect.left}px`;
     line.style.width = `${rect.width}px`;
@@ -399,14 +493,25 @@ export const DragHandle = Extension.create({
             }
             const isRangeDrag = srcRangeEnd > srcPos + srcNodeSize;
             const startY = event.clientY;
+            const startX = event.clientX;
             let dragging = false;
 
             const onMove = (e: MouseEvent) => {
-              if (!dragging && Math.abs(e.clientY - startY) > 5) {
+              // X counts too — make-columns drags are mostly horizontal
+              if (!dragging && (Math.abs(e.clientY - startY) > 5 || Math.abs(e.clientX - startX) > 8)) {
                 dragging = true;
                 editorView.dom.classList.add('block-dragging');
               }
               if (!dragging || !dropLine) return;
+
+              // Notion-style columns targets take precedence
+              if (!isRangeDrag && srcNodeType !== 'columns') {
+                const colPlan = planColumnsDrop(editorView, e.clientX, e.clientY);
+                if (colPlan && !(colPlan.pos >= srcPos && colPlan.pos < srcRangeEnd)) {
+                  drawColDropLine(dropLine, colPlan);
+                  return;
+                }
+              }
 
               const rawTarget = resolveBlock(editorView, e.clientY);
               if (!rawTarget || rawTarget.pos === srcPos) { hideDropLine(); return; }
@@ -439,6 +544,59 @@ export const DragHandle = Extension.create({
                 if (!srcNode || srcNode.type.name !== srcNodeType || srcNode.nodeSize !== srcNodeSize) {
                   if (import.meta.env.DEV) console.warn('[drag] drop abort: src changed');
                   return;
+                }
+
+                // Columns targets (make-columns / new-column / into-column)
+                if (!isRangeDrag && srcNodeType !== 'columns') {
+                  const colPlan = planColumnsDrop(editorView, e.clientX, e.clientY);
+                  if (colPlan) {
+                    if (colPlan.pos >= srcPos && colPlan.pos < srcRangeEnd) return;
+                    const $src2 = doc.resolve(srcPos);
+                    const srcIsItem2 = ITEM_NAMES.includes(srcNode.type.name);
+                    const srcIsOnly2 = srcIsItem2 && $src2.parent.childCount === 1;
+                    const payload: PmNode = srcIsItem2
+                      ? (srcIsOnly2 ? $src2.parent : $src2.parent.type.create($src2.parent.attrs, srcNode))
+                      : srcNode;
+                    let delFrom = srcPos;
+                    let delTo = srcPos + srcNode.nodeSize;
+                    if (srcIsOnly2) {
+                      delFrom = $src2.before($src2.depth);
+                      delTo = delFrom + $src2.parent.nodeSize;
+                    }
+                    const columnType = editorView.state.schema.nodes.column;
+                    const columnsType = editorView.state.schema.nodes.columns;
+                    if (!columnType || !columnsType) return;
+                    const tr = editorView.state.tr;
+                    if (colPlan.kind === 'make-columns') {
+                      tr.delete(delFrom, delTo);
+                      const tPos = tr.mapping.map(colPlan.pos);
+                      const tNode = tr.doc.nodeAt(tPos);
+                      if (!tNode || tNode.type.name !== colPlan.node.type.name) return;
+                      tr.replaceWith(
+                        tPos,
+                        tPos + tNode.nodeSize,
+                        columnsType.create(null, [columnType.create(null, tNode), columnType.create(null, payload)]),
+                      );
+                    } else if (colPlan.kind === 'new-column') {
+                      tr.delete(delFrom, delTo);
+                      const cPos = tr.mapping.map(colPlan.pos);
+                      const cNode = tr.doc.nodeAt(cPos);
+                      if (!cNode || cNode.type.name !== 'columns') return;
+                      tr.insert(cPos + cNode.nodeSize - 1, columnType.create(null, payload));
+                    } else {
+                      const insertAt = colPlan.kind === 'col-after' ? colPlan.pos + colPlan.node.nodeSize : colPlan.pos;
+                      if (insertAt <= delFrom) {
+                        tr.insert(insertAt, payload);
+                        tr.delete(tr.mapping.map(delFrom), tr.mapping.map(delTo));
+                      } else {
+                        tr.delete(delFrom, delTo);
+                        tr.insert(tr.mapping.map(insertAt), payload);
+                      }
+                    }
+                    editorView.dispatch(tr.scrollIntoView());
+                    editorView.focus();
+                    return;
+                  }
                 }
 
                 const rawTarget = resolveBlock(editorView, e.clientY);

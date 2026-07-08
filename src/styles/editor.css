@@ -960,6 +960,9 @@ img.ProseMirror-separator {
 .ProseMirror .md-columns:hover > .md-column {
   border-color: var(--color-border);
 }
+.ProseMirror .md-columns.col-resize-hover {
+  cursor: col-resize;
+}
 
 /* ── Block link target flash ── */
 @keyframes block-link-flash {
