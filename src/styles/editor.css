@@ -936,6 +936,31 @@ img.ProseMirror-separator {
   font-weight: 400;
 }
 
+/* ── Columns (단 분리) ── */
+.ProseMirror .md-columns,
+.dashboard-content .md-columns,
+.print-body .md-columns {
+  display: flex;
+  gap: 1rem;
+  margin: 0.4rem 0;
+}
+.ProseMirror .md-column,
+.dashboard-content .md-column,
+.print-body .md-column {
+  flex: 1 1 0;
+  min-width: 0;
+}
+/* Subtle editing affordance — invisible on export/print */
+.ProseMirror .md-column {
+  border: 1px dashed transparent;
+  border-radius: 6px;
+  padding: 2px 6px;
+  transition: border-color 0.15s;
+}
+.ProseMirror .md-columns:hover > .md-column {
+  border-color: var(--color-border);
+}
+
 /* ── Block link target flash ── */
 @keyframes block-link-flash {
   0% { background-color: color-mix(in srgb, var(--color-chrome, #6b8afd) 30%, transparent); }

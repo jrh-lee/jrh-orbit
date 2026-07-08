@@ -340,24 +340,52 @@ export const DragHandle = Extension.create({
             if (import.meta.env.DEV) console.warn('[drag] down: block=', block?.node.type.name, '@', block?.pos);
             if (!block) return;
 
+            // Multi-block: a text selection spanning several top-level blocks
+            // + gutter-drag on one of them moves the whole span together.
+            let multiSpan: { from: number; to: number } | null = null;
+            {
+              const sel = editorView.state.selection;
+              if (!sel.empty && !(sel instanceof NodeSelection)) {
+                const docNow = editorView.state.doc;
+                const $f = docNow.resolve(sel.from);
+                const $t = docNow.resolve(sel.to);
+                const fromTop = $f.depth > 0 ? $f.before(1) : sel.from;
+                const toTop = $t.depth > 0 ? $t.after(1) : sel.to;
+                let count = 0;
+                for (let p = fromTop; p < toTop; ) {
+                  const child = docNow.nodeAt(p);
+                  if (!child) break;
+                  count++;
+                  p += child.nodeSize;
+                }
+                if (count > 1 && block.pos >= fromTop && block.pos < toTop) {
+                  multiSpan = { from: fromTop, to: toTop };
+                }
+              }
+            }
+
             event.preventDefault();
             event.stopImmediatePropagation();
 
-            try {
-              editorView.dispatch(
-                editorView.state.tr.setSelection(NodeSelection.create(editorView.state.doc, block.pos)),
-              );
-              // Focus so Tab/Shift-Tab work right after selecting via gutter
-              editorView.focus();
-            } catch { return; }
+            if (!multiSpan) {
+              try {
+                editorView.dispatch(
+                  editorView.state.tr.setSelection(NodeSelection.create(editorView.state.doc, block.pos)),
+                );
+                // Focus so Tab/Shift-Tab work right after selecting via gutter
+                editorView.focus();
+              } catch { return; }
+            }
 
-            const srcPos = block.pos;
-            const srcNodeSize = block.node.nodeSize;
-            const srcNodeType = block.node.type.name;
+            const srcPos = multiSpan ? multiSpan.from : block.pos;
+            const srcFirstNode = multiSpan ? editorView.state.doc.nodeAt(srcPos) : block.node;
+            if (!srcFirstNode) return;
+            const srcNodeSize = srcFirstNode.nodeSize;
+            const srcNodeType = srcFirstNode.type.name;
             // Folded heading: drag the whole governed section (until the next
             // heading of the same/higher level), not just the heading line.
-            let srcRangeEnd = srcPos + srcNodeSize;
-            if (srcNodeType === 'heading' && block.node.attrs.folded === true) {
+            let srcRangeEnd = multiSpan ? multiSpan.to : srcPos + srcNodeSize;
+            if (!multiSpan && srcNodeType === 'heading' && block.node.attrs.folded === true) {
               const docNow = editorView.state.doc;
               const level: number = block.node.attrs.level ?? 1;
               let pos = srcRangeEnd;

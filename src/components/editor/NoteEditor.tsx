@@ -854,12 +854,19 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     const files = e.dataTransfer?.files;
     if (!files?.length || !editor) return;
+    // OS-explorer drops need dragDropEnabled:false in tauri.conf.json —
+    // otherwise the webview swallows the HTML5 drop and files is empty.
+    const coords = { left: e.clientX, top: e.clientY };
+    e.preventDefault();
 
     for (const file of Array.from(files)) {
       if (!file.type.startsWith('image/')) continue;
-      e.preventDefault();
       const src = await handleImageDrop(file);
-      if (src) {
+      if (!src) continue;
+      const at = editor.view.posAtCoords(coords);
+      if (at) {
+        editor.chain().focus().insertContentAt(at.pos, { type: 'image', attrs: { src } }).run();
+      } else {
         editor.chain().focus().setImage({ src }).run();
       }
     }

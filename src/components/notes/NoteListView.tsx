@@ -1015,6 +1015,8 @@ ul[data-type="taskList"]{list-style:none;padding-left:0}
 ul[data-type="taskList"] li{display:flex;align-items:flex-start;gap:.4rem;margin:.2rem 0}
 mark{background:#fff3a8;padding:0 2px;border-radius:2px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 p{margin:.25rem 0}
+.md-columns{display:flex;gap:14pt;page-break-inside:avoid}
+.md-column{flex:1 1 0;min-width:0}
 .katex,.math-display{page-break-inside:avoid}
 @media print{
   body{margin:0;padding:0}

@@ -373,6 +373,25 @@ export const PALETTE = [
   '#ffc1d6', '#ffd3b6', '#fff4c0', '#c6ecd7', '#a9cdf5', '#d8cdf5', '#fdff85',
 ];
 
+/** Current theme's own colors — lets you paint something the same color the
+ *  theme uses by default (table headers, body text, …). Read at open time so
+ *  the swatches always match the active theme. */
+function getThemeSwatches(): { color: string; label: string }[] {
+  const cs = getComputedStyle(document.documentElement);
+  const entries: [string, string][] = [
+    ['--color-ink', '기본 글자색'],
+    ['--color-ink-2', '보조 글자색'],
+    ['--color-ink-3', '흐린 글자색'],
+    ['--color-highlight', '기본 하이라이트'],
+    ['--color-paper-soft', '표 헤더/배경'],
+    ['--color-paper-muted', '옅은 배경'],
+    ['--color-chrome', '포인트색'],
+  ];
+  return entries
+    .map(([v, label]) => ({ color: cs.getPropertyValue(v).trim(), label }))
+    .filter((e) => !!e.color);
+}
+
 export function ColorPicker({ anchor, onChange, onClose, label, value }: {
   anchor: HTMLElement | null;
   onChange: (color: string) => void;
@@ -386,7 +405,7 @@ export function ColorPicker({ anchor, onChange, onClose, label, value }: {
   useEffect(() => {
     if (!anchor) return;
     const rect = anchor.getBoundingClientRect();
-    const pickerH = 180;
+    const pickerH = 230;
     const pickerW = 192;
     let top = rect.top - 4;
     let left = rect.left;
@@ -430,11 +449,23 @@ export function ColorPicker({ anchor, onChange, onClose, label, value }: {
           />
         ))}
       </div>
+      <div className="text-[10px] text-ink-3 mt-1.5 mb-1">테마 색</div>
+      <div className="grid grid-cols-7 gap-1">
+        {getThemeSwatches().map((s) => (
+          <button
+            key={s.label}
+            title={s.label}
+            onClick={() => { onChange(s.color); onClose(); }}
+            className="w-5 h-5 rounded border border-border transition-transform hover:scale-110"
+            style={{ background: s.color }}
+          />
+        ))}
+      </div>
       <button
         onClick={() => { onChange(''); onClose(); }}
-        className="mt-1.5 w-full text-[10px] text-ink-3 hover:text-ink-2 py-0.5 rounded hover:bg-paper-soft transition-colors"
+        className="mt-1.5 w-full text-[10px] text-ink-3 hover:text-ink-2 py-0.5 rounded border border-border/60 hover:bg-paper-soft transition-colors"
       >
-        Clear
+        기본 (색 지정 해제)
       </button>
     </div>,
     document.body,

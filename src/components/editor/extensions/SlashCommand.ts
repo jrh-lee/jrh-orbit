@@ -54,6 +54,14 @@ const ITEMS: SlashItem[] = [
     run: (e, r) => e.chain().focus().deleteRange(r).toggleBlockquote().run(),
   },
   {
+    title: '2단 컬럼', icon: '▥', keywords: ['columns', 'col', '2단', '단', '컬럼', '분할'],
+    run: (e, r) => (e.chain().focus().deleteRange(r) as any).insertColumns(2).run(),
+  },
+  {
+    title: '3단 컬럼', icon: '▥', keywords: ['columns', 'col', '3단', '단', '컬럼', '분할'],
+    run: (e, r) => (e.chain().focus().deleteRange(r) as any).insertColumns(3).run(),
+  },
+  {
     title: '구분선', icon: '—', keywords: ['divider', 'hr', 'line', '구분', '구분선', '수평선'],
     run: (e, r) => e.chain().focus().deleteRange(r).setHorizontalRule().run(),
   },
