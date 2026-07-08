@@ -287,8 +287,11 @@ function planColumnsDrop(view: EditorView, clientX: number, clientY: number): Co
 function drawColDropLine(line: HTMLElement, plan: ColPlan): void {
   const rect = plan.dom.getBoundingClientRect();
   if (plan.kind === 'make-columns' || plan.kind === 'new-column') {
+    // 블록 래퍼가 페이지 전체 폭인 경우(이미지 등) 바깥(+4px)에 그리면
+    // 스크롤바 밖으로 나간다 — 오른쪽 가장자리 안쪽에 그리고 창 폭으로 클램프
+    const x = Math.min(rect.right - 8, window.innerWidth - 14);
     line.style.top = `${rect.top}px`;
-    line.style.left = `${rect.right + 4}px`;
+    line.style.left = `${x}px`;
     line.style.width = '3px';
     line.style.height = `${rect.height}px`;
   } else {
