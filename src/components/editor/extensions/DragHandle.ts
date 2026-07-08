@@ -25,6 +25,18 @@ function resolveBlock(view: EditorView, y: number): BlockInfo | null {
   const topChild = findClosestChild(view.dom, y);
   if (!topChild) return null;
 
+  // Leaf node views (image 등 react-renderer): coords 기반 해석은 이웃
+  // 텍스트블록이나 문서 경계로 빠진다 — DOM 자식에서 위치를 직접 구한다.
+  if (topChild.classList?.contains('react-renderer')) {
+    try {
+      const pos = view.posAtDOM(topChild, 0);
+      const $p = view.state.doc.resolve(pos);
+      const bp = $p.depth > 0 ? $p.before(1) : pos;
+      const node = view.state.doc.nodeAt(bp);
+      if (node) return { pos: bp, node, dom: topChild };
+    } catch { /* fall through to coords resolution */ }
+  }
+
   const topRect = topChild.getBoundingClientRect();
   const cy = Math.max(topRect.top + 1, Math.min(y, topRect.bottom - 1));
 
@@ -35,7 +47,7 @@ function resolveBlock(view: EditorView, y: number): BlockInfo | null {
     try {
       const pos = view.posAtDOM(topChild, 0);
       const $pos = view.state.doc.resolve(pos);
-      const bp = $pos.depth > 0 ? $pos.before(1) : 0;
+      const bp = $pos.depth > 0 ? $pos.before(1) : pos;
       const node = view.state.doc.nodeAt(bp);
       if (!node) return null;
       return { pos: bp, node, dom: topChild };
@@ -61,7 +73,10 @@ function resolveBlock(view: EditorView, y: number): BlockInfo | null {
       }
     }
 
-    const bp = $pos.depth > 0 ? $pos.before(1) : 0;
+    // depth 0 = 블록 경계(리프 노드 위 좌표) — posAtCoords의 inside가 그 노드
+    const bp = $pos.depth > 0
+      ? $pos.before(1)
+      : (posInfo.inside >= 0 ? posInfo.inside : posInfo.pos);
     const node = view.state.doc.nodeAt(bp);
     if (!node) return null;
     const dom = view.nodeDOM(bp);
