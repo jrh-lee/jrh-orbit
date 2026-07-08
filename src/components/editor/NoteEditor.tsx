@@ -1,5 +1,5 @@
 import { useEditor, EditorContent, type Editor } from '@tiptap/react';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import type { MutableRefObject } from 'react';
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import { join } from '@tauri-apps/api/path';
@@ -352,6 +352,21 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
   const [wikiIndex, setWikiIndex] = useState(0);
   const wikiSearchRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; linkPos: number | null } | null>(null);
+  const ctxMenuRef = useRef<HTMLDivElement>(null);
+  const [linkPrompt, setLinkPrompt] = useState<{ x: number; y: number; from: number; to: number } | null>(null);
+
+  // Keep the context menu fully on-screen — right-clicking near the bottom
+  // edge used to push it below the viewport.
+  useLayoutEffect(() => {
+    const el = ctxMenuRef.current;
+    if (!el || !ctxMenu) return;
+    const rect = el.getBoundingClientRect();
+    const nx = Math.max(4, Math.min(ctxMenu.x, window.innerWidth - rect.width - 8));
+    const ny = Math.max(4, Math.min(ctxMenu.y, window.innerHeight - rect.height - 8));
+    el.style.left = `${nx}px`;
+    el.style.top = `${ny}px`;
+  }, [ctxMenu]);
+
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const onMathClick = useCallback((info: MathClickInfo) => {
@@ -643,6 +658,23 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
     return () => { editorRef.current = null; };
   }, [editor, editorRef]);
 
+  const applyLink = useCallback((raw: string) => {
+    const lp = linkPrompt;
+    setLinkPrompt(null);
+    if (!lp || !editor) return;
+    let href = raw.trim();
+    if (!href) return;
+    // Bare domains get https:// — note://, file paths, and full URLs pass through
+    if (!/^[a-zA-Z][\w+.-]*:/.test(href) && !href.startsWith('/')) href = `https://${href}`;
+    if (lp.from !== lp.to) {
+      editor.chain().focus().setTextSelection({ from: lp.from, to: lp.to }).setLink({ href }).run();
+    } else {
+      editor.chain().focus().setTextSelection(lp.from)
+        .insertContent({ type: 'text', text: href, marks: [{ type: 'link', attrs: { href } }] })
+        .run();
+    }
+  }, [linkPrompt, editor]);
+
   useEffect(() => {
     if (!editor) return;
     if (lastEmittedContent.current !== null && content === lastEmittedContent.current) return;
@@ -775,6 +807,7 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
 
       {ctxMenu && editor && (
         <div
+          ref={ctxMenuRef}
           className="fixed z-50 bg-paper border border-border rounded-lg shadow-lg py-1 min-w-[160px]"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
           onMouseLeave={() => setCtxMenu(null)}
@@ -798,6 +831,15 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
             { label: '복사', action: () => { document.execCommand('copy'); }, key: 'Ctrl+C' },
             { label: '붙여넣기', action: () => { navigator.clipboard.readText().then(t => editor.commands.insertContent(t)); }, key: 'Ctrl+V' },
             null,
+            {
+              label: '링크 삽입',
+              action: () => {
+                const { from, to } = editor.state.selection;
+                setLinkPrompt({ x: ctxMenu.x, y: Math.min(ctxMenu.y, window.innerHeight - 60), from, to });
+              },
+              key: '',
+            },
+            null,
             { label: '전체 선택', action: () => editor.commands.selectAll(), key: 'Ctrl+A' },
             null,
             { label: '실행 취소', action: () => editor.commands.undo(), key: 'Ctrl+Z' },
@@ -820,6 +862,24 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
               </button>
             )
           )}
+        </div>
+      )}
+
+      {linkPrompt && (
+        <div
+          className="fixed z-50 bg-paper border border-border rounded-lg shadow-lg p-1.5 flex items-center gap-1"
+          style={{ left: Math.min(linkPrompt.x, window.innerWidth - 260), top: linkPrompt.y }}
+        >
+          <input
+            autoFocus
+            placeholder="URL 입력... (Enter)"
+            className="text-xs px-2 py-1 rounded border border-border bg-paper-soft text-ink focus:outline-none focus:border-chrome w-56"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') applyLink((e.target as HTMLInputElement).value);
+              if (e.key === 'Escape') setLinkPrompt(null);
+            }}
+            onBlur={() => setLinkPrompt(null)}
+          />
         </div>
       )}
     </div>

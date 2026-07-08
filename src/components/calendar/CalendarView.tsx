@@ -521,7 +521,7 @@ export function CalendarView() {
             value={newTime}
             onChange={(e) => setNewTime(e.target.value)}
             title="시간 (선택)"
-            className="text-[11px] px-1.5 py-1 rounded border border-border bg-paper text-ink-2 w-[84px] shrink-0"
+            className="text-[11px] px-1.5 py-1 rounded border border-border bg-paper text-ink-2 w-[110px] shrink-0"
           />
           <input
             type="text"
@@ -548,7 +548,10 @@ export function CalendarView() {
           >
             <option value="">🔕 알림</option>
             <option value="0">정시</option>
+            <option value="1">1분 전</option>
+            <option value="5">5분 전</option>
             <option value="10">10분 전</option>
+            <option value="15">15분 전</option>
             <option value="30">30분 전</option>
             <option value="60">1시간 전</option>
             <option value="1440">1일 전</option>
