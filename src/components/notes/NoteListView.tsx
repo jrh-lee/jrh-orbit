@@ -19,6 +19,7 @@ import { writeJsonFile } from '../../lib/fileSystem';
 import type { TodosFile } from '../../types/task';
 import type { TopicsFile, TopicEntry } from '../../types/dataFiles';
 import { useExperimentStore } from '../../stores/useExperimentStore';
+import { experimentEmoji } from '../../types/experiment';
 import { reindexNote } from '../../lib/searchIndex';
 import { indexNote, removeNoteIndex } from '../../lib/db';
 import { AutoSuggestionBanner } from './AutoSuggestionBanner';
@@ -411,6 +412,14 @@ export function NoteListView() {
       localStorage.setItem('orbit-notes-list-hidden', v ? '0' : '1');
       return !v;
     });
+  }
+
+  /** Cycle through the filtered list without the list pane (collapsed strip) */
+  function navigateNote(dir: 1 | -1) {
+    if (filteredNotes.length === 0) return;
+    const idx = filteredNotes.findIndex(n => n.path === activeNote);
+    const next = idx === -1 ? 0 : (idx + dir + filteredNotes.length) % filteredNotes.length;
+    handleSelectNote(filteredNotes[next].path);
   }
 
   useEffect(() => {
@@ -1086,7 +1095,7 @@ ${content}
   return (
     <div className="flex-1 flex min-h-0 min-w-0">
       {listHidden && (
-        <div className="w-6 shrink-0 border-r border-border bg-paper-soft/40 flex flex-col items-center pt-1.5">
+        <div className="w-6 shrink-0 border-r border-border bg-paper-soft/40 flex flex-col items-center pt-1.5 gap-0.5">
           <button
             onClick={toggleListHidden}
             title="노트 목록 표시"
@@ -1096,6 +1105,44 @@ ${content}
               <path d="M4 3l4 4-4 4M8 3l4 4-4 4" />
             </svg>
           </button>
+          <button
+            onClick={() => handleCreate()}
+            title="새 노트"
+            className="p-1 rounded text-ink-3 hover:text-ink hover:bg-paper-muted/60 transition-colors"
+          >
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <path d="M6 2v8M2 6h8" />
+            </svg>
+          </button>
+          <div className="w-3 border-t border-border/60 my-1" />
+          {/* 이전/다음 노트 이동 — 목록 없이도 노트 사이를 순회 */}
+          <button
+            onClick={() => navigateNote(-1)}
+            title="이전 노트"
+            className="p-1 rounded text-ink-3 hover:text-ink hover:bg-paper-muted/60 transition-colors disabled:opacity-30"
+            disabled={filteredNotes.length === 0}
+          >
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 7.5L6 4.5l3 3" />
+            </svg>
+          </button>
+          <button
+            onClick={() => navigateNote(1)}
+            title="다음 노트"
+            className="p-1 rounded text-ink-3 hover:text-ink hover:bg-paper-muted/60 transition-colors disabled:opacity-30"
+            disabled={filteredNotes.length === 0}
+          >
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 4.5l3 3 3-3" />
+            </svg>
+          </button>
+          <span
+            className="mt-2 text-[9px] text-ink-3 tracking-widest select-none"
+            style={{ writingMode: 'vertical-rl' }}
+            title={`노트 ${filteredNotes.length}개`}
+          >
+            NOTES {filteredNotes.length}
+          </span>
         </div>
       )}
       <div style={{ width: listWidth, display: listHidden ? 'none' : undefined }} className="shrink-0 border-r border-border flex flex-col">
@@ -1236,7 +1283,7 @@ ${content}
                               className={`shrink-0 transition-transform ${eCollapsed ? '' : 'rotate-90'}`}>
                               <path d="M3 1.5L7.5 5 3 8.5" />
                             </svg>
-                            <span className="mr-0.5">🧪</span>
+                            <span className="mr-0.5">{experimentEmoji(ex.name)}</span>
                             <span className="truncate">{ex.name}</span>
                             <span className="ml-auto text-[9px] shrink-0">{ex.notes.length}</span>
                           </button>

@@ -19,3 +19,12 @@ export const DEFAULT_EXPERIMENTS_FILE: ExperimentsFile = {
   version: 1,
   experiments: [],
 };
+
+const EXPERIMENT_EMOJIS = ['🧪', '🔬', '🚀', '🛰️', '📡', '⚙️', '🔭', '🧲', '💡', '🌡️', '🎯', '🪐', '⚡', '🔋', '📐', '🌀'];
+
+/** Deterministic per-name emoji — same experiment always gets the same one. */
+export function experimentEmoji(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return EXPERIMENT_EMOJIS[h % EXPERIMENT_EMOJIS.length];
+}

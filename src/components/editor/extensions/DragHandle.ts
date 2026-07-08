@@ -329,6 +329,9 @@ export const DragHandle = Extension.create({
 
           const onMouseDown = (event: MouseEvent) => {
             if (event.button !== 0) return;
+            // The heading-fold arrow lives in the gutter — this capture-phase
+            // listener would swallow its clicks before they reach the button.
+            if (event.target instanceof HTMLElement && event.target.closest('.heading-fold-arrow')) return;
             const inGutter = isInLeftGutter(editorView, event.clientX, event.clientY);
             if (!inGutter) return;
 

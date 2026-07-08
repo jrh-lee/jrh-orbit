@@ -176,9 +176,12 @@ export async function loadProjectHubData(dataDir: string, projectName: string) {
     summary: extractSummary(dashboardRow.content),
   } : null;
 
+  // todos.json stores the project *id* (auto-registered tasks) but legacy
+  // entries may hold the name — match both.
+  const projectId = projectsFile?.projects.find((p) => p.name === projectName)?.id;
   const allTodos = todosFile?.todos || [];
   const projectTodos = allTodos.filter(
-    (t) => t.projectId === projectName && t.status !== 'done',
+    (t) => (t.projectId === projectName || (projectId && t.projectId === projectId)) && t.status !== 'done',
   );
 
   const links = linksFile || {};
@@ -206,7 +209,6 @@ export async function loadProjectHubData(dataDir: string, projectName: string) {
     e.name.toLowerCase().includes(projectName.toLowerCase()),
   );
 
-  const projectId = projectsFile?.projects.find((p) => p.name === projectName)?.id;
   const statusOrder: Record<string, number> = { active: 0, done: 1, archived: 2 };
   const experiments: ExperimentSummary[] = (experimentsFile?.experiments || [])
     .filter((e) => e.projectId === projectId)

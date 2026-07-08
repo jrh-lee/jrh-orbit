@@ -5,6 +5,7 @@ import { useTaskStore } from '../../stores/useTaskStore';
 import { writeJsonFile, readJsonFile } from '../../lib/fileSystem';
 import { FILES } from '../../lib/constants';
 import type { TodosFile } from '../../types/task';
+import { experimentEmoji } from '../../types/experiment';
 import { TopicTimeline } from './TopicTimeline';
 import { ConclusionList } from './ConclusionList';
 import { TopicTodoList } from './TopicTodoList';
@@ -76,7 +77,7 @@ export function ExperimentHubView() {
               <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </button>
-          <span className="text-2xl">🧪</span>
+          <span className="text-2xl">{experimentEmoji(data.meta.name)}</span>
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-semibold text-ink">{data.meta.name}</h1>

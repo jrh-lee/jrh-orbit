@@ -10,6 +10,7 @@ import { buildFrontmatter } from '../../lib/frontmatter';
 import { todayKey } from '../../lib/dateUtils';
 import { reindexNote } from '../../lib/searchIndex';
 import type { TodosFile } from '../../types/task';
+import { experimentEmoji } from '../../types/experiment';
 import { TopicMap } from './TopicMap';
 import { ProjectTimeline } from './ProjectTimeline';
 import { DecisionList } from './DecisionList';
@@ -234,6 +235,7 @@ export function ProjectHubView() {
                       : 'border-border/50 text-ink-3 opacity-70 hover:opacity-100'
                   }`}
                 >
+                  <span>{experimentEmoji(ex.name)}</span>
                   <span className="truncate max-w-[180px]">{ex.name}</span>
                   <span className="text-[9px] text-ink-3">{ex.noteCount}</span>
                   {ex.status === 'done' && <span className="text-[9px] text-chrome">✓</span>}

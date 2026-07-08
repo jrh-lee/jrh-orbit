@@ -6,7 +6,7 @@ import { findNotesForProject, type HubNoteRow } from '../../lib/db';
 import clsx from 'clsx';
 
 export function SidebarProjectTree() {
-  const { view, setView, setActiveProject, openNote } = useAppStore();
+  const { view, setView, setActiveProject, openNote, openProjectHub, hubTarget } = useAppStore();
   const { projects } = useProjectStore();
   const { filterProject, setFilterProject } = useTaskStore();
   const [dashboards, setDashboards] = useState<Record<string, string>>({});
@@ -99,6 +99,17 @@ export function SidebarProjectTree() {
                   )}
                 >
                   <span>📄</span> Notes
+                </button>
+                <button
+                  onClick={() => openProjectHub(project.name)}
+                  className={clsx(
+                    'flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] transition-colors',
+                    view === 'hub' && hubTarget?.type === 'project' && hubTarget.name === project.name
+                      ? 'text-chrome font-medium bg-chrome/10'
+                      : 'text-ink-3 hover:text-ink-2 hover:bg-paper-muted/30'
+                  )}
+                >
+                  <span>🗂️</span> Hub
                 </button>
                 {dbPath && (
                   <button
