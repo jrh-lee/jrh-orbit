@@ -123,7 +123,7 @@ function OpacitySlider({ compact }: { compact?: boolean }) {
 export { OpacitySlider };
 
 export function TitleBar() {
-  const { mode, setMode } = useAppStore();
+  const { mode, setMode, sidebarHidden, toggleSidebar } = useAppStore();
   const wh = useWorkhourTimerStore();
   const winCfg = useConfigStore((s) => s.window);
   const appWindow = getCurrentWindow();
@@ -213,6 +213,17 @@ export function TitleBar() {
       )}
     >
       <div className="flex items-center gap-2" data-tauri-drag-region>
+        {sidebarHidden && (
+          <button
+            onClick={toggleSidebar}
+            title="사이드바 표시 (Ctrl+\)"
+            className="p-1 rounded-md hover:bg-paper-soft text-ink-3 hover:text-ink transition-colors"
+          >
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 3l4 4-4 4M8 3l4 4-4 4" />
+            </svg>
+          </button>
+        )}
         <span className="text-sm font-semibold text-ink" data-tauri-drag-region>
           JRH-Orbit
         </span>

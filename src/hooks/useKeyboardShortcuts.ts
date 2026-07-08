@@ -75,7 +75,8 @@ export function useKeyboardShortcuts() {
       const mode = useAppStore.getState().mode;
       if (mode !== 'expanded') return;
 
-      if (code === 'Backslash') {
+      // 한국어 키보드의 ₩ 키는 레이아웃에 따라 code/key가 달라 넓게 매칭
+      if (code === 'Backslash' || code === 'IntlYen' || code === 'IntlBackslash' || e.key === '\\' || e.key === '₩') {
         e.preventDefault();
         useAppStore.getState().toggleSidebar();
         return;

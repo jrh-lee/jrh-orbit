@@ -273,6 +273,7 @@ export function NoteListView() {
   const [newExperimentName, setNewExperimentName] = useState('');
   const [groupView, setGroupView] = useState(() => localStorage.getItem('orbit-notes-group-view') === '1');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [listHidden, setListHidden] = useState(() => localStorage.getItem('orbit-notes-list-hidden') === '1');
   const [showTemplateEditor, setShowTemplateEditor] = useState(false);
   const [customTemplates, setCustomTemplates] = useState<CustomTemplate[]>([]);
   const fmRef = useRef('');
@@ -401,6 +402,13 @@ export function NoteListView() {
   function toggleGroupView() {
     setGroupView(v => {
       localStorage.setItem('orbit-notes-group-view', v ? '0' : '1');
+      return !v;
+    });
+  }
+
+  function toggleListHidden() {
+    setListHidden(v => {
+      localStorage.setItem('orbit-notes-list-hidden', v ? '0' : '1');
       return !v;
     });
   }
@@ -1077,10 +1085,32 @@ ${content}
 
   return (
     <div className="flex-1 flex min-h-0 min-w-0">
-      <div style={{ width: listWidth }} className="shrink-0 border-r border-border flex flex-col">
+      {listHidden && (
+        <div className="w-6 shrink-0 border-r border-border bg-paper-soft/40 flex flex-col items-center pt-1.5">
+          <button
+            onClick={toggleListHidden}
+            title="노트 목록 표시"
+            className="p-1 rounded text-ink-3 hover:text-ink hover:bg-paper-muted/60 transition-colors"
+          >
+            <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 3l4 4-4 4M8 3l4 4-4 4" />
+            </svg>
+          </button>
+        </div>
+      )}
+      <div style={{ width: listWidth, display: listHidden ? 'none' : undefined }} className="shrink-0 border-r border-border flex flex-col">
         <div className="px-2.5 py-2 border-b border-border flex items-center justify-between">
           <span className="text-xs font-medium text-ink-2">Research Notes</span>
           <div className="flex items-center gap-1">
+            <button
+              onClick={toggleListHidden}
+              title="노트 목록 숨기기"
+              className="p-1 rounded text-ink-3 hover:text-ink hover:bg-paper-soft transition-colors"
+            >
+              <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10 3L6 7l4 4M6 3L2 7l4 4" />
+              </svg>
+            </button>
             <button
               onClick={() => setShowTemplateEditor(true)}
               title="Edit Templates"
@@ -1269,7 +1299,7 @@ ${content}
         </div>
       </div>
 
-      <ResizeHandle onResize={handleListResize} />
+      {!listHidden && <ResizeHandle onResize={handleListResize} />}
 
       <div className="flex-1 flex flex-col min-h-0 min-w-0">
         {activeNote ? (
