@@ -338,11 +338,25 @@
   background: var(--color-highlight);
 }
 
-/* 블록(노드) 선택은 외곽선 하나로 — 내부 텍스트 선택 하이라이트가 상위
-   텍스트/중첩 코드블록에 제각각 칠해지면 사각형이 지저분하게 겹쳐 보인다 */
+/* 블록(노드) 선택은 바깥 외곽선 하나로 통일 —
+   1) 내부 텍스트 선택 하이라이트가 상위 텍스트/중첩 코드블록에 제각각
+      칠해지면 사각형이 지저분하게 겹쳐 보인다
+   2) 중첩된 커스텀 노드뷰(코드블록 등)는 부모가 선택되면 자기도
+      selectednode 클래스를 받아 외곽선을 한 겹 더 그린다 */
 .ProseMirror .ProseMirror-selectednode ::selection,
 .ProseMirror .ProseMirror-selectednode::selection {
-  background: transparent;
+  background: transparent !important;
+}
+.ProseMirror-hideselection *::selection {
+  background: transparent !important;
+}
+.ProseMirror-hideselection {
+  caret-color: transparent;
+}
+.ProseMirror .ProseMirror-selectednode .ProseMirror-selectednode {
+  outline: none !important;
+  box-shadow: none !important;
+  background: none !important;
 }
 
 .ProseMirror li.ProseMirror-selectednode {
