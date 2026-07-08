@@ -287,9 +287,11 @@ function planColumnsDrop(view: EditorView, clientX: number, clientY: number): Co
 function drawColDropLine(line: HTMLElement, plan: ColPlan): void {
   const rect = plan.dom.getBoundingClientRect();
   if (plan.kind === 'make-columns' || plan.kind === 'new-column') {
-    // 블록 래퍼가 페이지 전체 폭인 경우(이미지 등) 바깥(+4px)에 그리면
-    // 스크롤바 밖으로 나간다 — 오른쪽 가장자리 안쪽에 그리고 창 폭으로 클램프
-    const x = Math.min(rect.right - 8, window.innerWidth - 14);
+    // 라인은 항상 노트 본문(.ProseMirror) 영역 안에 — 블록 래퍼가 전체 폭인
+    // 경우(이미지/컬럼 행) 바깥에 그리면 페이지를 벗어난다
+    const pmEl = plan.dom.closest('.ProseMirror') as HTMLElement | null;
+    const maxX = pmEl ? pmEl.getBoundingClientRect().right - 18 : window.innerWidth - 14;
+    const x = Math.min(rect.right - 8, maxX);
     line.style.top = `${rect.top}px`;
     line.style.left = `${x}px`;
     line.style.width = '3px';
