@@ -936,6 +936,16 @@ img.ProseMirror-separator {
   font-weight: 400;
 }
 
+/* ── Block link target flash ── */
+@keyframes block-link-flash {
+  0% { background-color: color-mix(in srgb, var(--color-chrome, #6b8afd) 30%, transparent); }
+  100% { background-color: transparent; }
+}
+.ProseMirror .block-link-flash {
+  animation: block-link-flash 1.5s ease-out;
+  border-radius: 4px;
+}
+
 /* ── Slash command menu ── */
 .slash-menu {
   position: fixed;
