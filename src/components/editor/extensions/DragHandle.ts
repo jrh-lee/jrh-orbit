@@ -496,6 +496,12 @@ export const DragHandle = Extension.create({
             const startX = event.clientX;
             let dragging = false;
 
+            // Images (and other draggable nodes) start a NATIVE HTML5 drag on
+            // move, which kills our mousemove-based drag — suppress it for
+            // the duration of this gutter drag.
+            const onDragStart = (ev: DragEvent) => { ev.preventDefault(); ev.stopImmediatePropagation(); };
+            document.addEventListener('dragstart', onDragStart, true);
+
             const onMove = (e: MouseEvent) => {
               // X counts too — make-columns drags are mostly horizontal
               if (!dragging && (Math.abs(e.clientY - startY) > 5 || Math.abs(e.clientX - startX) > 8)) {
@@ -534,6 +540,7 @@ export const DragHandle = Extension.create({
             const onUp = (e: MouseEvent) => {
               document.removeEventListener('mousemove', onMove);
               document.removeEventListener('mouseup', onUp);
+              document.removeEventListener('dragstart', onDragStart, true);
               editorView.dom.classList.remove('block-dragging');
               hideDropLine();
               if (!dragging) return;

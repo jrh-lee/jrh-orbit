@@ -436,6 +436,18 @@
   border-radius: 6px;
 }
 
+/* 표: overflow 래퍼가 바깥 외곽선을 잘라버려 강조가 안 보임 —
+   표 자체는 안쪽 외곽선, 래퍼가 선택될 땐 그대로 */
+.ProseMirror table.ProseMirror-selectednode {
+  outline: 2px solid var(--color-chrome, #6366f1) !important;
+  outline-offset: -2px;
+}
+.ProseMirror .tableWrapper:has(> table.ProseMirror-selectednode) {
+  outline: 2px solid var(--color-chrome, #6366f1);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
 img.ProseMirror-separator {
   display: none !important;
 }
