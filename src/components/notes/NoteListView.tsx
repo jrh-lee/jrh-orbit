@@ -250,6 +250,7 @@ export function NoteListView() {
   const [activeNoteId, setActiveNoteId] = useState('');
   const [body, setBody] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [noteLinkCopied, setNoteLinkCopied] = useState(false);
   const [meta, setMeta] = useState<NoteMeta>({ title: '', project: [], topic: '', experiment: '', subsystem: [], tags: [], status: 'draft' });
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
   const [tagInput, setTagInput] = useState('');
@@ -1443,6 +1444,19 @@ ${content}
                   placeholder="Note title"
                   className="flex-1 text-base font-semibold text-ink bg-paper-soft/40 rounded px-3 py-1 border border-transparent outline-none focus:border-border placeholder:text-ink-3"
                 />
+                <button
+                  onClick={() => {
+                    if (!activeNoteId) return;
+                    const label = (meta.title || activeNoteId).replace(/([\[\]])/g, '\\$1');
+                    navigator.clipboard.writeText(`[${label}](note://${activeNoteId})`).catch(() => {});
+                    setNoteLinkCopied(true);
+                    setTimeout(() => setNoteLinkCopied(false), 1500);
+                  }}
+                  title="노트 링크 복사 — 다른 노트에서 우클릭 > 링크 삽입 또는 붙여넣기"
+                  className="px-1.5 py-0.5 text-[10px] rounded text-ink-3 hover:bg-paper-soft hover:text-ink-2 transition-colors shrink-0"
+                >
+                  {noteLinkCopied ? '✓' : '🔗'}
+                </button>
                 <button
                   onClick={() => setLinksPanelOpen(v => !v)}
                   title={linksPanelOpen ? 'Hide links panel' : 'Show links panel'}
