@@ -913,6 +913,13 @@ img.ProseMirror-separator {
 .dashboard-content th,
 .dashboard-content td { border: 1px solid var(--color-border); padding: 0.3rem 0.6rem; font-size: 0.8125rem; text-align: left; vertical-align: top; }
 .dashboard-content th { background: var(--color-paper-soft); font-weight: 600; }
+.dashboard-content a.dash-doc-link {
+  color: var(--color-chrome);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.dashboard-content a.dash-doc-link:hover { opacity: 0.75; }
 .dashboard-content pre { background: var(--color-paper-soft); border: 1px solid var(--color-border); border-radius: 4px; padding: 0.5rem 0.75rem; margin: 0.5rem 0; overflow-x: auto; font-size: 0.8125rem; }
 .dashboard-content code { font-family: 'Consolas', var(--font-mono); font-size: 0.85em; background: var(--color-paper-soft); padding: 0.1em 0.3em; border-radius: 3px; }
 .dashboard-content pre code { background: none; padding: 0; }

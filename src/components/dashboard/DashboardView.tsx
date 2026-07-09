@@ -8,12 +8,14 @@ import { FILES, FOLDERS } from '../../lib/constants';
 import { buildFrontmatter } from '../../lib/frontmatter';
 import { todayKey } from '../../lib/dateUtils';
 import { reindexNote } from '../../lib/searchIndex';
-import { findNotesForProject, type HubNoteRow } from '../../lib/db';
+import { findNotesForProject, getNoteByExactId, type HubNoteRow } from '../../lib/db';
 import type { ProjectsFile } from '../../types/project';
 import '../../styles/editor.css';
 
 const SECTIONS = [
   { key: 'overview', label: '프로젝트 개요', icon: '📋', template: overviewTemplate },
+  { key: 'docs', label: '문서함', icon: '📄', template: docsTemplate },
+  { key: 'links', label: '자주 보는 링크', icon: '🔗', template: linksTemplate },
   { key: 'hw-spec', label: '하드웨어 사양', icon: '🔧', template: hwSpecTemplate },
   { key: 'orbit', label: '궤도 파라미터', icon: '🌍', template: orbitTemplate },
   { key: 'attitude', label: '자세 모드', icon: '🧭', template: attitudeTemplate },
@@ -25,6 +27,7 @@ function escHtml(s: string): string {
 
 function inlineFmt(s: string): string {
   return s
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2" class="dash-doc-link">$1</a>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     .replace(/`(.+?)`/g, '<code>$1</code>');
@@ -169,6 +172,25 @@ export function DashboardView() {
     return notes.find(n => n.tags?.includes(key) || (sec && n.title.includes(sec.label))) ?? null;
   }, [notes]);
 
+  // 인라인 뷰의 문서/링크 클릭 — file://는 OS로 열고, note://는 앱 안에서, 웹은 브라우저로
+  const handleContentClick = useCallback((e: React.MouseEvent) => {
+    const a = (e.target as HTMLElement).closest('a');
+    if (!a) return;
+    e.preventDefault();
+    const href = a.getAttribute('href') ?? '';
+    if (!href) return;
+    if (href.startsWith('note://')) {
+      const targetId = href.slice(7).split('#')[0];
+      getNoteByExactId(targetId).then((n) => { if (n) openNote(n.path); });
+    } else if (href.startsWith('file://')) {
+      let path = href.slice(7);
+      try { path = decodeURI(path); } catch { /* raw path */ }
+      invoke('open_path', { path }).catch(() => {});
+    } else {
+      invoke('open_path', { path: href }).catch(() => window.open(href, '_blank'));
+    }
+  }, [openNote]);
+
   const handleCreate = useCallback(async (projectName: string, sectionKey: string) => {
     if (!dataDir) return;
     const sec = SECTIONS.find(s => s.key === sectionKey);
@@ -269,7 +291,11 @@ export function DashboardView() {
               </div>
               <div className="px-4 py-3">
                 {note && html ? (
-                  <div className="dashboard-content" dangerouslySetInnerHTML={{ __html: html }} />
+                  <div
+                    className="dashboard-content"
+                    onClick={handleContentClick}
+                    dangerouslySetInnerHTML={{ __html: html }}
+                  />
                 ) : (
                   <div className="text-xs text-ink-3 italic">아직 작성된 내용이 없습니다.</div>
                 )}
@@ -310,6 +336,28 @@ function attitudeTemplate(projectName: string): string {
     '### Detumbling Mode', '', '- 조건: ', '- 자세 제어: ', '',
     '### Normal Mode', '', '- 조건: ', '- 자세 제어: ', '- 정밀도: ', '',
     '### Fine Pointing Mode', '', '- 조건: ', '- 자세 제어: ', '- 정밀도: ', '',
+  ].join('\n');
+}
+
+function docsTemplate(projectName: string): string {
+  return [
+    '', `## ${projectName} 주요 문서`, '',
+    '문서 파일(PDF 등)을 이 노트에 드래그하면 attachments에 저장되고 클릭해서 열 수 있는 링크가 생깁니다. 웹 문서는 URL을 붙여넣으세요.', '',
+    '- ICD: ',
+    '- User Guide: ',
+    '- Command & Telemetry: ',
+    '- Parameter 정의: ',
+    '',
+  ].join('\n');
+}
+
+function linksTemplate(projectName: string): string {
+  return [
+    '', `## ${projectName} 자주 보는 링크`, '',
+    '- HK 정의: ',
+    '- App Table: ',
+    '- ',
+    '',
   ].join('\n');
 }
 

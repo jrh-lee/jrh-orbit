@@ -148,9 +148,21 @@ function stripLooseListItems(md: string): string {
 function ensureMarkdownSpacing(md: string): string {
   const lines = md.split('\n');
   const out: string[] = [];
+  let inFence = false;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    // 코드 펜스 안은 절대 건드리지 않는다 — 파이썬 주석(`# ...`)이
+    // 헤딩으로 오인돼 코드블록 안에 빈 줄이 계속 삽입되던 버그
+    if (/^\s*(```|~~~)/.test(line)) {
+      inFence = !inFence;
+      out.push(line);
+      continue;
+    }
+    if (inFence) {
+      out.push(line);
+      continue;
+    }
     const isHeading = /^#{1,6} /.test(line);
 
     if (isHeading && out.length > 0) {
@@ -410,6 +422,35 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
     }
   }, [dataDir]);
 
+  /** PDF/문서 등 일반 파일을 attachments에 복사하고 file:// href를 돌려준다 */
+  const handleFileDrop = useCallback(async (file: File) => {
+    if (!dataDir) return null;
+    if (file.size > 100 * 1024 * 1024) {
+      console.warn('[file] 100MB 초과 파일은 첨부 대신 원본 위치에 두고 링크하세요:', file.name);
+      return null;
+    }
+    const dataUri = await new Promise<string | null>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(file);
+    });
+    if (!dataUri) return null;
+    try {
+      const attachDir = await join(dataDir, 'attachments');
+      await invoke('ensure_dir', { path: attachDir });
+      // 원본 이름 유지 + 충돌 방지 접두사
+      const destPath = await join(attachDir, `${Date.now().toString(36)}-${file.name}`);
+      const base64 = dataUri.slice(dataUri.indexOf(',') + 1);
+      await invoke('write_binary_b64', { path: destPath, data: base64 });
+      // 공백/한글 경로가 마크다운 링크 괄호를 깨지 않도록 인코딩
+      return `file://${encodeURI(destPath.replace(/\\/g, '/'))}`;
+    } catch (err) {
+      console.warn('[file] save to attachments failed:', err);
+      return null;
+    }
+  }, [dataDir]);
+
   const lastAutoFitRef = useRef(0);
 
   const editor = useEditor({
@@ -447,8 +488,10 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
       handleDrop: (view, event) => {
         const dt = event.dataTransfer;
         if (!dt?.files?.length) return false;
-        const imageFiles = Array.from(dt.files).filter(f => f.type.startsWith('image/'));
-        if (imageFiles.length === 0) return false;
+        const files = Array.from(dt.files);
+        const imageFiles = files.filter(f => f.type.startsWith('image/'));
+        const docFiles = files.filter(f => !f.type.startsWith('image/'));
+        if (imageFiles.length === 0 && docFiles.length === 0) return false;
         event.preventDefault();
         const coords = { left: event.clientX, top: event.clientY };
         const dropPos = view.posAtCoords(coords);
@@ -460,6 +503,19 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
               const node = view.state.schema.nodes.image.create({ src });
               const tr = view.state.tr.insert(pos, node);
               view.dispatch(tr);
+            }
+          }
+          // PDF/문서 등 일반 파일 — attachments에 복사하고 열 수 있는 링크 삽입
+          for (const file of docFiles) {
+            const href = await handleFileDrop(file);
+            if (href && view.state) {
+              const pos = dropPos?.pos ?? view.state.doc.content.size;
+              const { schema } = view.state;
+              const para = schema.nodes.paragraph.create(null, [
+                schema.text('📄 '),
+                schema.text(file.name, [schema.marks.link.create({ href })]),
+              ]);
+              view.dispatch(view.state.tr.insert(pos, para));
             }
           }
         })();
@@ -555,7 +611,8 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
             const isLocal = href.startsWith('/') || href.startsWith('file://');
             const macPlatform = /Mac|iPhone|iPad/.test(navigator.platform);
             if (isLocal || (macPlatform ? event.metaKey : event.ctrlKey)) {
-              const path = href.startsWith('file://') ? href.slice(7) : href;
+              let path = href.startsWith('file://') ? href.slice(7) : href;
+              try { path = decodeURI(path); } catch { /* 인코딩 안 된 경로 그대로 사용 */ }
               invoke('open_path', { path }).catch(() => {});
             }
             return false;
