@@ -1,6 +1,6 @@
 [package]
 name = "jrh-orbit"
-version = "0.4.1"
+version = "0.4.2"
 description = "Work Note App for satellite engineers"
 authors = ["JRH"]
 edition = "2021"
