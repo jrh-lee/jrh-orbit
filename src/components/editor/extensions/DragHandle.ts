@@ -968,6 +968,64 @@ export const DragHandle = Extension.create({
             } catch { /* delete failed */ }
           };
 
+          // ── 블록 링크/동기화 블록 (그립 칩 메뉴용) ──
+          const ensureIdAtTextblock = (tbPos: number): string | null => {
+            const n = editorView.state.doc.nodeAt(tbPos);
+            if (!n?.isTextblock) return null;
+            const existing = n.textContent.match(/\^([a-z0-9]{4,})(?=\s|$)/)?.[1];
+            if (existing) return existing;
+            const bid = Math.random().toString(36).slice(2, 8);
+            try {
+              editorView.dispatch(editorView.state.tr.insertText(` ^${bid}`, tbPos + 1 + n.content.size));
+            } catch { return null; }
+            return bid;
+          };
+          /** 블록(서브트리 포함)의 첫/마지막 텍스트블록 위치 —
+           *  리스트 항목이면 하위 불릿·표까지 전체 범위가 잡힌다 */
+          const textblockBounds = (pos: number): { first: number; last: number } | null => {
+            const n = editorView.state.doc.nodeAt(pos);
+            if (!n) return null;
+            if (n.isTextblock) return { first: pos, last: pos };
+            let first: number | null = null;
+            let last: number | null = null;
+            n.descendants((child, p) => {
+              if (child.isTextblock) {
+                const abs = pos + 1 + p;
+                if (first === null) first = abs;
+                last = abs;
+              }
+              return true;
+            });
+            return first !== null && last !== null ? { first, last } : null;
+          };
+          const copySyncedBlock = (pos: number) => {
+            const nid = (editor.storage as unknown as Record<string, unknown>).noteId as string | undefined;
+            if (!nid) return;
+            const b = textblockBounds(pos);
+            if (!b) return;
+            // 끝 블록 먼저 (앞쪽 삽입이 뒤 위치를 밀지 않게)
+            const bidEnd = b.last !== b.first ? ensureIdAtTextblock(b.last) : null;
+            const bidStart = ensureIdAtTextblock(b.first);
+            if (!bidStart) return;
+            const endAttr = bidEnd ? ` data-block-end="^${bidEnd}"` : '';
+            navigator.clipboard
+              .writeText(`<div data-type="block-embed" data-note="${nid}" data-block="^${bidStart}"${endAttr}></div>`)
+              .catch(() => {});
+          };
+          const copyBlockLink = (pos: number) => {
+            const nid = (editor.storage as unknown as Record<string, unknown>).noteId as string | undefined;
+            if (!nid) return;
+            const b = textblockBounds(pos);
+            if (!b) return;
+            const bid = ensureIdAtTextblock(b.first);
+            if (!bid) return;
+            const text = editorView.state.doc.nodeAt(b.first)?.textContent.replace(/\s*\^[a-z0-9]{4,}(?=\s|$)/, '').trim() ?? '';
+            const label = text.length > 30 ? `${text.slice(0, 30)}…` : text || '블록';
+            navigator.clipboard
+              .writeText(`[${label.replace(/([\[\]])/g, '\\$1')}](note://${nid}#${encodeURIComponent(`^${bid}`)})`)
+              .catch(() => {});
+          };
+
           const openBlockMenu = (x: number, y: number, pos: number) => {
             closeBlockMenu();
             const node = editorView.state.doc.nodeAt(pos);
@@ -1006,6 +1064,11 @@ export const DragHandle = Extension.create({
               add('제목 3', () => chain().setNode('heading', { level: 3 }).run());
               add('코드 블록으로', () => chain().setNode('codeBlock').run());
               add('인용구 토글', () => chain().toggleBlockquote().run());
+              divider();
+            }
+            if ((editor.storage as unknown as Record<string, unknown>).noteId) {
+              add('블록 링크 복사', () => copyBlockLink(pos));
+              add('동기화 블록 복사 (블록 전체)', () => copySyncedBlock(pos));
               divider();
             }
             add('아래에 2단 컬럼 삽입', () => insertColumnsBelow(pos, 2));

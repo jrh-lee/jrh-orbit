@@ -29,7 +29,7 @@ function createRenderer(): MarkdownIt {
 /** 원본 구간을 표시용 마크다운으로 정리 — 서식은 유지, 내부 메타만 제거 */
 function cleanSegment(segment: string): string {
   return segment
-    .replace(/\s*\^[a-z0-9]{4,}(?=\s*$)/gm, '')      // 블록 ID 마커
+    .replace(/\s*\^[a-z0-9]{4,}(?=\s|$)/gm, '')      // 블록 ID 마커 (줄 중간 포함)
     .replace(/\\?\[TASK-[^\]\\]*\\?\]\s*/g, '')       // Task ID
     .replace(/\\?\(이월[^)]*\\?\)\s*/g, '')            // 이월 태그
     .replace(/^(\s*)- \[ \] /gm, '$1- ☐ ')            // 체크박스 → 기호

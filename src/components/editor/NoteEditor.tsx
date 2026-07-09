@@ -691,6 +691,11 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
     return () => { editorRef.current = null; };
   }, [editor, editorRef]);
 
+  // 그립 칩 메뉴(DragHandle)가 블록 링크/동기화 블록을 만들 때 필요
+  useEffect(() => {
+    if (editor) (editor.storage as unknown as Record<string, unknown>).noteId = noteId;
+  }, [editor, noteId]);
+
   /** Find the block matching a block-link anchor and scroll to it.
    *  `^abc123` 형태 = 영구 블록 ID 마커 (텍스트를 고쳐도 유지),
    *  그 외 = 레거시 텍스트 프리픽스 매칭. */
