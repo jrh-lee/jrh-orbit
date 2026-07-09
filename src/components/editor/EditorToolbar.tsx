@@ -447,17 +447,25 @@ export function ColorPicker({ anchor, onChange, onClose, label, value }: {
     saveCustomColors(next);
   };
 
-  // 네이티브 색상 피커: React onChange는 드래그 중에도 발화해 창이 바로 닫힌다 —
-  // 확인 버튼을 눌렀을 때만 오는 네이티브 'change' 이벤트에서 커밋한다
+  // 네이티브 색상 팝업(WebView2)에는 확인 버튼이 없다 — 고르는 색을 실시간으로
+  // HEX 입력칸에 동기화하고, 커밋은 우리 피커의 [확인] 버튼으로만 한다.
+  // 팝업을 닫으려는 바깥 클릭이 피커 전체를 닫지 않도록 직후 클릭은 무시한다.
   const colorInputRef = useRef<HTMLInputElement>(null);
-  const addCustomRef = useRef(addCustom);
-  addCustomRef.current = addCustom;
+  const lastDialogInputRef = useRef(0);
   useEffect(() => {
     const el = colorInputRef.current;
     if (!el) return;
-    const commit = () => addCustomRef.current(el.value);
-    el.addEventListener('change', commit);
-    return () => el.removeEventListener('change', commit);
+    const sync = () => {
+      lastDialogInputRef.current = Date.now();
+      setHexInput(el.value);
+      setHexError(false);
+    };
+    el.addEventListener('input', sync);
+    el.addEventListener('change', sync);
+    return () => {
+      el.removeEventListener('input', sync);
+      el.removeEventListener('change', sync);
+    };
   }, []);
 
   useEffect(() => {
@@ -479,6 +487,9 @@ export function ColorPicker({ anchor, onChange, onClose, label, value }: {
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
+      // 색상 팝업을 닫으려는 클릭이 피커 전체를 닫아버리지 않도록,
+      // 팝업 조작 직후 1초 안의 바깥 클릭은 무시한다
+      if (Date.now() - lastDialogInputRef.current < 1000) return;
       if (ref.current && !ref.current.contains(e.target as Node) &&
           anchor && !anchor.contains(e.target as Node)) {
         onClose();
@@ -550,8 +561,10 @@ export function ColorPicker({ anchor, onChange, onClose, label, value }: {
         />
         <label
           className="w-5 h-5 rounded border border-border cursor-pointer overflow-hidden relative shrink-0"
-          title="색상 고르기"
-          style={{ background: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)' }}
+          title="색상 고르기 — 고른 색이 왼쪽 칸에 채워지면 [확인]을 누르세요"
+          style={{
+            background: normalizeHex(hexInput) ?? 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)',
+          }}
         >
           <input
             ref={colorInputRef}
@@ -561,9 +574,10 @@ export function ColorPicker({ anchor, onChange, onClose, label, value }: {
         </label>
         <button
           onClick={() => addCustom(hexInput)}
-          className="text-[10px] px-1.5 py-0.5 rounded border border-border text-ink-2 hover:bg-paper-soft transition-colors shrink-0"
+          disabled={!normalizeHex(hexInput)}
+          className="text-[10px] px-1.5 py-0.5 rounded border border-chrome/60 text-ink font-medium hover:bg-chrome/20 transition-colors shrink-0 disabled:opacity-40 disabled:border-border disabled:font-normal"
         >
-          추가
+          확인
         </button>
       </div>
       <button

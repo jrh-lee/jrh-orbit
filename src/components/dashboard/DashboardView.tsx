@@ -15,7 +15,6 @@ import '../../styles/editor.css';
 const SECTIONS = [
   { key: 'overview', label: '프로젝트 개요', icon: '📋', template: overviewTemplate },
   { key: 'docs', label: '문서함', icon: '📄', template: docsTemplate },
-  { key: 'links', label: '자주 보는 링크', icon: '🔗', template: linksTemplate },
   { key: 'hw-spec', label: '하드웨어 사양', icon: '🔧', template: hwSpecTemplate },
   { key: 'orbit', label: '궤도 파라미터', icon: '🌍', template: orbitTemplate },
   { key: 'attitude', label: '자세 모드', icon: '🧭', template: attitudeTemplate },
@@ -425,16 +424,6 @@ function docsTemplate(projectName: string): string {
     '- User Guide: ',
     '- Command & Telemetry: ',
     '- Parameter 정의: ',
-    '',
-  ].join('\n');
-}
-
-function linksTemplate(projectName: string): string {
-  return [
-    '', `## ${projectName} 자주 보는 링크`, '',
-    '- HK 정의: ',
-    '- App Table: ',
-    '- ',
     '',
   ].join('\n');
 }
