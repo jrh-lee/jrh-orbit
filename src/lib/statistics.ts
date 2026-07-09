@@ -1,6 +1,21 @@
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, getDay, getISOWeek } from 'date-fns';
 import { listNotes, readNote, readJsonFile } from './fileSystem';
 import { getNoteActivity } from './activityLog';
+import { useWorkhourTimerStore } from '../stores/useWorkhourTimerStore';
+
+/** ■ 종료 전의 라이브 타이머 시간 중 아직 workhours 파일에 기록되지 않은
+ *  분(min). 통계가 "오늘"을 실시간 반영하도록 오늘 집계에 더한다 —
+ *  이게 없으면 오늘 값은 종료 버튼을 누르기 전까지 0으로 보인다. */
+function liveUnrecordedMinutes(todayFileMinutes: number): number {
+  try {
+    const s = useWorkhourTimerStore.getState();
+    const sessionSec = s.running && s.startedAt ? Math.floor((Date.now() - s.startedAt) / 1000) : 0;
+    const totalMin = Math.round((s.baseElapsed + sessionSec) / 60);
+    return Math.max(0, totalMin - todayFileMinutes);
+  } catch {
+    return 0;
+  }
+}
 import { parseFrontmatterFields } from './frontmatter';
 import { loadDailyWorkhour } from './workhour';
 import { FOLDERS, FILES } from './constants';
@@ -213,16 +228,27 @@ export function calcStudyToApplication(notes: ParsedNoteMeta[]): number {
 async function collectWorkhour(dataDir: string, range: DateRange): Promise<{ project: string; hours: number }[]> {
   const days = eachDayOfInterval({ start: range.start, end: range.end });
   const projectMap = new Map<string, number>();
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  let todayTotal = 0;
+  let rangeHasToday = false;
 
   for (const day of days) {
     const dk = format(day, 'yyyy-MM-dd');
+    if (dk === todayStr) rangeHasToday = true;
     try {
       const daily = await loadDailyWorkhour(dataDir, dk);
       for (const s of daily.sessions) {
         const p = s.project || 'GENERAL';
         projectMap.set(p, (projectMap.get(p) ?? 0) + s.durationMinutes);
       }
+      if (dk === todayStr) todayTotal = daily.total_minutes;
     } catch {}
+  }
+
+  // 아직 종료(■)하지 않은 라이브 타이머 시간도 오늘 값에 실시간 반영
+  if (rangeHasToday) {
+    const gap = liveUnrecordedMinutes(todayTotal);
+    if (gap > 0) projectMap.set('GENERAL', (projectMap.get('GENERAL') ?? 0) + gap);
   }
 
   return [...projectMap.entries()]
@@ -337,10 +363,12 @@ export async function getWorkhourByDay(
   if (period === 'week') {
     const range = { start: startOfWeek(now, { weekStartsOn: 1 }), end: endOfWeek(now, { weekStartsOn: 1 }) };
     const days = eachDayOfInterval({ start: range.start, end: range.end });
+    const todayStr = format(now, 'yyyy-MM-dd');
     return Promise.all(days.map(async (day) => {
       const dk = format(day, 'yyyy-MM-dd');
       let mins = 0;
       try { mins = (await loadDailyWorkhour(dataDir, dk)).total_minutes; } catch {}
+      if (dk === todayStr) mins += liveUnrecordedMinutes(mins);
       const dow = getDay(day);
       const created = allNotes.filter(n => n.type !== 'daily-log' && n.date === dk).length;
       const edited = editedFor(dk);
@@ -364,13 +392,16 @@ export async function getWorkhourByDay(
   const weekCreatedMap = new Map<number, number>();
   const weekEditedMap = new Map<number, number>();
 
+  const todayStr = format(now, 'yyyy-MM-dd');
   for (const day of days) {
     const dk = format(day, 'yyyy-MM-dd');
     const week = getISOWeek(day) - firstWeek + 1;
+    let dayMins = 0;
     try {
-      const daily = await loadDailyWorkhour(dataDir, dk);
-      weekMap.set(week, (weekMap.get(week) ?? 0) + daily.total_minutes);
+      dayMins = (await loadDailyWorkhour(dataDir, dk)).total_minutes;
     } catch {}
+    if (dk === todayStr) dayMins += liveUnrecordedMinutes(dayMins);
+    if (dayMins > 0) weekMap.set(week, (weekMap.get(week) ?? 0) + dayMins);
     const created = allNotes.filter(n => n.type !== 'daily-log' && n.date === dk).length;
     const edited = editedFor(dk);
     weekCreatedMap.set(week, (weekCreatedMap.get(week) ?? 0) + created);
@@ -438,6 +469,7 @@ export async function getMonthlyHeatmap(dataDir: string): Promise<WeeklyHeatmapC
   const firstWeek = getISOWeek(range.start);
   const cells: WeeklyHeatmapCell[] = [];
 
+  const todayStr = format(now, 'yyyy-MM-dd');
   for (const day of days) {
     const dk = format(day, 'yyyy-MM-dd');
     let mins = 0;
@@ -445,6 +477,7 @@ export async function getMonthlyHeatmap(dataDir: string): Promise<WeeklyHeatmapC
       const daily = await loadDailyWorkhour(dataDir, dk);
       mins = daily.total_minutes;
     } catch {}
+    if (dk === todayStr) mins += liveUnrecordedMinutes(mins);
     const week = getISOWeek(day) - firstWeek + 1;
     const dow = getDay(day);
     cells.push({
@@ -479,17 +512,27 @@ export async function getFocusTimeDistribution(
   const projectSet = new Set<string>();
 
   if (period === 'week') {
+    const todayStr = format(now, 'yyyy-MM-dd');
     const data: FocusTimeData[] = await Promise.all(days.map(async (day) => {
       const dk = format(day, 'yyyy-MM-dd');
       const entry: FocusTimeData = { day: `${DAY_LABELS[getDay(day)]}` };
+      let fileTotal = 0;
       try {
         const daily = await loadDailyWorkhour(dataDir, dk);
+        fileTotal = daily.total_minutes;
         for (const s of daily.sessions) {
           const proj = s.project || 'GENERAL';
           projectSet.add(proj);
           entry[proj] = ((entry[proj] as number) || 0) + Math.round(s.durationMinutes / 6) / 10;
         }
       } catch {}
+      if (dk === todayStr) {
+        const gap = liveUnrecordedMinutes(fileTotal);
+        if (gap > 0) {
+          projectSet.add('GENERAL');
+          entry['GENERAL'] = ((entry['GENERAL'] as number) || 0) + Math.round(gap / 6) / 10;
+        }
+      }
       return entry;
     }));
     return { data, projects: Array.from(projectSet) };
@@ -497,13 +540,16 @@ export async function getFocusTimeDistribution(
 
   const firstWeek = getISOWeek(range.start);
   const weekMap = new Map<number, FocusTimeData>();
+  const todayStrM = format(now, 'yyyy-MM-dd');
 
   for (const day of days) {
     const dk = format(day, 'yyyy-MM-dd');
     const week = getISOWeek(day) - firstWeek + 1;
     if (!weekMap.has(week)) weekMap.set(week, { day: `${week}주차` });
+    let fileTotal = 0;
     try {
       const daily = await loadDailyWorkhour(dataDir, dk);
+      fileTotal = daily.total_minutes;
       const entry = weekMap.get(week)!;
       for (const s of daily.sessions) {
         const proj = s.project || 'GENERAL';
@@ -511,6 +557,14 @@ export async function getFocusTimeDistribution(
         entry[proj] = ((entry[proj] as number) || 0) + Math.round(s.durationMinutes / 6) / 10;
       }
     } catch {}
+    if (dk === todayStrM) {
+      const gap = liveUnrecordedMinutes(fileTotal);
+      if (gap > 0) {
+        projectSet.add('GENERAL');
+        const entry = weekMap.get(week)!;
+        entry['GENERAL'] = ((entry['GENERAL'] as number) || 0) + Math.round(gap / 6) / 10;
+      }
+    }
   }
 
   const maxWeek = Math.max(...weekMap.keys(), Math.ceil(days.length / 7));
