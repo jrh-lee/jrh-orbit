@@ -685,7 +685,9 @@ export function NoteListView() {
         }
       }
     } catch {
-      setBody('');
+      // 읽기 실패 시 절대 빈 본문을 올리지 않는다 — activeNote는 이전 노트인 채로
+      // body=''가 되면 다음 자동저장이 이전 노트를 빈 내용으로 덮어쓴다 (실제 사고 사례)
+      setError('노트를 읽지 못했습니다 (드라이브 일시 잠금일 수 있음) — 다시 클릭해 주세요');
     }
   }
 
@@ -782,7 +784,18 @@ export function NoteListView() {
           setMeta(prev => ({ ...prev, status: 'in-progress' }));
         }
         fmRef.current = updateFrontmatterField(fmRef.current, 'updated', new Date().toISOString());
-        invoke('write_note', { path: activeNote, content: joinFrontmatter(fmRef.current, md) }).catch(() => {});
+        // 안전망: 내용이 통째로 비워지는 저장은 이전 본문을 rescue 백업으로 남긴다
+        // (읽기 실패로 빈 에디터가 뜬 뒤 자동저장이 원본을 덮어쓰는 사고 대비)
+        if (dataDir && md.trim() === '' && prevBodyRef.current.trim().length > 50) {
+          const fname = (activeNote.split(/[\\/]/).pop() ?? 'note.md').replace(/\.md$/, '');
+          invoke('write_note', {
+            path: `${dataDir}/backups/rescue/${fname}-${Date.now()}.md`,
+            content: joinFrontmatter(fmRef.current, prevBodyRef.current),
+          }).catch(() => {});
+        }
+        invoke('write_note', { path: activeNote, content: joinFrontmatter(fmRef.current, md) })
+          .then(() => window.dispatchEvent(new CustomEvent('note-saved')))
+          .catch(() => {});
         if (dataDir && activeNoteId) recordNoteEdit(dataDir, activeNoteId);
 
         if (dataDir && activeNoteId) {
@@ -795,7 +808,9 @@ export function NoteListView() {
             if (updated) {
               prevBodyRef.current = updated;
               setBody(updated);
-              invoke('write_note', { path: activeNote, content: joinFrontmatter(fmRef.current, updated) }).catch(() => {});
+              invoke('write_note', { path: activeNote, content: joinFrontmatter(fmRef.current, updated) })
+                .then(() => window.dispatchEvent(new CustomEvent('note-saved')))
+                .catch(() => {});
               window.dispatchEvent(new CustomEvent('tasks-changed'));
             } else {
               prevBodyRef.current = md;

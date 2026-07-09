@@ -976,7 +976,11 @@ export const DragHandle = Extension.create({
             if (existing) return existing;
             const bid = Math.random().toString(36).slice(2, 8);
             try {
-              editorView.dispatch(editorView.state.tr.insertText(` ^${bid}`, tbPos + 1 + n.content.size));
+              // insertText는 그 위치의 마크(볼드/색상)를 상속해 마커가 `**` 안에 갇힌다
+              // → 마크 없는 텍스트 노드로 삽입해야 마크다운에서 `... ** ^id` 대신 `...** ^id`로 직렬화됨
+              editorView.dispatch(
+                editorView.state.tr.insert(tbPos + 1 + n.content.size, editorView.state.schema.text(` ^${bid}`)),
+              );
             } catch { return null; }
             return bid;
           };

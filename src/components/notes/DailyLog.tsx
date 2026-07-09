@@ -749,6 +749,8 @@ export function DailyLog() {
         try {
           const fullPath = await join(dataDir, FOLDERS.daily, `${dateKey}.md`);
           await invoke('write_note', { path: fullPath, content: joinFrontmatter(fmRef.current, md) });
+          // Daily를 원본으로 삼는 동기화 블록 미러 갱신용
+          window.dispatchEvent(new CustomEvent('note-saved'));
         } catch {}
       })();
     },

@@ -741,13 +741,24 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
       overlay.className = 'block-link-flash-overlay';
       document.body.appendChild(overlay);
       let raf = 0;
+      let cur: HTMLElement = t;
       const track = () => {
-        if (!t.isConnected) { overlay.remove(); return; }
-        const r = t.getBoundingClientRect();
-        overlay.style.left = `${r.left - 5}px`;
-        overlay.style.top = `${r.top - 4}px`;
-        overlay.style.width = `${r.width + 10}px`;
-        overlay.style.height = `${r.height + 8}px`;
+        // PM 리렌더가 요소를 교체해도 링은 유지 — 위치로 재조회해서 계속 따라간다
+        if (!cur.isConnected) {
+          const d2 = editor.view.nodeDOM(pos);
+          const next = d2 instanceof HTMLElement ? d2 : (d2 as Node | null)?.parentElement ?? null;
+          if (next) cur = next;
+        }
+        if (cur.isConnected) {
+          const r = cur.getBoundingClientRect();
+          overlay.style.display = '';
+          overlay.style.left = `${r.left - 5}px`;
+          overlay.style.top = `${r.top - 4}px`;
+          overlay.style.width = `${r.width + 10}px`;
+          overlay.style.height = `${r.height + 8}px`;
+        } else {
+          overlay.style.display = 'none';
+        }
         raf = requestAnimationFrame(track);
       };
       track();

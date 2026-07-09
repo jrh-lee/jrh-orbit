@@ -29,7 +29,7 @@ function createRenderer(): MarkdownIt {
 /** 원본 구간을 표시용 마크다운으로 정리 — 서식은 유지, 내부 메타만 제거 */
 function cleanSegment(segment: string): string {
   return segment
-    .replace(/\s*\^[a-z0-9]{4,}(?=\s|$)/gm, '')      // 블록 ID 마커 (줄 중간 포함)
+    .replace(/\s*\^[a-z0-9]{4,}(?![a-z0-9])/g, '')    // 블록 ID 마커 — 마크 구문(** 등)이 뒤따라도 제거
     .replace(/\\?\[TASK-[^\]\\]*\\?\]\s*/g, '')       // Task ID
     .replace(/\\?\(이월[^)]*\\?\)\s*/g, '')            // 이월 태그
     .replace(/^(\s*)- \[ \] /gm, '$1- ☐ ')            // 체크박스 → 기호
@@ -77,10 +77,16 @@ export function BlockEmbedView({ node, selected, editor, getPos }: NodeViewProps
 
   useEffect(() => {
     load();
-    // 원본 노트가 저장될 때마다 미러 갱신 — 이게 "자동 동기화"
+    // 원본 노트가 저장될 때마다 미러 갱신 — 이게 "자동 동기화".
+    // 앱 내 저장은 파일워처가 writeLock으로 무시하므로 'notes-changed'만으론 부족 —
+    // 에디터 저장 직후 발행되는 'note-saved'도 함께 구독한다.
     const handler = () => load();
     window.addEventListener('notes-changed', handler);
-    return () => window.removeEventListener('notes-changed', handler);
+    window.addEventListener('note-saved', handler);
+    return () => {
+      window.removeEventListener('notes-changed', handler);
+      window.removeEventListener('note-saved', handler);
+    };
   }, [load]);
 
   const openSource = () => {
