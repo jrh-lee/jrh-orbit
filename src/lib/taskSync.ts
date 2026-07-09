@@ -85,6 +85,19 @@ export function isCarryOverText(title: string): boolean {
   return /^\\?\(이월/.test(title);
 }
 
+/** Strip inline markdown syntax for plain-text display (hub, sidebar, calendar).
+ *  `[label](url)` → label, `\[KGS\]` → [KGS], 굵게·코드 등 마커 제거. */
+export function stripInlineMarkdown(text: string): string {
+  let t = text.replace(/\\([[\]()#*_~`>+\-!.|])/g, "$1");
+  t = t.replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1");
+  t = t.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
+  t = t.replace(/(\*\*|__)(.*?)\1/g, "$2");
+  t = t.replace(/(\*|_)(.*?)\1/g, "$2");
+  t = t.replace(/~~(.*?)~~/g, "$1");
+  t = t.replace(/`([^`]*)`/g, "$1");
+  return t;
+}
+
 /** Collect every task/subtask ID referenced by checkbox lines in a body. */
 export function collectTaskIds(body: string): Set<string> {
   const ids = new Set<string>();

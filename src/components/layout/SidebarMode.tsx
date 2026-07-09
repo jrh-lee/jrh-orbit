@@ -12,6 +12,7 @@ import { buildFrontmatter, updateFrontmatterField, parseFrontmatterFields } from
 import { todayKey } from '../../lib/dateUtils';
 import { insertNoteToDailyLog, insertTodoToDailyLog, updateDailyLogNoteRow } from '../../lib/dailyLogHelper';
 import { updateNoteLinks } from '../../lib/linkGraph';
+import { stripInlineMarkdown } from '../../lib/taskSync';
 import { getExtensions } from '../editor/extensions';
 import { ColorPicker } from '../editor/EditorToolbar';
 import { insertBlankLinesBeforeHeadings } from '../editor/NoteEditor';
@@ -555,7 +556,7 @@ export function SidebarMode() {
                     <span
                       onClick={() => { setEditingTaskId(editingTaskId === t.id ? null : t.id); setEditingSubKey(null); }}
                       className="flex-1 text-xs text-ink truncate cursor-pointer hover:text-chrome transition-colors"
-                    >{t.title}</span>
+                    >{stripInlineMarkdown(t.title)}</span>
                     {t.dueDate && (
                       <span className={`text-[9px] font-mono shrink-0 ${
                         new Date(t.dueDate) < new Date(new Date().toDateString()) ? 'text-badge-high' : 'text-ink-3'
@@ -671,7 +672,7 @@ export function SidebarMode() {
             {selectedDate && selectedDateTasks.length > 0 ? selectedDateTasks.map(t => (
               <div key={t.id} className={`flex items-center gap-1.5 py-0.5 ${t.isSubtask ? 'ml-3' : ''}`}>
                 <span className="text-[9px] text-ink-3 shrink-0">{statusLabels[t.status]}</span>
-                <span className={`text-[10px] truncate ${t.isSubtask ? 'text-ink-2' : 'text-ink'}`}>{t.title}</span>
+                <span className={`text-[10px] truncate ${t.isSubtask ? 'text-ink-2' : 'text-ink'}`}>{stripInlineMarkdown(t.title)}</span>
               </div>
             )) : selectedDate ? (
               <p className="text-[9px] text-ink-3 text-center py-2">No tasks</p>

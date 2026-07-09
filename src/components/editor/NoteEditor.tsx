@@ -432,6 +432,16 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
             td.replaceWith(th);
           });
         });
+        // Excel/웹 표의 인라인 흰색 배경이 테마 헤더/셀 색을 덮는 문제(#6) —
+        // 흰색·투명 배경은 제거해 테마 스타일이 적용되게 한다
+        doc.querySelectorAll('td, th').forEach(cell => {
+          const el = cell as HTMLElement;
+          el.removeAttribute('bgcolor');
+          const bg = el.style.backgroundColor.replace(/\s/g, '').toLowerCase();
+          if (bg === 'white' || bg === '#fff' || bg === '#ffffff' || bg === 'rgb(255,255,255)' || bg === 'transparent') {
+            el.style.backgroundColor = '';
+          }
+        });
         return doc.body.innerHTML;
       },
       handleDrop: (view, event) => {

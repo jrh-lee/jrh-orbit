@@ -9,6 +9,7 @@ import { FOLDERS, FILES } from '../../lib/constants';
 import { NOTE_TYPE_ICONS } from '../../types/note';
 import type { NoteType } from '../../types/note';
 import type { TodosFile } from '../../types/task';
+import { stripInlineMarkdown } from '../../lib/taskSync';
 
 interface BacklinkEntry {
   id: string;
@@ -158,7 +159,7 @@ export function BacklinkPanel({ noteId, onNavigate, visible, onToggle }: Backlin
                   className="flex items-center gap-1 px-1.5 py-1 rounded hover:bg-paper-muted/50 transition-colors"
                 >
                   <span className={`px-1 py-0 text-[8px] rounded font-medium shrink-0 ${statusBg}`}>{t.status}</span>
-                  <span className="text-ink-2 truncate text-[10px]">{t.title}</span>
+                  <span className="text-ink-2 truncate text-[10px]">{stripInlineMarkdown(t.title)}</span>
                 </div>
               );
             })}

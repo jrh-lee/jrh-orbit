@@ -61,7 +61,9 @@ export function StatusBar() {
       setTodayMinutes(d.total_minutes);
       const map = new Map<string, number>();
       for (const s of d.sessions) {
-        const p = s.project || 'GENERAL';
+        // 포모도로는 프로젝트 id로 기록하므로 표시할 땐 이름으로 변환
+        const raw = s.project || 'GENERAL';
+        const p = projects.find(pr => pr.id === raw)?.name ?? raw;
         map.set(p, (map.get(p) ?? 0) + s.durationMinutes);
       }
       setProjectMinutes(
@@ -71,7 +73,7 @@ export function StatusBar() {
           .sort((a, b) => b.mins - a.mins)
       );
     }).catch(() => {});
-  }, [dataDir, completedPomodoros, refreshKey]);
+  }, [dataDir, completedPomodoros, refreshKey, projects]);
 
   const formatHM = (mins: number) => {
     const h = Math.floor(mins / 60);

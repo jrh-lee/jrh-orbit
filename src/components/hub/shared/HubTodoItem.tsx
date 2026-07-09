@@ -1,4 +1,5 @@
 import type { Task } from '../../../types/task';
+import { stripInlineMarkdown } from '../../../lib/taskSync';
 
 interface Props {
   task: Task;
@@ -18,7 +19,7 @@ export function HubTodoItem({ task, onToggle }: Props) {
       />
       <div className="flex-1 min-w-0">
         <div className="text-xs text-ink truncate">
-          {task.title}
+          {stripInlineMarkdown(task.title)}
         </div>
         <div className="flex items-center gap-2 mt-0.5">
           {task.dueDate && (

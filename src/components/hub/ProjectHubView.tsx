@@ -9,6 +9,7 @@ import { FILES, FOLDERS } from '../../lib/constants';
 import { buildFrontmatter } from '../../lib/frontmatter';
 import { todayKey } from '../../lib/dateUtils';
 import { reindexNote } from '../../lib/searchIndex';
+import { stripInlineMarkdown } from '../../lib/taskSync';
 import type { TodosFile } from '../../types/task';
 import { experimentEmoji } from '../../types/experiment';
 import { TopicMap } from './TopicMap';
@@ -273,7 +274,7 @@ export function ProjectHubView() {
               <div key={t.id} className="flex items-start gap-2 px-3 py-1.5 rounded-lg">
                 <input type="checkbox" checked readOnly className="mt-0.5 shrink-0 accent-chrome pointer-events-none" />
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs text-ink truncate line-through opacity-60">{t.title}</div>
+                  <div className="text-xs text-ink truncate line-through opacity-60">{stripInlineMarkdown(t.title)}</div>
                   {t.endDate && (
                     <div className="text-[10px] text-ink-3 mt-0.5">{t.endDate} 완료</div>
                   )}

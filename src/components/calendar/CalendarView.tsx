@@ -15,6 +15,7 @@ import {
 } from '../../lib/googleCalendar';
 import type { CalendarEvent, CalendarFile } from '../../types/calendar';
 import type { Task, TodosFile } from '../../types/task';
+import { stripInlineMarkdown } from '../../lib/taskSync';
 
 interface DDayEvent { id: string; name: string; targetDate: string }
 interface DDaysFile { events: DDayEvent[] }
@@ -26,6 +27,17 @@ interface DayItem {
   time?: string;
   event?: CalendarEvent;
   done?: boolean;
+}
+
+/** 여러 날에 걸치는 항목 — 일자별 칩 대신 주(week) 행 위에 가로 바로 그린다 */
+interface SpanItem {
+  key: string;
+  kind: 'event' | 'google' | 'due';
+  label: string;
+  startDay: string; // yyyy-MM-dd
+  endDay: string;
+  done?: boolean;
+  event?: CalendarEvent;
 }
 
 function generateId() {
@@ -162,47 +174,33 @@ export function CalendarView() {
     refreshGoogle();
   }, [dataDir, gcalSelected, refreshGoogle]);
 
-  // Map yyyy-MM-dd → items shown in that cell
-  const itemsByDay = useMemo(() => {
+  // Map yyyy-MM-dd → single-day chips in that cell.
+  // Multi-day items go to `spans` and render as horizontal bars per week row.
+  const { itemsByDay, spans } = useMemo(() => {
     const map = new Map<string, DayItem[]>();
+    const spanList: SpanItem[] = [];
     const push = (day: string, item: DayItem) => {
       if (!map.has(day)) map.set(day, []);
       map.get(day)!.push(item);
     };
     for (const e of [...events, ...googleEvents]) {
-      const start = parseISO(e.date);
-      const end = e.endDate ? parseISO(e.endDate) : start;
-      for (let d = start; d <= end; d = addDays(d, 1)) {
-        push(format(d, 'yyyy-MM-dd'), {
-          key: `ev-${e.id}-${format(d, 'dd')}`,
-          kind: e.source === 'google' ? 'google' : 'event',
-          label: e.title,
-          time: e.startTime,
-          event: e,
-        });
+      const kind = e.source === 'google' ? 'google' as const : 'event' as const;
+      if (e.endDate && e.endDate > e.date) {
+        spanList.push({ key: `ev-${e.id}`, kind, label: e.title, startDay: e.date, endDay: e.endDate, event: e });
+      } else {
+        push(e.date, { key: `ev-${e.id}`, kind, label: e.title, time: e.startTime, event: e });
       }
     }
     for (const t of tasks) {
       if (!t.dueDate && !t.startDate) continue;
       const done = t.status === 'done';
-      // start~due range → the task spans every day of the range
-      if (t.startDate && t.dueDate && t.startDate <= t.dueDate) {
-        const start = parseISO(t.startDate);
-        const end = parseISO(t.dueDate);
-        let guard = 0;
-        for (let d = start; d <= end && guard < 92; d = addDays(d, 1), guard++) {
-          const day = format(d, 'yyyy-MM-dd');
-          push(day, {
-            key: `due-${t.id}-${day}`,
-            kind: 'due',
-            label: day === t.dueDate ? `${t.title} (마감)` : t.title,
-            done,
-          });
-        }
+      const title = stripInlineMarkdown(t.title);
+      if (t.startDate && t.dueDate && t.startDate < t.dueDate) {
+        spanList.push({ key: `due-${t.id}`, kind: 'due', label: title, startDay: t.startDate, endDay: t.dueDate, done });
       } else if (t.dueDate) {
-        push(t.dueDate, { key: `due-${t.id}`, kind: 'due', label: `${t.title} (마감)`, done });
+        push(t.dueDate, { key: `due-${t.id}`, kind: 'due', label: `${title} (마감)`, done });
       } else if (t.startDate) {
-        push(t.startDate, { key: `start-${t.id}`, kind: 'due', label: `${t.title} (시작)`, done });
+        push(t.startDate, { key: `start-${t.id}`, kind: 'due', label: `${title} (시작)`, done });
       }
     }
     for (const d of ddays) {
@@ -218,7 +216,7 @@ export function CalendarView() {
         return (a.time ?? '').localeCompare(b.time ?? '');
       });
     }
-    return map;
+    return { itemsByDay: map, spans: spanList };
   }, [events, googleEvents, tasks, ddays]);
 
   const weeks = useMemo(() => {
@@ -234,6 +232,36 @@ export function CalendarView() {
   // Fixed uniform row height (fits the 7-chip cap) — computing it from the
   // busiest cell made the layout shift whenever content/selection changed.
   const ROW_MIN_PX = 140;
+  const BAR_H = 16; // 멀티데이 바 한 레인의 높이(px)
+
+  // 주(week) 행마다: 그 주에 걸치는 span 세그먼트 + 겹치지 않게 쌓을 레인 배정
+  const weekBars = useMemo(() => {
+    return weeks.map((row) => {
+      const wStart = format(row[0], 'yyyy-MM-dd');
+      const wEnd = format(row[6], 'yyyy-MM-dd');
+      const dayKeys = row.map((d) => format(d, 'yyyy-MM-dd'));
+      const segs = spans
+        .filter((s) => s.startDay <= wEnd && s.endDay >= wStart)
+        .map((s) => ({
+          ...s,
+          c0: s.startDay <= wStart ? 0 : dayKeys.indexOf(s.startDay),
+          c1: s.endDay >= wEnd ? 6 : dayKeys.indexOf(s.endDay),
+          contLeft: s.startDay < wStart,
+          contRight: s.endDay > wEnd,
+          lane: 0,
+        }))
+        .filter((s) => s.c0 >= 0 && s.c1 >= s.c0)
+        .sort((a, b) => a.c0 - b.c0 || (b.c1 - b.c0) - (a.c1 - a.c0));
+      const laneEnd: number[] = []; // lane index → 마지막으로 점유한 col
+      for (const s of segs) {
+        let l = 0;
+        while (l < laneEnd.length && laneEnd[l] >= s.c0) l++;
+        s.lane = l;
+        laneEnd[l] = s.c1;
+      }
+      return { segs, laneCount: laneEnd.length };
+    });
+  }, [weeks, spans]);
 
   const addEvent = useCallback(() => {
     const title = newTitle.trim();
@@ -259,7 +287,19 @@ export function CalendarView() {
     persistEvents(events.filter((e) => e.id !== id));
   }, [events, persistEvents]);
 
-  const selectedItems = itemsByDay.get(selected) ?? [];
+  // 선택한 날짜 패널: 그 날을 지나는 멀티데이 항목 + 단일 칩
+  const selectedItems: DayItem[] = [
+    ...spans
+      .filter((s) => s.startDay <= selected && s.endDay >= selected)
+      .map((s): DayItem => ({
+        key: s.key,
+        kind: s.kind,
+        label: `${s.label} (${s.startDay.slice(5).replace('-', '/')}~${s.endDay.slice(5).replace('-', '/')})`,
+        done: s.done,
+        event: s.event,
+      })),
+    ...(itemsByDay.get(selected) ?? []),
+  ];
   const today = format(new Date(), 'yyyy-MM-dd');
 
   return (
@@ -412,8 +452,34 @@ export function CalendarView() {
         </div>
         <div className="grid gap-px bg-border rounded-lg overflow-hidden border border-border"
              style={{ gridTemplateRows: `repeat(${weeks.length}, minmax(${ROW_MIN_PX}px, auto))` }}>
-          {weeks.map((row, ri) => (
-            <div key={ri} className="grid grid-cols-7 gap-px">
+          {weeks.map((row, ri) => {
+            const bars = weekBars[ri];
+            return (
+            <div key={ri} className="relative grid grid-cols-7 gap-px">
+              {/* 멀티데이 가로 바 — 셀 위 오버레이. 클릭은 아래 셀로 통과 */}
+              {bars.segs.map((s) => (
+                <div
+                  key={s.key}
+                  className={clsx(
+                    'absolute z-[5] text-[9px] px-1.5 truncate pointer-events-none',
+                    s.kind === 'event' && 'bg-pastel-blue/50 text-ink-2',
+                    s.kind === 'google' && 'bg-pastel-lavender/50 text-ink-2',
+                    s.kind === 'due' && 'bg-pastel-peach/50 text-ink-2',
+                    s.done && 'line-through opacity-50',
+                    !s.contLeft && 'rounded-l-full',
+                    !s.contRight && 'rounded-r-full',
+                  )}
+                  style={{
+                    top: 24 + s.lane * BAR_H,
+                    height: BAR_H - 2,
+                    lineHeight: `${BAR_H - 2}px`,
+                    left: `calc(${(s.c0 / 7) * 100}% + 2px)`,
+                    width: `calc(${((s.c1 - s.c0 + 1) / 7) * 100}% - 4px)`,
+                  }}
+                >
+                  {s.contLeft ? '‹ ' : ''}{s.label}{s.contRight ? ' ›' : ''}
+                </div>
+              ))}
               {row.map((day) => {
                 const key = format(day, 'yyyy-MM-dd');
                 const items = itemsByDay.get(key) ?? [];
@@ -438,7 +504,10 @@ export function CalendarView() {
                     )}>
                       {format(day, 'd')}
                     </span>
-                    <div className="flex flex-col gap-px mt-0.5">
+                    <div
+                      className="flex flex-col gap-px"
+                      style={{ marginTop: 2 + bars.laneCount * BAR_H }}
+                    >
                       {/* selected day expands in place — all items shown in the cell */}
                       {(isSelected ? items : items.slice(0, 7)).map((it) => (
                         <span
@@ -463,7 +532,8 @@ export function CalendarView() {
                 );
               })}
             </div>
-          ))}
+            );
+          })}
         </div>
         </div>
 
