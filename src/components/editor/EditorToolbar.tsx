@@ -37,6 +37,12 @@ const buttons: ToolbarButton[] = [
     isActive: (e) => e.isActive('strike'),
   },
   {
+    label: 'Underline (Ctrl+U)',
+    icon: 'U',
+    action: (e) => e.chain().focus().toggleUnderline().run(),
+    isActive: (e) => e.isActive('underline'),
+  },
+  {
     label: 'Code',
     icon: '<>',
     action: (e) => e.chain().focus().toggleCode().run(),
@@ -370,8 +376,28 @@ function ImageUrlInput({ editor, onClose }: { editor: Editor; onClose: () => voi
 export const PALETTE = [
   '#000000', '#434343', '#666666', '#999999', '#cccccc', '#ffffff',
   '#e06c75', '#d19a66', '#e5c07b', '#98c379', '#56b6c2', '#61afef', '#c678dd',
+  '#c0392b', '#d35400', '#b7950b', '#1e8449', '#117a8b', '#1f618d', '#7d3c98',
   '#ffc1d6', '#ffd3b6', '#fff4c0', '#c6ecd7', '#a9cdf5', '#d8cdf5', '#fdff85',
+  '#f5b7b1', '#f8c471', '#f9e79f', '#a9dfbf', '#aed6f1', '#d2b4de', '#e8daef',
 ];
+
+/** 사용자 등록 색상 (HEX) — 테마와 무관하게 유지 */
+const CUSTOM_COLORS_KEY = 'orbit-custom-colors';
+function loadCustomColors(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(CUSTOM_COLORS_KEY) ?? '[]');
+    return Array.isArray(v) ? v.filter((c) => typeof c === 'string') : [];
+  } catch { return []; }
+}
+function saveCustomColors(colors: string[]) {
+  localStorage.setItem(CUSTOM_COLORS_KEY, JSON.stringify(colors));
+}
+function normalizeHex(input: string): string | null {
+  let v = input.trim().replace(/^#/, '');
+  if (/^[0-9a-fA-F]{3}$/.test(v)) v = v.split('').map((c) => c + c).join('');
+  if (!/^[0-9a-fA-F]{6}$/.test(v)) return null;
+  return `#${v.toLowerCase()}`;
+}
 
 /** Current theme's own colors — lets you paint something the same color the
  *  theme uses by default (table headers, body text, …). Read at open time so
@@ -401,11 +427,30 @@ export function ColorPicker({ anchor, onChange, onClose, label, value }: {
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ top: 0, left: 0 });
+  const [custom, setCustom] = useState<string[]>(loadCustomColors);
+  const [hexInput, setHexInput] = useState('');
+  const [hexError, setHexError] = useState(false);
+
+  const addCustom = (raw: string, apply = true) => {
+    const c = normalizeHex(raw);
+    if (!c) { setHexError(true); return; }
+    setHexError(false);
+    const next = [...custom.filter((x) => x !== c), c].slice(-14);
+    setCustom(next);
+    saveCustomColors(next);
+    setHexInput('');
+    if (apply) { onChange(c); onClose(); }
+  };
+  const removeCustom = (c: string) => {
+    const next = custom.filter((x) => x !== c);
+    setCustom(next);
+    saveCustomColors(next);
+  };
 
   useEffect(() => {
     if (!anchor) return;
     const rect = anchor.getBoundingClientRect();
-    const pickerH = 230;
+    const pickerH = 330;
     const pickerW = 192;
     let top = rect.top - 4;
     let left = rect.left;
@@ -460,6 +505,53 @@ export function ColorPicker({ anchor, onChange, onClose, label, value }: {
             style={{ background: s.color }}
           />
         ))}
+      </div>
+      <div className="text-[10px] text-ink-3 mt-1.5 mb-1">내 색상 <span className="opacity-60">(우클릭 삭제)</span></div>
+      {custom.length > 0 && (
+        <div className="grid grid-cols-7 gap-1 mb-1">
+          {custom.map((c) => (
+            <button
+              key={c}
+              title={`${c} — 우클릭으로 삭제`}
+              onClick={() => { onChange(c); onClose(); }}
+              onContextMenu={(e) => { e.preventDefault(); removeCustom(c); }}
+              className={`w-5 h-5 rounded border transition-transform hover:scale-110 ${
+                value === c ? 'border-ink ring-1 ring-chrome' : 'border-border'
+              }`}
+              style={{ background: c }}
+            />
+          ))}
+        </div>
+      )}
+      <div className="flex items-center gap-1">
+        <input
+          type="text"
+          value={hexInput}
+          onChange={(e) => { setHexInput(e.target.value); setHexError(false); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustom(hexInput); } e.stopPropagation(); }}
+          placeholder="#HEX 입력"
+          spellCheck={false}
+          className={`flex-1 min-w-0 text-[10px] px-1.5 py-0.5 rounded border bg-paper text-ink placeholder:text-ink-3 outline-none ${
+            hexError ? 'border-red-400' : 'border-border focus:border-chrome'
+          }`}
+        />
+        <label
+          className="w-5 h-5 rounded border border-border cursor-pointer overflow-hidden relative shrink-0"
+          title="색상 고르기"
+          style={{ background: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)' }}
+        >
+          <input
+            type="color"
+            className="absolute inset-0 opacity-0 cursor-pointer"
+            onChange={(e) => addCustom(e.target.value)}
+          />
+        </label>
+        <button
+          onClick={() => addCustom(hexInput)}
+          className="text-[10px] px-1.5 py-0.5 rounded border border-border text-ink-2 hover:bg-paper-soft transition-colors shrink-0"
+        >
+          추가
+        </button>
       </div>
       <button
         onClick={() => { onChange(''); onClose(); }}

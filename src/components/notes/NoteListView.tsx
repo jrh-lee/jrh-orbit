@@ -30,6 +30,7 @@ import { extractGuideMap } from '../editor/extensions/SectionGuide';
 import { useConfigStore } from '../../stores/useConfigStore';
 import { Dropdown } from '../ui/Dropdown';
 import type { NoteType, NoteStatus } from '../../types/note';
+import { tagBg } from '../../lib/colorUtils';
 
 const NOTELIST_MIN = 160;
 const NOTELIST_MAX = 400;
@@ -1521,7 +1522,8 @@ ${content}
                     {meta.tags.map(tag => (
                       <span
                         key={tag}
-                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] rounded-full bg-pastel-lavender/30 text-tag-text"
+                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] rounded-full text-tag-text"
+                        style={{ background: tagBg(tag) }}
                       >
                         {tag}
                         <button

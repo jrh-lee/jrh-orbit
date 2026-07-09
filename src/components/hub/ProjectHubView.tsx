@@ -10,6 +10,7 @@ import { buildFrontmatter } from '../../lib/frontmatter';
 import { todayKey } from '../../lib/dateUtils';
 import { reindexNote } from '../../lib/searchIndex';
 import { stripInlineMarkdown } from '../../lib/taskSync';
+import { tagBg } from '../../lib/colorUtils';
 import type { TodosFile } from '../../types/task';
 import { experimentEmoji } from '../../types/experiment';
 import { TopicMap } from './TopicMap';
@@ -204,9 +205,10 @@ export function ProjectHubView() {
               onClick={() => toggleFilterTag(tag)}
               className={`px-2 py-0.5 text-[10px] rounded-full border transition-colors ${
                 filterTags.includes(tag)
-                  ? 'bg-chrome/30 border-chrome/50 text-ink font-medium'
-                  : 'border-border text-ink-3 hover:text-ink-2 hover:bg-paper-muted/50'
+                  ? 'border-chrome/50 text-ink font-medium'
+                  : 'border-border text-ink-3 hover:text-ink-2'
               }`}
+              style={{ background: filterTags.includes(tag) ? tagBg(tag) : undefined }}
             >
               {tag}
             </button>

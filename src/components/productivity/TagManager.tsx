@@ -7,6 +7,7 @@ import { splitFrontmatter, parseFrontmatterFields } from '../../lib/frontmatter'
 import { readJsonFile } from '../../lib/fileSystem';
 import { FOLDERS, FILES } from '../../lib/constants';
 import type { TodosFile } from '../../types/task';
+import { tagBg } from '../../lib/colorUtils';
 
 interface TagInfo {
   name: string;
@@ -104,9 +105,8 @@ export function TagManager() {
             <button
               key={t.name}
               onClick={() => handleTagClick(t)}
-              className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] rounded-full text-tag-text hover:opacity-70 transition-opacity cursor-pointer ${
-                taskOnly ? 'bg-chrome/15' : 'bg-pastel-lavender/30'
-              }`}
+              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] rounded-full text-tag-text hover:opacity-70 transition-opacity cursor-pointer"
+              style={{ background: tagBg(t.name) }}
               title={taskOnly
                 ? `Filter tasks by "${t.name}" (tasks only)`
                 : `Filter notes by "${t.name}"${t.taskCount > 0 ? ` (+${t.taskCount} tasks)` : ''}`}

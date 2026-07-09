@@ -12,6 +12,7 @@ import { Dropdown, type DropdownOption } from '../ui/Dropdown';
 import { todayKey } from '../../lib/dateUtils';
 import type { Task, TodosFile, TaskStatus, TaskPriority, Subtask } from '../../types/task';
 import type { ProjectsFile } from '../../types/project';
+import { tagBg } from '../../lib/colorUtils';
 // TaskCalendar moved to SidebarMode
 
 function generateId() {
@@ -286,7 +287,7 @@ export function TaskListView() {
           {filterTag && (
             <>
               <span className="w-px h-4 bg-border mx-1" />
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] rounded-full bg-pastel-lavender/30 text-tag-text">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] rounded-full text-tag-text" style={{ background: tagBg(filterTag) }}>
                 #{filterTag}
                 <button onClick={() => setFilterTag(null)} className="hover:text-red-400 ml-0.5">&times;</button>
               </span>
@@ -545,7 +546,7 @@ function TaskRow({ task, projects, isEditing, onToggleEdit, onCycleStatus, onUpd
         {(task.tags?.length ?? 0) > 0 && (
           <span className="hidden sm:flex items-center gap-0.5 shrink-0">
             {task.tags!.slice(0, 2).map(t => (
-              <span key={t} className="px-1 py-0 text-[9px] rounded bg-pastel-lavender/20 text-ink-3">{t}</span>
+              <span key={t} className="px-1 py-0 text-[9px] rounded text-ink-3" style={{ background: tagBg(t) }}>{t}</span>
             ))}
             {task.tags!.length > 2 && <span className="text-[9px] text-ink-3">+{task.tags!.length - 2}</span>}
           </span>
@@ -917,7 +918,7 @@ function ItemEditor({ item, projects, onUpdate, onClose, dataDir, compact }: {
         <span className={`${sz} text-ink-3 uppercase tracking-wider ${labelW} shrink-0 pt-1`}>Tags</span>
         <div className="flex-1 flex items-center gap-1 flex-wrap">
           {tags.map(tag => (
-            <span key={tag} className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 ${sz} rounded-full bg-pastel-lavender/30 text-tag-text`}>
+            <span key={tag} className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 ${sz} rounded-full text-tag-text`} style={{ background: tagBg(tag) }}>
               {tag}<button onClick={() => onUpdate({ tags: tags.filter(t => t !== tag) })} className="hover:text-red-400 ml-0.5">&times;</button>
             </span>
           ))}
