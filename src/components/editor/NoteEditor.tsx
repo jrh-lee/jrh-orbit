@@ -718,9 +718,30 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
     const dom = editor.view.nodeDOM(pos);
     const el = dom instanceof HTMLElement ? dom : (dom as Node | null)?.parentElement ?? null;
     if (!el) return false;
+    // 부드러운 스크롤 유지 — 플래시는 스크롤이 "도착한 뒤" 시작해야 보인다
+    const startFlash = () => {
+      el.classList.add('block-link-flash');
+      setTimeout(() => el.classList.remove('block-link-flash'), 2600);
+    };
+    const scroller = el.closest('.overflow-y-auto') as HTMLElement | null;
+    const sr = scroller?.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    const alreadyVisible = !!sr && r.top >= sr.top && r.bottom <= sr.bottom;
     el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    el.classList.add('block-link-flash');
-    setTimeout(() => el.classList.remove('block-link-flash'), 1600);
+    if (alreadyVisible || !scroller) {
+      startFlash();
+    } else {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        scroller.removeEventListener('scrollend', finish);
+        startFlash();
+      };
+      scroller.addEventListener('scrollend', finish, { once: true });
+      // 스크롤 거리가 짧아 scrollend가 안 오는 경우 폴백
+      setTimeout(finish, 1200);
+    }
     return true;
   }, [editor]);
   scrollToAnchorRef.current = scrollToAnchor;
