@@ -50,23 +50,50 @@ export function BackupSection() {
     setConfirming(null);
   }, [dataDir, busy]);
 
+  const backupNow = useCallback(async () => {
+    if (!dataDir || busy) return;
+    setBusy(true);
+    setMessage('');
+    try {
+      const backupRoot = await join(dataDir, 'backups');
+      const stamp = `${format(new Date(), 'yyyy-MM-dd_HHmmss')}_manual`;
+      const count = await invoke<number>('snapshot_data', { dataDir, backupRoot, stamp, keep: 30 });
+      setMessage(`스냅샷 생성 완료 (${count}개 파일)`);
+      await load();
+    } catch (e) {
+      setMessage(`백업 실패: ${e instanceof Error ? e.message : e}`);
+    }
+    setBusy(false);
+  }, [dataDir, busy, load]);
+
   const fmtStamp = (s: string) => {
     // 2026-07-09_142028 → 2026-07-09 14:20
     const m = s.match(/^(\d{4}-\d{2}-\d{2})_(\d{2})(\d{2})/);
     const label = m ? `${m[1]} ${m[2]}:${m[3]}` : s;
-    return s.endsWith('_pre-restore') ? `${label} (복원 전 자동 보존)` : label;
+    if (s.endsWith('_pre-restore')) return `${label} (복원 전 자동 보존)`;
+    if (s.endsWith('_manual')) return `${label} (수동)`;
+    return label;
   };
-
-  if (!snapshots.length) {
-    return <p className="text-xs text-ink-3">아직 스냅샷이 없습니다. 백업은 하루 한 번 자동으로 생성됩니다.</p>;
-  }
 
   return (
     <div className="space-y-1.5">
-      <p className="text-xs text-ink-3">
-        하루 한 번 자동 생성되는 스냅샷입니다. 복원하면 해당 시점의 노트/데이터가 현재 파일을
-        덮어씁니다 (스냅샷 이후 새로 만든 파일은 유지). 복원 직전 상태도 자동 보존됩니다.
-      </p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs text-ink-3">
+          하루 한 번 자동 생성되는 스냅샷입니다. 복원하면 해당 시점의 노트/데이터가 현재 파일을
+          덮어씁니다 (스냅샷 이후 새로 만든 파일은 유지). 복원 직전 상태도 자동 보존됩니다.
+        </p>
+        <button
+          onClick={backupNow}
+          disabled={busy}
+          className="px-2.5 py-1 text-[11px] rounded-lg border border-border text-ink-2 hover:bg-paper-soft transition-colors disabled:opacity-50 shrink-0"
+        >
+          {busy ? '백업 중...' : '지금 백업 만들기'}
+        </button>
+      </div>
+      {!snapshots.length && (
+        <p className="text-xs text-ink-3">아직 스냅샷이 없습니다.</p>
+      )}
+      {snapshots.length > 0 && (
       <div className="max-h-56 overflow-y-auto space-y-0.5 border border-border rounded-lg p-1.5">
         {snapshots.map((s) => (
           <div key={s} className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-paper-soft/60">
@@ -101,6 +128,7 @@ export function BackupSection() {
           </div>
         ))}
       </div>
+      )}
       {message && <p className="text-xs text-ink-2">{message}</p>}
     </div>
   );
