@@ -200,8 +200,8 @@ export function GraphView() {
           </span>
         </div>
 
-        <span className="text-[10px] text-ink-3 ml-2 tabular-nums">
-          {filtered.nodes.length} / {graphData?.nodes.length ?? 0}
+        <span className="text-[10px] text-ink-3 ml-2 tabular-nums" title="노트 수 (Daily Log 제외)">
+          {filtered.nodes.filter((n) => n.type !== 'daily-log').length} / {graphData?.nodes.filter((n) => n.type !== 'daily-log').length ?? 0}
         </span>
       </div>
 

@@ -2,14 +2,21 @@ import { useCallback, useEffect, useState } from 'react';
 import { useAppStore } from '../../stores/useAppStore';
 import { useProjectStore } from '../../stores/useProjectStore';
 import { useTaskStore } from '../../stores/useTaskStore';
+import { useExperimentStore, experimentsForProject } from '../../stores/useExperimentStore';
+import { experimentEmoji } from '../../types/experiment';
 import { findNotesForProject, type HubNoteRow } from '../../lib/db';
 import clsx from 'clsx';
 
 export function SidebarProjectTree() {
-  const { view, setView, setActiveProject, openNote, openProjectHub, hubTarget } = useAppStore();
+  const { view, setView, setActiveProject, openNote, openProjectHub, openExperimentHub, hubTarget, dataDir } = useAppStore();
   const { projects } = useProjectStore();
   const { filterProject, setFilterProject } = useTaskStore();
+  const experiments = useExperimentStore((s) => s.experiments);
   const [dashboards, setDashboards] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (dataDir) useExperimentStore.getState().load(dataDir).catch(() => {});
+  }, [dataDir]);
 
   useEffect(() => {
     let cancelled = false;
@@ -129,6 +136,24 @@ export function SidebarProjectTree() {
                     <span>🛰️</span> Dashboard
                   </button>
                 )}
+                {experimentsForProject(experiments, project.id).map((ex) => (
+                  <button
+                    key={ex.id}
+                    onClick={() => openExperimentHub(ex.name, project.name)}
+                    className={clsx(
+                      'flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] transition-colors min-w-0',
+                      view === 'hub' && hubTarget?.type === 'experiment' && hubTarget.name === ex.name
+                        ? 'text-chrome font-medium bg-chrome/10'
+                        : ex.status === 'active'
+                          ? 'text-ink-3 hover:text-ink-2 hover:bg-paper-muted/30'
+                          : 'text-ink-3/60 hover:text-ink-3 hover:bg-paper-muted/30',
+                    )}
+                    title={ex.name}
+                  >
+                    <span>{experimentEmoji(ex.name)}</span>
+                    <span className="truncate">{ex.name}</span>
+                  </button>
+                ))}
               </div>
             )}
           </div>

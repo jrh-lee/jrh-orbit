@@ -156,7 +156,8 @@ function WorkhourByDayChart({ data, period }: { data: WorkhourByDay[]; period: '
               contentStyle={{ background: 'var(--color-paper)', border: '1px solid var(--color-border)', borderRadius: 8, fontSize: 11 }}
             />
             <Bar yAxisId="h" dataKey="hours" name="Work (h)" fill="var(--color-pastel-mint)" radius={[4, 4, 0, 0]} />
-            <Bar yAxisId="n" dataKey="notes" name="Notes" fill="var(--color-pastel-lavender)" radius={[3, 3, 0, 0]} />
+            <Bar yAxisId="n" dataKey="createdNotes" name="노트 생성" stackId="notes" fill="var(--color-pastel-lavender)" />
+            <Bar yAxisId="n" dataKey="editedNotes" name="노트 수정" stackId="notes" fill="var(--color-pastel-blue)" radius={[3, 3, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -495,9 +496,9 @@ function DashboardPanel() {
           sub={`${stats.workhourByProject.length} projects`}
         />
         <StatCard
-          label="Notes Created"
-          value={String(stats.totalNotes)}
-          sub={`${Object.keys(stats.notesByType).length} types`}
+          label="Notes"
+          value={`${stats.totalNotes + stats.editedNotes}`}
+          sub={`생성 ${stats.totalNotes} · 수정 ${stats.editedNotes}`}
         />
         {period === 'month' && heatmap.length > 0 ? (
           <>

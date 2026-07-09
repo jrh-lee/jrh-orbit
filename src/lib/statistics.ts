@@ -13,6 +13,8 @@ export interface DashboardStats {
   totalWorkhour: number;
   notesByType: Record<string, number>;
   totalNotes: number;
+  /** 기간 내 수정된 노트 수 (기간 내 생성분 제외, daily 제외) */
+  editedNotes: number;
   todoCompletionRate: number;
   todoTotal: number;
   todoDone: number;
@@ -220,6 +222,15 @@ export async function getDashboardStats(
   const rangeNotes = filterByDateRange(allNotes, range);
   const totalWorkhour = workhourByProject.reduce((s, w) => s + w.hours, 0);
 
+  const rangeStartStr = format(range.start, 'yyyy-MM-dd');
+  const rangeEndStr = format(range.end, 'yyyy-MM-dd');
+  const editedNotes = allNotes.filter(n => {
+    if (n.type === 'daily-log') return false;
+    const upd = n.updated?.slice(0, 10) ?? '';
+    // 기간 내 수정됐지만 기간 내 생성분은 제외 (생성 카드와 이중 계산 방지)
+    return upd >= rangeStartStr && upd <= rangeEndStr && !(n.date >= rangeStartStr && n.date <= rangeEndStr);
+  }).length;
+
   const notesByType: Record<string, number> = {};
   for (const n of rangeNotes) {
     if (n.type === 'daily-log') continue;
@@ -248,6 +259,7 @@ export async function getDashboardStats(
     totalWorkhour,
     notesByType,
     totalNotes: rangeNotes.filter(n => n.type !== 'daily-log').length,
+    editedNotes,
     todoCompletionRate: todos.length > 0 ? todoDone / todos.length : -1,
     todoTotal: todos.length,
     todoDone,
@@ -267,7 +279,10 @@ export interface WorkhourByDay {
   day: string;
   dayIndex: number;
   hours: number;
+  /** createdNotes + editedNotes */
   notes: number;
+  createdNotes: number;
+  editedNotes: number;
   date?: string;
 }
 
@@ -286,12 +301,15 @@ export async function getWorkhourByDay(
       let mins = 0;
       try { mins = (await loadDailyWorkhour(dataDir, dk)).total_minutes; } catch {}
       const dow = getDay(day);
-      const dayNotes = allNotes.filter(n => n.date === dk && n.type !== 'daily-log').length;
+      const created = allNotes.filter(n => n.type !== 'daily-log' && n.date === dk).length;
+      const edited = allNotes.filter(n => n.type !== 'daily-log' && n.updated?.slice(0, 10) === dk && n.date !== dk).length;
       return {
         day: `${DAY_LABELS[dow]} ${format(day, 'M/d')}`,
         dayIndex: dow,
         hours: Math.round(mins / 6) / 10,
-        notes: dayNotes,
+        notes: created + edited,
+        createdNotes: created,
+        editedNotes: edited,
         date: dk,
       };
     }));
@@ -302,7 +320,8 @@ export async function getWorkhourByDay(
   const days = eachDayOfInterval({ start: range.start, end: range.end });
   const firstWeek = getISOWeek(range.start);
   const weekMap = new Map<number, number>();
-  const weekNoteMap = new Map<number, number>();
+  const weekCreatedMap = new Map<number, number>();
+  const weekEditedMap = new Map<number, number>();
 
   for (const day of days) {
     const dk = format(day, 'yyyy-MM-dd');
@@ -311,8 +330,10 @@ export async function getWorkhourByDay(
       const daily = await loadDailyWorkhour(dataDir, dk);
       weekMap.set(week, (weekMap.get(week) ?? 0) + daily.total_minutes);
     } catch {}
-    const dayNotes = allNotes.filter(n => n.date === dk && n.type !== 'daily-log').length;
-    weekNoteMap.set(week, (weekNoteMap.get(week) ?? 0) + dayNotes);
+    const created = allNotes.filter(n => n.type !== 'daily-log' && n.date === dk).length;
+    const edited = allNotes.filter(n => n.type !== 'daily-log' && n.updated?.slice(0, 10) === dk && n.date !== dk).length;
+    weekCreatedMap.set(week, (weekCreatedMap.get(week) ?? 0) + created);
+    weekEditedMap.set(week, (weekEditedMap.get(week) ?? 0) + edited);
   }
 
   const maxWeek = Math.max(...weekMap.keys(), Math.ceil(days.length / 7));
@@ -320,7 +341,9 @@ export async function getWorkhourByDay(
     day: `${i + 1}주차`,
     dayIndex: i + 1,
     hours: Math.round((weekMap.get(i + 1) ?? 0) / 6) / 10,
-    notes: weekNoteMap.get(i + 1) ?? 0,
+    notes: (weekCreatedMap.get(i + 1) ?? 0) + (weekEditedMap.get(i + 1) ?? 0),
+    createdNotes: weekCreatedMap.get(i + 1) ?? 0,
+    editedNotes: weekEditedMap.get(i + 1) ?? 0,
   }));
 }
 
