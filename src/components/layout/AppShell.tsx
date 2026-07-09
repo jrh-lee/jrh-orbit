@@ -73,6 +73,14 @@ export function AppShell() {
     }
   }, [dataDir]);
 
+  // 앱을 켜둔 채 날짜가 넘어가도 그날 백업이 생기도록 주기 재확인
+  // (runDailyBackup 내부의 하루 1회 가드가 중복 실행을 막는다)
+  useEffect(() => {
+    if (!dataDir) return;
+    const timer = setInterval(() => { runDailyBackup(dataDir).catch(() => {}); }, 60 * 60_000);
+    return () => clearInterval(timer);
+  }, [dataDir]);
+
   useEffect(() => {
     applyConfig();
   }, [applyConfig]);
