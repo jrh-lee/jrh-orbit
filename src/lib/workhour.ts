@@ -1,14 +1,16 @@
 import { format } from 'date-fns';
 import { readJsonFile, writeJsonFile } from './fileSystem';
 import { FOLDERS } from './constants';
+import { workdayKey } from './dateUtils';
 import type { DailyWorkhourFile, WorkhourSession } from '../types/dataFiles';
 
 function workhourPath(dateKey: string): string {
   return `${FOLDERS.workhours}/${dateKey}.json`;
 }
 
+// 기본 날짜 키 = 근무일 키 (새벽 6시 경계) — 자정 넘어 기록해도 전날 파일에 쌓인다
 export async function loadDailyWorkhour(dataDir: string, dateKey?: string): Promise<DailyWorkhourFile> {
-  const key = dateKey ?? format(new Date(), 'yyyy-MM-dd');
+  const key = dateKey ?? workdayKey();
   const data = await readJsonFile<DailyWorkhourFile>(dataDir, workhourPath(key));
   return data ?? { date: key, sessions: [], total_minutes: 0 };
 }
@@ -18,7 +20,7 @@ export async function addWorkhourSession(
   session: WorkhourSession,
   dateKey?: string,
 ): Promise<DailyWorkhourFile> {
-  const key = dateKey ?? format(new Date(), 'yyyy-MM-dd');
+  const key = dateKey ?? workdayKey();
   const daily = await loadDailyWorkhour(dataDir, key);
   daily.sessions.push(session);
   daily.total_minutes = Math.max(0, daily.sessions.reduce((sum, s) => sum + s.durationMinutes, 0));

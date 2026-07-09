@@ -6,7 +6,7 @@ import { useConfigStore } from '../../stores/useConfigStore';
 import { MusicPlayer } from '../productivity/MusicPlayer';
 import { ManualWorkhour } from '../productivity/ManualWorkhour';
 import { loadDailyWorkhour } from '../../lib/workhour';
-import { format } from 'date-fns';
+import { workdayKey } from '../../lib/dateUtils';
 
 function formatTime(seconds: number) {
   const m = Math.floor(seconds / 60);
@@ -56,7 +56,7 @@ export function StatusBar() {
 
   useEffect(() => {
     if (!dataDir) return;
-    const dateKey = format(new Date(), 'yyyy-MM-dd');
+    const dateKey = workdayKey(); // 새벽 6시 경계 — 자정 넘어도 "오늘" 표시는 전날 근무분
     loadDailyWorkhour(dataDir, dateKey).then(d => {
       setTodayMinutes(d.total_minutes);
       const map = new Map<string, number>();

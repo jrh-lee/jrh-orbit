@@ -18,6 +18,7 @@ function liveUnrecordedMinutes(todayFileMinutes: number): number {
 }
 import { parseFrontmatterFields } from './frontmatter';
 import { loadDailyWorkhour } from './workhour';
+import { workdayKey } from './dateUtils';
 import { FOLDERS, FILES } from './constants';
 import { normalizeLegacyType, normalizeProject } from '../types/note';
 import type { TodosFile } from '../types/task';
@@ -228,7 +229,7 @@ export function calcStudyToApplication(notes: ParsedNoteMeta[]): number {
 async function collectWorkhour(dataDir: string, range: DateRange): Promise<{ project: string; hours: number }[]> {
   const days = eachDayOfInterval({ start: range.start, end: range.end });
   const projectMap = new Map<string, number>();
-  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  const todayStr = workdayKey(); // 새벽 6시 경계 — 자정 넘은 라이브 시간은 전날에 붙는다
   let todayTotal = 0;
   let rangeHasToday = false;
 
@@ -363,7 +364,7 @@ export async function getWorkhourByDay(
   if (period === 'week') {
     const range = { start: startOfWeek(now, { weekStartsOn: 1 }), end: endOfWeek(now, { weekStartsOn: 1 }) };
     const days = eachDayOfInterval({ start: range.start, end: range.end });
-    const todayStr = format(now, 'yyyy-MM-dd');
+    const todayStr = workdayKey();
     return Promise.all(days.map(async (day) => {
       const dk = format(day, 'yyyy-MM-dd');
       let mins = 0;
@@ -392,7 +393,7 @@ export async function getWorkhourByDay(
   const weekCreatedMap = new Map<number, number>();
   const weekEditedMap = new Map<number, number>();
 
-  const todayStr = format(now, 'yyyy-MM-dd');
+  const todayStr = workdayKey();
   for (const day of days) {
     const dk = format(day, 'yyyy-MM-dd');
     const week = getISOWeek(day) - firstWeek + 1;
@@ -469,7 +470,7 @@ export async function getMonthlyHeatmap(dataDir: string): Promise<WeeklyHeatmapC
   const firstWeek = getISOWeek(range.start);
   const cells: WeeklyHeatmapCell[] = [];
 
-  const todayStr = format(now, 'yyyy-MM-dd');
+  const todayStr = workdayKey();
   for (const day of days) {
     const dk = format(day, 'yyyy-MM-dd');
     let mins = 0;
@@ -512,7 +513,7 @@ export async function getFocusTimeDistribution(
   const projectSet = new Set<string>();
 
   if (period === 'week') {
-    const todayStr = format(now, 'yyyy-MM-dd');
+    const todayStr = workdayKey();
     const data: FocusTimeData[] = await Promise.all(days.map(async (day) => {
       const dk = format(day, 'yyyy-MM-dd');
       const entry: FocusTimeData = { day: `${DAY_LABELS[getDay(day)]}` };
@@ -540,7 +541,7 @@ export async function getFocusTimeDistribution(
 
   const firstWeek = getISOWeek(range.start);
   const weekMap = new Map<number, FocusTimeData>();
-  const todayStrM = format(now, 'yyyy-MM-dd');
+  const todayStrM = workdayKey();
 
   for (const day of days) {
     const dk = format(day, 'yyyy-MM-dd');

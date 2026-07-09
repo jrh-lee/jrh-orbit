@@ -1,14 +1,10 @@
 import { create } from 'zustand';
-import { format } from 'date-fns';
 import { addWorkhourSession, loadDailyWorkhour } from '../lib/workhour';
+import { workdayKey } from '../lib/dateUtils';
 import { useAppStore } from './useAppStore';
 
 const STORAGE_KEY = 'jrh-orbit-workhour-timer';
 const SAVE_EVERY_TICKS = 30;
-
-/** The work day rolls over at 06:00, not midnight — working past midnight
- *  still counts (and records) as the previous day. */
-const DAY_START_HOUR = 6;
 
 interface Saved {
   baseElapsed: number;
@@ -17,8 +13,9 @@ interface Saved {
   date: string;
 }
 
+/** 근무일 키 (새벽 6시 경계) — dateUtils.workdayKey로 통일 */
 function today(): string {
-  return format(new Date(Date.now() - DAY_START_HOUR * 3600 * 1000), 'yyyy-MM-dd');
+  return workdayKey();
 }
 
 function load(): Saved {
