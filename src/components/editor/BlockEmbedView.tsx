@@ -8,6 +8,7 @@ import container from 'markdown-it-container';
 import { getNoteByExactId } from '../../lib/db';
 import { useAppStore } from '../../stores/useAppStore';
 import { setupColumnsMarkdownIt } from './extensions/Columns';
+import { setupCalloutMarkdownIt } from './extensions/Callout';
 
 type EmbedState =
   | { status: 'loading' }
@@ -18,6 +19,7 @@ type EmbedState =
 function createRenderer(): MarkdownIt {
   const md = new MarkdownIt({ html: true, linkify: false });
   setupColumnsMarkdownIt(md);
+  setupCalloutMarkdownIt(md);
   md.use(container as any, 'toggle', {
     render(tokens: any[], idx: number) {
       return tokens[idx].nesting === 1 ? '<div class="md-toggle-static">\n' : '</div>\n';

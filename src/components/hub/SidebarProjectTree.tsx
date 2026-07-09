@@ -5,12 +5,39 @@ import { useTaskStore } from '../../stores/useTaskStore';
 import { useExperimentStore, experimentsForProject } from '../../stores/useExperimentStore';
 import { experimentEmoji } from '../../types/experiment';
 import { findNotesForProject, type HubNoteRow } from '../../lib/db';
+import { readJsonFile } from '../../lib/fileSystem';
+import { FILES } from '../../lib/constants';
+import type { TodosFile } from '../../types/task';
 import clsx from 'clsx';
 
 export function SidebarProjectTree() {
   const { view, setView, setActiveProject, openNote, openProjectHub, openExperimentHub, hubTarget, dataDir } = useAppStore();
   const { projects } = useProjectStore();
   const { filterProject, setFilterProject } = useTaskStore();
+  // 프로젝트별 3일 이내 마감(미완료) 여부 — 붉은 펄스 점 표시용.
+  // 스토어는 Tasks 탭을 열기 전엔 비어 있어 todos.json을 직접 읽는다.
+  const [dueSoon, setDueSoon] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!dataDir) return;
+    let cancelled = false;
+    const compute = async () => {
+      try {
+        const data = await readJsonFile<TodosFile>(dataDir, FILES.todos);
+        const today = new Date(new Date().toDateString()).getTime();
+        const s = new Set<string>();
+        for (const t of data?.todos ?? []) {
+          if (t.status === 'done' || !t.dueDate || !t.projectId) continue;
+          const daysLeft = Math.round((new Date(t.dueDate).getTime() - today) / 86400000);
+          if (daysLeft <= 3) s.add(t.projectId); // id 또는 레거시 이름 — 표시 시 둘 다 조회
+        }
+        if (!cancelled) setDueSoon(s);
+      } catch { /* keep previous */ }
+    };
+    compute();
+    window.addEventListener('tasks-changed', compute);
+    return () => { cancelled = true; window.removeEventListener('tasks-changed', compute); };
+  }, [dataDir]);
   const experiments = useExperimentStore((s) => s.experiments);
   const [dashboards, setDashboards] = useState<Record<string, string>>({});
   const [expOpen, setExpOpen] = useState<Record<string, boolean>>({});
@@ -95,6 +122,12 @@ export function SidebarProjectTree() {
                   style={{ backgroundColor: project.color }}
                 />
                 <span className="truncate">{project.name}</span>
+                {(dueSoon.has(project.id) || dueSoon.has(project.name)) && (
+                  <span
+                    className="w-1.5 h-1.5 rounded-full bg-badge-high animate-pulse shrink-0 ml-auto"
+                    title="3일 이내 마감 Task 있음"
+                  />
+                )}
               </button>
             </div>
 

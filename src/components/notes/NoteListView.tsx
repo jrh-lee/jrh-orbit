@@ -50,6 +50,8 @@ interface NoteEntry {
   tags: string[];
   status: NoteStatus;
   related: string[];
+  /** 노트별 커스텀 이모지 아이콘 (frontmatter icon) — 없으면 타입 아이콘 */
+  icon?: string;
 }
 
 interface NoteMeta {
@@ -251,6 +253,9 @@ export function NoteListView() {
   const [body, setBody] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [noteLinkCopied, setNoteLinkCopied] = useState(false);
+  const [noteIcon, setNoteIcon] = useState('');
+  const [iconPickerOpen, setIconPickerOpen] = useState(false);
+  const [iconInput, setIconInput] = useState('');
   const [meta, setMeta] = useState<NoteMeta>({ title: '', project: [], topic: '', experiment: '', subsystem: [], tags: [], status: 'draft' });
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
   const [tagInput, setTagInput] = useState('');
@@ -638,6 +643,7 @@ export function NoteListView() {
           let tags: string[] = [];
           let status: NoteStatus = 'draft';
           let related: string[] = [];
+          let icon = '';
           try {
             const raw = await invoke<string>('read_note', { path: f });
             const fields = parseFrontmatterFields(splitFrontmatter(raw).frontmatter);
@@ -653,8 +659,9 @@ export function NoteListView() {
             tags = Array.isArray(fields.tags) ? fields.tags : [];
             status = fields.status ?? 'draft';
             related = Array.isArray(fields.related) ? fields.related : (fields.related ? [fields.related] : []);
+            icon = fields.icon ?? '';
           } catch {}
-          return { path: f, filename, id, noteType, title, updated, created, project, topic, experiment, subsystem, tags, status, related };
+          return { path: f, filename, id, noteType, title, updated, created, project, topic, experiment, subsystem, tags, status, related, icon };
         }),
       );
 
@@ -680,6 +687,8 @@ export function NoteListView() {
       const fields = parseFrontmatterFields(frontmatter);
       const noteProject = normalizeProject(fields.project);
       setActiveNoteId(fields.id ?? '');
+      setNoteIcon(fields.icon ?? '');
+      setIconPickerOpen(false);
       setMeta({
         title: fields.title ?? 'Untitled',
         project: noteProject,
@@ -784,6 +793,19 @@ export function NoteListView() {
 
   function handleRemoveTag(tag: string) {
     updateMeta('tags', meta.tags.filter(t => t !== tag));
+  }
+
+  /** 노트별 이모지 아이콘 설정/해제 — frontmatter icon 필드 */
+  function updateNoteIcon(emoji: string) {
+    if (!activeNote) return;
+    const v = emoji.trim();
+    setNoteIcon(v);
+    setIconPickerOpen(false);
+    setIconInput('');
+    fmRef.current = updateFrontmatterField(fmRef.current, 'icon', v);
+    lastWriteTime.current = Date.now();
+    invoke('write_note', { path: activeNote, content: joinFrontmatter(fmRef.current, body) }).catch(() => {});
+    setNotes(prev => prev.map(n => (n.path === activeNote ? { ...n, icon: v } : n)));
   }
 
   const handleChange = useCallback(
@@ -1066,6 +1088,8 @@ p{margin:.25rem 0}
 .md-column{flex:1 1 0;min-width:0}
 .md-toggle-arrow{display:none}
 .md-toggle > *:nth-child(n+3){margin-left:14pt}
+.md-callout{position:relative;margin:6pt 0;padding:6pt 8pt 6pt 24pt;border-radius:6pt;background:#f4f4f4;page-break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.md-callout::before{content:attr(data-emoji);position:absolute;left:7pt;top:5pt}
 .katex,.math-display{page-break-inside:avoid}
 @media print{
   body{margin:0;padding:0}
@@ -1123,7 +1147,7 @@ ${content}
           style={indent ? { paddingLeft: 10 + indent * 12 } : undefined}
         >
           <div className="font-medium text-xs truncate pr-6">
-            <span className="mr-0.5">{typeIconMap[note.noteType] ?? NOTE_TYPE_ICONS[note.noteType as NoteType] ?? '📝'}</span>
+            <span className="mr-0.5">{note.icon || (typeIconMap[note.noteType] ?? NOTE_TYPE_ICONS[note.noteType as NoteType] ?? '📝')}</span>
             {note.title}
           </div>
           {note.updated && (
@@ -1438,6 +1462,50 @@ ${content}
             )}
             <div className="pl-10 pr-6 py-3.5 border-b border-border bg-paper shrink-0 space-y-2.5">
               <div className="flex items-center gap-2">
+                <div className="relative shrink-0">
+                  <button
+                    onClick={() => { setIconPickerOpen(v => !v); setIconInput(''); }}
+                    title="노트 아이콘 설정"
+                    className="px-1.5 py-0.5 text-base rounded hover:bg-paper-soft transition-colors"
+                  >
+                    {noteIcon || typeIconMap[notes.find(n => n.path === activeNote)?.noteType ?? ''] || '📝'}
+                  </button>
+                  {iconPickerOpen && (
+                    <div className="absolute top-full left-0 mt-1 z-50 bg-paper border border-border rounded-lg shadow-lg p-2 w-44">
+                      <div className="text-[10px] text-ink-3 mb-1">이모지 입력 후 Enter</div>
+                      <input
+                        autoFocus
+                        value={iconInput}
+                        onChange={e => setIconInput(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && iconInput.trim()) updateNoteIcon(iconInput);
+                          if (e.key === 'Escape') setIconPickerOpen(false);
+                        }}
+                        placeholder="🛰️"
+                        className="w-full text-sm px-2 py-1 rounded border border-border bg-paper text-ink outline-none focus:border-chrome"
+                      />
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        {['🛰️', '🔭', '📡', '🧪', '📐', '🧭', '⚙️', '🗂️', '💡', '⭐'].map(em => (
+                          <button
+                            key={em}
+                            onClick={() => updateNoteIcon(em)}
+                            className="w-6 h-6 rounded hover:bg-paper-soft transition-colors"
+                          >
+                            {em}
+                          </button>
+                        ))}
+                      </div>
+                      {noteIcon && (
+                        <button
+                          onClick={() => updateNoteIcon('')}
+                          className="mt-1.5 w-full text-[10px] text-ink-3 hover:text-ink-2 py-0.5 rounded border border-border/60 hover:bg-paper-soft transition-colors"
+                        >
+                          기본 아이콘으로
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
                 <input
                   value={meta.title}
                   onChange={e => updateMeta('title', e.target.value)}

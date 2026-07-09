@@ -58,6 +58,18 @@ const ITEMS: SlashItem[] = [
     run: (e, r) => (e.chain().focus().deleteRange(r) as any).insertToggle().run(),
   },
   {
+    title: '콜아웃', icon: '💡', keywords: ['callout', '콜아웃', '강조', 'note', '발견'],
+    run: (e, r) => (e.chain().focus().deleteRange(r) as any).insertCallout('💡').run(),
+  },
+  {
+    title: '콜아웃 (주의)', icon: '⚠️', keywords: ['callout', '콜아웃', '주의', 'warning', '경고'],
+    run: (e, r) => (e.chain().focus().deleteRange(r) as any).insertCallout('⚠️', 'rgba(224, 108, 117, 0.12)').run(),
+  },
+  {
+    title: '콜아웃 (결론)', icon: '✅', keywords: ['callout', '콜아웃', '결론', 'done', 'check', '확인'],
+    run: (e, r) => (e.chain().focus().deleteRange(r) as any).insertCallout('✅', 'rgba(152, 195, 121, 0.14)').run(),
+  },
+  {
     title: '2단 컬럼', icon: '▥', keywords: ['columns', 'col', '2단', '단', '컬럼', '분할'],
     run: (e, r) => (e.chain().focus().deleteRange(r) as any).insertColumns(2).run(),
   },

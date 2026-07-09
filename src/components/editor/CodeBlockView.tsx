@@ -45,8 +45,16 @@ export function CodeBlockView({ node, updateAttributes }: NodeViewProps) {
   const [mermaidSvg, setMermaidSvg] = useState('');
   const [mermaidErr, setMermaidErr] = useState('');
   const [showSource, setShowSource] = useState(false);
+  const [copied, setCopied] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const copyCode = useCallback(() => {
+    navigator.clipboard.writeText(node.textContent).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }).catch(() => {});
+  }, [node]);
 
   const renderMermaid = useCallback(async (code: string) => {
     if (!code.trim()) { setMermaidSvg(''); setMermaidErr(''); return; }
@@ -101,6 +109,19 @@ export function CodeBlockView({ node, updateAttributes }: NodeViewProps) {
           <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
             <path d="M2 3l2 2 2-2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
+        </button>
+        <button
+          className="code-block-copy-btn"
+          onClick={copyCode}
+          type="button"
+          title="코드 복사"
+        >
+          {copied ? '✓ 복사됨' : (
+            <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="4.5" y="4.5" width="8" height="8" rx="1.5" />
+              <path d="M9.5 4.5V3a1.5 1.5 0 0 0-1.5-1.5H3A1.5 1.5 0 0 0 1.5 3v5A1.5 1.5 0 0 0 3 9.5h1.5" />
+            </svg>
+          )}
         </button>
         {open && (
           <div className="code-block-lang-dropdown">

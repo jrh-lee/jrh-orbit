@@ -844,9 +844,44 @@ export const DragHandle = Extension.create({
           const onHover = (e: MouseEvent) => {
             if (editorView.dom.classList.contains('block-dragging')) { hideColHandle(); return; }
 
+            // 0) 토글 안 블록: 자식별로 개별 칩 (안쪽 슬롯). 첫 문단(요약 줄)은
+            //    아래 일반 케이스로 넘겨 토글 전체를 잡는다.
+            const togEl = ((e.target as HTMLElement)?.closest?.('.md-toggle, .md-column') as HTMLElement | null);
+            if (togEl?.classList.contains('md-toggle') && editorView.dom.contains(togEl)) {
+              try {
+                const $t = editorView.state.doc.resolve(editorView.posAtDOM(togEl, 0));
+                if ($t.parent.type.name === 'toggle') {
+                  let p = $t.start();
+                  let found: number | null = null;
+                  let foundDom: HTMLElement | null = null;
+                  let foundIdx = -1;
+                  $t.parent.forEach((child, _off, idx) => {
+                    if (found === null) {
+                      const dom = editorView.nodeDOM(p);
+                      if (dom instanceof HTMLElement) {
+                        const r = dom.getBoundingClientRect();
+                        if (e.clientY >= r.top && e.clientY <= r.bottom) {
+                          found = p; foundDom = dom; foundIdx = idx;
+                        }
+                      }
+                    }
+                    p += child.nodeSize;
+                  });
+                  if (found !== null && foundIdx > 0 && foundDom) {
+                    const tr = (foundDom as HTMLElement).getBoundingClientRect();
+                    showHandleAt(found, tr, tr.left - 17);
+                    return;
+                  }
+                }
+              } catch { /* 일반 케이스로 폴스루 */ }
+            }
+
             // 1) 컬럼 안 블록: 컬럼 노드의 자식들을 위치로 순회하며 DOM 일치로
             //    찾는다 (posAtDOM은 이미지 같은 리프 노드뷰에서 실패).
-            const colEl = (e.target as HTMLElement)?.closest?.('.md-column') as HTMLElement | null;
+            //    토글 요약 줄에서 폴스루된 경우, 그 토글이 컬럼 안이면 컬럼 케이스로.
+            const colEl = togEl?.classList.contains('md-column')
+              ? togEl
+              : ((togEl?.closest?.('.md-column') as HTMLElement | null) ?? null);
             if (colEl && editorView.dom.contains(colEl)) {
               let targetEl: HTMLElement | null = null;
               for (const child of Array.from(colEl.children) as HTMLElement[]) {

@@ -576,17 +576,24 @@ function TaskRow({ task, projects, isEditing, onToggleEdit, onCycleStatus, onUpd
           </span>
         )}
 
-        {/* Due date */}
-        {task.dueDate && (
-          <button
-            className={`text-[10px] font-mono shrink-0 px-1 py-0.5 rounded transition-colors hover:bg-paper-soft ${
-              new Date(task.dueDate) < new Date(new Date().toDateString()) ? 'text-badge-high' : 'text-ink-3'
-            }`}
-            title={`Due: ${task.dueDate}`}
-          >
-            {new Date(task.dueDate).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })}
-          </button>
-        )}
+        {/* Due date — 3일 이내 마감(미완료)은 붉은 펄스 점으로 경고 */}
+        {task.dueDate && (() => {
+          const today = new Date(new Date().toDateString());
+          const due = new Date(task.dueDate);
+          const daysLeft = Math.round((due.getTime() - today.getTime()) / 86400000);
+          const urgent = task.status !== 'done' && daysLeft <= 3;
+          return (
+            <button
+              className={`text-[10px] font-mono shrink-0 px-1 py-0.5 rounded transition-colors hover:bg-paper-soft flex items-center gap-1 ${
+                daysLeft < 0 ? 'text-badge-high' : urgent ? 'text-badge-high/90' : 'text-ink-3'
+              }`}
+              title={`Due: ${task.dueDate}${urgent ? ` (${daysLeft < 0 ? `${-daysLeft}일 지남` : daysLeft === 0 ? '오늘 마감' : `D-${daysLeft}`})` : ''}`}
+            >
+              {urgent && <span className="w-1.5 h-1.5 rounded-full bg-badge-high animate-pulse shrink-0" />}
+              {due.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })}
+            </button>
+          );
+        })()}
 
         {/* Priority */}
         <button

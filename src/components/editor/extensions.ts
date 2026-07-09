@@ -26,6 +26,7 @@ import { HeadingFold } from './extensions/HeadingFold';
 import { SlashCommand } from './extensions/SlashCommand';
 import { Columns, Column } from './extensions/Columns';
 import { Toggle } from './extensions/Toggle';
+import { Callout } from './extensions/Callout';
 import { BlockEmbed } from './extensions/BlockEmbed';
 import { common, createLowlight } from 'lowlight';
 import { CodeBlockView } from './CodeBlockView';
@@ -376,6 +377,7 @@ export function getExtensions(opts?: ExtensionOptions | string) {
     Columns,
     Column,
     Toggle,
+    Callout,
     BlockEmbed,
     Markdown.configure({
       html: true,
