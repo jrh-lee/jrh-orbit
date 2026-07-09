@@ -1187,6 +1187,29 @@ body.col-resizing * {
 .block-embed-missing {
   color: #c07070;
 }
+/* v2: 미러 편집 모드 — 원본 마크다운을 그 자리에서 수정 */
+.block-embed-textarea {
+  width: 100%;
+  min-height: 7rem;
+  resize: vertical;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  padding: 0.5rem 0.6rem;
+  outline: none;
+}
+.block-embed-textarea:focus {
+  border-color: var(--color-chrome);
+}
+.block-embed-edit-hint {
+  margin-top: 0.25rem;
+  font-size: 0.65rem;
+  color: var(--color-ink-3);
+}
 
 /* ── Block link target flash — 도착 블록을 박스로 확실히 강조 ── */
 @keyframes block-link-flash {

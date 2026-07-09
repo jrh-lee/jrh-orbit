@@ -604,6 +604,17 @@ export function NoteListView() {
     return () => window.removeEventListener('notes-changed', handler);
   }, [dataDir, activeNote]);
 
+  // 동기화 블록(미러)에서 원본을 역기입한 경우 — 그 원본이 지금 열려 있으면
+  // 즉시 다시 읽는다. 열린 에디터가 옛 내용으로 자동저장하면 역기입이 덮인다.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const path = (e as CustomEvent<{ path: string }>).detail?.path;
+      if (path && path === activeNote) handleSelectNote(activeNote);
+    };
+    window.addEventListener('note-external-edit', handler);
+    return () => window.removeEventListener('note-external-edit', handler);
+  });
+
   async function loadNotes() {
     if (!dataDir) return;
     try {

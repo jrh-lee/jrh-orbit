@@ -95,7 +95,8 @@ const HideBlockIds = Extension.create({
             state.doc.descendants((node, pos) => {
               if (!node.isTextblock) return true;
               const text = node.textContent;
-              const m = text.match(/\s\^[a-z0-9]{4,}$/);
+              // 마커가 연달아 붙을 수 있음 (편집으로 시작/끝 마커가 한 줄에 합쳐진 경우)
+              const m = text.match(/(\s\^[a-z0-9]{4,})+$/);
               if (m && m.index !== undefined) {
                 const from = pos + 1 + m.index;
                 decorations.push(Decoration.inline(from, from + m[0].length, { class: 'block-id-marker' }));

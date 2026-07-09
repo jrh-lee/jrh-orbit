@@ -801,6 +801,16 @@ export function DailyLog() {
     };
   }, [reloadDaily]);
 
+  // 동기화 블록(미러)에서 이 Daily를 역기입한 경우 즉시 다시 읽는다
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const path = (e as CustomEvent<{ path: string }>).detail?.path;
+      if (path && path.replace(/\\/g, '/').endsWith(`/${dateKey}.md`)) reloadDaily();
+    };
+    window.addEventListener('note-external-edit', handler);
+    return () => window.removeEventListener('note-external-edit', handler);
+  }, [dateKey, reloadDaily]);
+
   return (
     <div className="flex flex-col flex-1 min-h-0 min-w-0">
       <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-paper shrink-0">
