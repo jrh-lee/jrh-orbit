@@ -773,8 +773,9 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
     let href = raw.trim();
     if (!href) return;
     // 마크다운 링크 전체를 붙여넣은 경우 URL만 추출 —
-    // 안 그러면 "[제목](note://...)" 앞에 https://가 붙어 깨진다
-    const mdMatch = href.match(/^\[[^\]]*\]\((.+)\)\s*$/);
+    // 안 그러면 "[제목](note://...)" 앞에 https://가 붙어 깨진다.
+    // 라벨의 이스케이프된 대괄호(\[Trial#1\])도 통과해야 한다.
+    const mdMatch = href.match(/^\[(?:\\.|[^\]\\])*\]\((.+)\)\s*$/);
     if (mdMatch) href = mdMatch[1].trim();
     // Bare domains get https:// — note://, file paths, and full URLs pass through
     if (!/^[a-zA-Z][\w+.-]*:/.test(href) && !href.startsWith('/')) href = `https://${href}`;

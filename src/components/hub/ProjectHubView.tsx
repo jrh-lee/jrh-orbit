@@ -268,12 +268,16 @@ export function ProjectHubView() {
               지난 TODO ({data.doneTodos.length})
             </button>
             {showDone && (
-              <div className="mt-2 space-y-1">
+              <div className="mt-1">
                 {data.doneTodos.map((t) => (
-                  <div key={t.id} className="flex items-center gap-2 text-xs text-ink-3">
-                    <span className="text-chrome shrink-0">✓</span>
-                    <span className="line-through truncate">{t.title}</span>
-                    {t.endDate && <span className="text-[10px] shrink-0 ml-auto tabular-nums">{t.endDate}</span>}
+                  <div key={t.id} className="flex items-start gap-2 px-3 py-1.5 rounded-lg">
+                    <span className="mt-0.5 shrink-0 text-chrome text-xs">✓</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs text-ink-3 line-through truncate">{t.title}</div>
+                    </div>
+                    {t.endDate && (
+                      <span className="text-[10px] text-ink-3 shrink-0 tabular-nums">{t.endDate}</span>
+                    )}
                   </div>
                 ))}
               </div>
