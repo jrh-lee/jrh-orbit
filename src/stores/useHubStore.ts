@@ -56,6 +56,8 @@ interface ProjectHubData {
   timeline: TimelineEntry[];
   decisions: TimelineEntry[];
   todos: Task[];
+  /** 완료된 TODO — 하단 토글로 표시 (최근 완료순 최대 100개) */
+  doneTodos: Task[];
   /** Open main tasks + open subtasks */
   openTodoCount: number;
   milestones: DDayItem[];

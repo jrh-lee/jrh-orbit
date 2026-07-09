@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { join } from '@tauri-apps/api/path';
 import { useAppStore } from '../../stores/useAppStore';
@@ -58,6 +58,7 @@ function dashboardTemplate(projectName: string): string {
 
 export function ProjectHubView() {
   const { dataDir, openNote, openTopicHub, openExperimentHub, goHubLanding } = useAppStore();
+  const [showDone, setShowDone] = useState(false);
   const data = useHubStore((s) => s.projectHubData);
   const filterTags = useHubStore((s) => s.filterTags);
   const toggleFilterTag = useHubStore((s) => s.toggleFilterTag);
@@ -250,6 +251,35 @@ export function ProjectHubView() {
         <ProjectTimeline entries={filteredTimeline} onOpen={handleOpen} />
         <DecisionList decisions={filteredDecisions} onOpen={handleOpen} />
         <ProjectTodoList todos={data.todos} onToggle={handleToggleTodo} />
+
+        {data.doneTodos.length > 0 && (
+          <section className="px-6 pb-4">
+            <button
+              onClick={() => setShowDone(v => !v)}
+              className="flex items-center gap-1.5 text-[11px] font-semibold text-ink-3 uppercase tracking-wider hover:text-ink-2 transition-colors"
+            >
+              <svg
+                width="8" height="8" viewBox="0 0 10 10" fill="none" stroke="currentColor"
+                strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+                className={`shrink-0 transition-transform ${showDone ? 'rotate-90' : ''}`}
+              >
+                <path d="M3 1.5L7.5 5 3 8.5" />
+              </svg>
+              지난 TODO ({data.doneTodos.length})
+            </button>
+            {showDone && (
+              <div className="mt-2 space-y-1">
+                {data.doneTodos.map((t) => (
+                  <div key={t.id} className="flex items-center gap-2 text-xs text-ink-3">
+                    <span className="text-chrome shrink-0">✓</span>
+                    <span className="line-through truncate">{t.title}</span>
+                    {t.endDate && <span className="text-[10px] shrink-0 ml-auto tabular-nums">{t.endDate}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
       </div>
     </div>
   );

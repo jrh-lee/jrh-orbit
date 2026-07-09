@@ -539,6 +539,13 @@ img.ProseMirror-separator {
 }
 
 /* ── Task metadata hidden in checkboxes ── */
+.block-id-marker {
+  font-size: 0;
+  letter-spacing: -1px;
+  color: transparent;
+  user-select: none;
+}
+
 .task-id-hidden {
   font-size: 0;
   letter-spacing: -1px;

@@ -32,7 +32,11 @@ export async function initDataFiles(dataDir: string): Promise<void> {
 }
 
 export async function readNote(dataDir: string, relativePath: string): Promise<string> {
-  const path = await join(dataDir, relativePath);
+  // list_notes(Rust)는 절대 경로를 반환한다 — 절대 경로를 다시 join하면
+  // 잘못된 경로가 되어 모든 읽기가 조용히 실패한다 (통계의 노트 수가 항상
+  // 0이던 원인). 절대 경로는 그대로 사용.
+  const isAbsolute = /^[a-zA-Z]:[\\/]/.test(relativePath) || relativePath.startsWith('\\\\') || relativePath.startsWith('/');
+  const path = isAbsolute ? relativePath : await join(dataDir, relativePath);
   return invoke<string>('read_note', { path });
 }
 

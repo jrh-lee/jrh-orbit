@@ -357,7 +357,7 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
   const [wikiResults, setWikiResults] = useState<SearchResult[]>([]);
   const [wikiIndex, setWikiIndex] = useState(0);
   const wikiSearchRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; linkPos: number | null; linkHref: string | null; blockAnchor: string | null } | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; linkPos: number | null; linkHref: string | null; blockAnchor: string | null; blockPos: number | null } | null>(null);
   const ctxMenuRef = useRef<HTMLDivElement>(null);
   const [linkPrompt, setLinkPrompt] = useState<{ x: number; y: number; from: number; to: number } | null>(null);
   // The click handler lives in the useEditor config closure — read fresh
@@ -487,6 +487,7 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
           let linkPos: number | null = null;
           let linkHref: string | null = null;
           let blockAnchor: string | null = null;
+          let blockPos: number | null = null;
           const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
           if (at) {
             const node = view.state.doc.nodeAt(at.pos);
@@ -498,17 +499,20 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
               linkPos = at.pos;
               linkHref = linkMark.attrs.href ?? null;
             }
-            // Nearest textblock text = block-link anchor (text-prefix match on open)
+            // Nearest textblock = block-link target
             for (let d = $pos.depth; d > 0; d--) {
               const n = $pos.node(d);
               if (n.isTextblock) {
                 const text = n.textContent.trim();
-                if (text) blockAnchor = text.slice(0, 60);
+                if (text) {
+                  blockAnchor = text.slice(0, 60);
+                  blockPos = $pos.before(d);
+                }
                 break;
               }
             }
           }
-          setCtxMenu({ x: event.clientX, y: event.clientY, linkPos, linkHref, blockAnchor });
+          setCtxMenu({ x: event.clientX, y: event.clientY, linkPos, linkHref, blockAnchor, blockPos });
           return true;
         },
         click(view, event) {
@@ -687,7 +691,9 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
     return () => { editorRef.current = null; };
   }, [editor, editorRef]);
 
-  /** Find the block matching a block-link anchor (text prefix) and scroll to it. */
+  /** Find the block matching a block-link anchor and scroll to it.
+   *  `^abc123` 형태 = 영구 블록 ID 마커 (텍스트를 고쳐도 유지),
+   *  그 외 = 레거시 텍스트 프리픽스 매칭. */
   const scrollToAnchor = useCallback((anchor: string): boolean => {
     if (!editor) return false;
     const target = anchor.trim();
@@ -704,8 +710,10 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
       });
       return found;
     };
-    const pos = findBlock((t) => !!t && t.startsWith(target))
-      ?? findBlock((t) => !!t && t.includes(target.slice(0, 20)));
+    const pos = target.startsWith('^')
+      ? findBlock((t) => t.endsWith(target))
+      : (findBlock((t) => !!t && t.startsWith(target))
+        ?? findBlock((t) => !!t && t.includes(target.slice(0, 20))));
     if (pos === null) return false;
     const dom = editor.view.nodeDOM(pos);
     const el = dom instanceof HTMLElement ? dom : (dom as Node | null)?.parentElement ?? null;
@@ -764,6 +772,10 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
     if (!lp || !editor) return;
     let href = raw.trim();
     if (!href) return;
+    // 마크다운 링크 전체를 붙여넣은 경우 URL만 추출 —
+    // 안 그러면 "[제목](note://...)" 앞에 https://가 붙어 깨진다
+    const mdMatch = href.match(/^\[[^\]]*\]\((.+)\)\s*$/);
+    if (mdMatch) href = mdMatch[1].trim();
     // Bare domains get https:// — note://, file paths, and full URLs pass through
     if (!/^[a-zA-Z][\w+.-]*:/.test(href) && !href.startsWith('/')) href = `https://${href}`;
     if (lp.from !== lp.to) {
@@ -957,13 +969,25 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
                 key: '',
               },
             ]),
-            ...(noteId && ctxMenu.blockAnchor ? [
+            ...(noteId && ctxMenu.blockPos !== null ? [
               {
                 label: '블록 링크 복사',
                 action: () => {
-                  const text = ctxMenu.blockAnchor!;
-                  const label = text.length > 30 ? `${text.slice(0, 30)}…` : text;
-                  const md = `[${label.replace(/([\[\]])/g, '\\$1')}](note://${noteId}#${encodeURIComponent(text)})`;
+                  // 영구 블록 ID 마커(^abc123)를 블록 끝에 심어 링크가
+                  // 텍스트 수정에도 살아남게 한다 (Obsidian 방식)
+                  const pos = ctxMenu.blockPos!;
+                  const node = editor.state.doc.nodeAt(pos);
+                  if (!node?.isTextblock) return;
+                  const text = node.textContent;
+                  let bid = text.match(/\^([a-z0-9]{4,})\s*$/)?.[1];
+                  if (!bid) {
+                    bid = Math.random().toString(36).slice(2, 8);
+                    const insertPos = pos + 1 + node.content.size;
+                    editor.view.dispatch(editor.state.tr.insertText(` ^${bid}`, insertPos));
+                  }
+                  const plain = text.replace(/\s*\^[a-z0-9]{4,}\s*$/, '').trim();
+                  const label = plain.length > 30 ? `${plain.slice(0, 30)}…` : plain || '블록';
+                  const md = `[${label.replace(/([\[\]])/g, '\\$1')}](note://${noteId}#${encodeURIComponent(`^${bid}`)})`;
                   navigator.clipboard.writeText(md).catch(() => {});
                 },
                 key: '',

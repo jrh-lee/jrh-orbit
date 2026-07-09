@@ -187,6 +187,10 @@ export async function loadProjectHubData(dataDir: string, projectName: string) {
     (sum, t) => sum + 1 + (t.subtasks?.filter((st) => !st.done && st.status !== 'done').length ?? 0),
     0,
   );
+  const doneTodos = allTodos
+    .filter((t) => (t.projectId === projectName || (projectId && t.projectId === projectId)) && t.status === 'done')
+    .sort((a, b) => (b.endDate ?? '').localeCompare(a.endDate ?? ''))
+    .slice(0, 100);
 
   const links = linksFile || {};
   const topicLinkMap = new Map<string, number>();
@@ -231,6 +235,7 @@ export async function loadProjectHubData(dataDir: string, projectName: string) {
     timeline,
     decisions,
     todos: projectTodos,
+    doneTodos,
     openTodoCount,
     milestones,
     topicLinks,

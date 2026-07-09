@@ -80,6 +80,35 @@ const TightListSerializer = Extension.create({
 
 const TASK_META_RE = /^(\\?\[[^\]\\]+\\?\]\s*)?(\\?\(이월[^)]*\\?\)\s*)?(\\?\(시작 [^)]*\\?\)\s*)?/;
 
+/** 블록 링크의 영구 ID 마커(^abc123)를 화면에서 숨긴다 —
+ *  마크다운에는 남아 링크 대상 식별에 쓰인다 (Obsidian block id 방식) */
+const HideBlockIds = Extension.create({
+  name: 'hideBlockIds',
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: new PluginKey('hideBlockIds'),
+        props: {
+          decorations(state) {
+            const decorations: Decoration[] = [];
+            state.doc.descendants((node, pos) => {
+              if (!node.isTextblock) return true;
+              const text = node.textContent;
+              const m = text.match(/\s\^[a-z0-9]{4,}$/);
+              if (m && m.index !== undefined) {
+                const from = pos + 1 + m.index;
+                decorations.push(Decoration.inline(from, from + m[0].length, { class: 'block-id-marker' }));
+              }
+              return true;
+            });
+            return DecorationSet.create(state.doc, decorations);
+          },
+        },
+      }),
+    ];
+  },
+});
+
 const HideTaskMeta = Extension.create({
   name: 'hideTaskMeta',
   addProseMirrorPlugins() {
@@ -335,6 +364,7 @@ export function getExtensions(opts?: ExtensionOptions | string) {
       ? [SectionGuide.configure({ guideMap: sectionGuides })]
       : []),
     HideTaskMeta,
+    HideBlockIds,
     DragHandle,
     HeadingFold,
     SlashCommand,

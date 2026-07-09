@@ -65,6 +65,18 @@ export function AutoSuggestionBanner({
     readJsonFile<TagsFile>(dataDir, FILES.tags).then(t => setTagsFile(t));
   }, [dataDir]);
 
+  // 노트가 바뀌어도 컴포넌트는 리마운트되지 않아 dismissed가 이전 노트
+  // (또는 초기 빈 noteId) 것으로 남는다 — noteId 기준으로 다시 로드해야
+  // "Dismiss해도 계속 뜨는" 문제가 없다.
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(`suggestion-dismissed:${noteId}`);
+      setDismissed(stored ? new Set(JSON.parse(stored)) : new Set());
+    } catch {
+      setDismissed(new Set());
+    }
+  }, [noteId]);
+
   const dismiss = useCallback((id: string) => {
     setDismissed(prev => {
       const next = new Set([...prev, id]);
@@ -250,17 +262,20 @@ export function AutoSuggestionBanner({
       try {
         const related = await findNotesByTopic(topic, noteId);
         if (cancelled || related.length === 0) return;
+        // 이미 연결된 노트는 제외 — 전부 연결돼 있으면 제안 자체를 안 띄운다
+        // (예전엔 연결 후에도 계속 떠서 중복 링킹 위험)
+        const existing = await getForwardLinks(dataDir, noteId);
+        const fresh = related.filter(r => !existing.includes(r.id));
+        if (cancelled || fresh.length === 0) return;
 
         setSuggestions(prev => {
           if (prev.some(s => s.id === 'topic-link')) return prev;
           return [...prev, {
             id: 'topic-link',
             icon: '🔗',
-            message: `같은 topic (${topic})의 노트 ${related.length}개 발견`,
+            message: `같은 topic (${topic})의 미연결 노트 ${fresh.length}개 발견`,
             action: async () => {
-              const ids = related.map(r => r.id);
-              const existing = await getForwardLinks(dataDir, noteId);
-              const merged = [...new Set([...existing, ...ids])];
+              const merged = [...new Set([...existing, ...fresh.map(r => r.id)])];
               updateNoteLinks(dataDir, noteId, merged).catch(() => {});
               dismiss('topic-link');
             },
