@@ -110,6 +110,8 @@ export function DashboardView() {
   const [noteContents, setNoteContents] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+  // 프로젝트와 무관한 전역 공통 링크함 (id 고정: dashboard-global-links)
+  const [globalLinks, setGlobalLinks] = useState<{ path: string; content: string } | null>(null);
 
   useEffect(() => {
     if (!dataDir) return;
@@ -152,6 +154,20 @@ export function DashboardView() {
   }, [dataDir, projects, refreshKey]);
 
   useEffect(() => {
+    if (!dataDir) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const n = await getNoteByExactId('dashboard-global-links');
+        if (!n) { if (!cancelled) setGlobalLinks(null); return; }
+        const raw = await invoke<string>('read_note', { path: n.path });
+        if (!cancelled) setGlobalLinks({ path: n.path, content: stripFrontmatter(raw) });
+      } catch { if (!cancelled) setGlobalLinks(null); }
+    })();
+    return () => { cancelled = true; };
+  }, [dataDir, refreshKey]);
+
+  useEffect(() => {
     const handler = () => setRefreshKey(k => k + 1);
     window.addEventListener('notes-changed', handler);
     return () => window.removeEventListener('notes-changed', handler);
@@ -190,6 +206,32 @@ export function DashboardView() {
       invoke('open_path', { path: href }).catch(() => window.open(href, '_blank'));
     }
   }, [openNote]);
+
+  const handleCreateGlobalLinks = useCallback(async () => {
+    if (!dataDir) return;
+    const today = todayKey();
+    const iso = new Date().toISOString();
+    const noteId = 'dashboard-global-links';
+    const fm = buildFrontmatter({
+      id: noteId, type: 'project-dashboard', title: '공통 링크', date: today,
+      project: [], topic: '', tags: ['dashboard', 'global-links'],
+      related: [], status: 'in-progress', created: iso, updated: iso,
+    });
+    const body = [
+      '', '## 공통 링크', '',
+      '모든 프로젝트에서 공통으로 자주 보는 문서/링크를 모아둡니다.', '',
+      '- HK 정의: ',
+      '- App Table: ',
+      '- ',
+      '',
+    ].join('\n');
+    const fullPath = await join(dataDir, FOLDERS.research, `${noteId}.md`);
+    await invoke('ensure_dir', { path: await join(dataDir, FOLDERS.research) });
+    await invoke('write_note', { path: fullPath, content: fm + body });
+    reindexNote(fullPath, 'project-dashboard').catch(() => {});
+    window.dispatchEvent(new CustomEvent('notes-changed'));
+    openNote(fullPath);
+  }, [dataDir, openNote]);
 
   const handleCreate = useCallback(async (projectName: string, sectionKey: string) => {
     if (!dataDir) return;
@@ -262,6 +304,42 @@ export function DashboardView() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+        {/* 전역 공통 링크함 — 어떤 프로젝트 탭에서도 항상 맨 위 */}
+        <div className="border border-border rounded-lg overflow-hidden">
+          <div className="px-4 py-2 bg-paper-soft border-b border-border flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm font-medium text-ink">
+              <span>🔗</span>
+              <span>공통 링크</span>
+              <span className="text-[10px] text-ink-3 font-normal">모든 프로젝트 공용</span>
+            </div>
+            {globalLinks ? (
+              <button
+                onClick={() => openNote(globalLinks.path)}
+                className="text-[10px] text-ink-3 hover:text-chrome transition-colors"
+              >
+                편집 →
+              </button>
+            ) : (
+              <button
+                onClick={handleCreateGlobalLinks}
+                className="text-[10px] text-chrome hover:text-chrome/80 transition-colors"
+              >
+                + 생성
+              </button>
+            )}
+          </div>
+          <div className="px-4 py-3">
+            {globalLinks && globalLinks.content.trim() ? (
+              <div
+                className="dashboard-content"
+                onClick={handleContentClick}
+                dangerouslySetInnerHTML={{ __html: mdToHtml(globalLinks.content) }}
+              />
+            ) : (
+              <div className="text-xs text-ink-3 italic">HK 정의, App Table 등 공통 문서/링크를 모아두세요.</div>
+            )}
+          </div>
+        </div>
         {activeProject && SECTIONS.map(sec => {
           const note = findNote(sec.key);
           const content = note ? noteContents[note.path] ?? '' : '';

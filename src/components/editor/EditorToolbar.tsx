@@ -447,6 +447,19 @@ export function ColorPicker({ anchor, onChange, onClose, label, value }: {
     saveCustomColors(next);
   };
 
+  // 네이티브 색상 피커: React onChange는 드래그 중에도 발화해 창이 바로 닫힌다 —
+  // 확인 버튼을 눌렀을 때만 오는 네이티브 'change' 이벤트에서 커밋한다
+  const colorInputRef = useRef<HTMLInputElement>(null);
+  const addCustomRef = useRef(addCustom);
+  addCustomRef.current = addCustom;
+  useEffect(() => {
+    const el = colorInputRef.current;
+    if (!el) return;
+    const commit = () => addCustomRef.current(el.value);
+    el.addEventListener('change', commit);
+    return () => el.removeEventListener('change', commit);
+  }, []);
+
   useEffect(() => {
     if (!anchor) return;
     const rect = anchor.getBoundingClientRect();
@@ -541,9 +554,9 @@ export function ColorPicker({ anchor, onChange, onClose, label, value }: {
           style={{ background: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)' }}
         >
           <input
+            ref={colorInputRef}
             type="color"
             className="absolute inset-0 opacity-0 cursor-pointer"
-            onChange={(e) => addCustom(e.target.value)}
           />
         </label>
         <button
