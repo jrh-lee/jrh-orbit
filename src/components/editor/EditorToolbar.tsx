@@ -439,7 +439,8 @@ export function ColorPicker({ anchor, onChange, onClose, label, value }: {
     setCustom(next);
     saveCustomColors(next);
     setHexInput('');
-    if (apply) { onChange(c); onClose(); }
+    // 등록+적용하되 창은 유지 — 색을 확정하고 닫는 건 스와치 클릭으로
+    if (apply) onChange(c);
   };
   const removeCustom = (c: string) => {
     const next = custom.filter((x) => x !== c);
