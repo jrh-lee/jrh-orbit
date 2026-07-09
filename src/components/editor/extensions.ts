@@ -26,6 +26,7 @@ import { HeadingFold } from './extensions/HeadingFold';
 import { SlashCommand } from './extensions/SlashCommand';
 import { Columns, Column } from './extensions/Columns';
 import { Toggle } from './extensions/Toggle';
+import { BlockEmbed } from './extensions/BlockEmbed';
 import { common, createLowlight } from 'lowlight';
 import { CodeBlockView } from './CodeBlockView';
 import { ResizableImageView } from './ResizableImageView';
@@ -371,6 +372,7 @@ export function getExtensions(opts?: ExtensionOptions | string) {
     Columns,
     Column,
     Toggle,
+    BlockEmbed,
     Markdown.configure({
       html: true,
       transformPastedText: true,

@@ -762,6 +762,20 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
     return () => clearTimeout(timer);
   }, [scrollAnchor, editor, scrollToAnchor, onAnchorScrolled]);
 
+  /** 블록에 영구 ID 마커(^abc123)를 보장하고 반환 — 블록 링크/동기화 블록 공용 */
+  const ensureBlockIdAt = useCallback((pos: number): string | null => {
+    if (!editor) return null;
+    const node = editor.state.doc.nodeAt(pos);
+    if (!node?.isTextblock) return null;
+    const text = node.textContent;
+    const existing = text.match(/\^([a-z0-9]{4,})\s*$/)?.[1];
+    if (existing) return existing;
+    const bid = Math.random().toString(36).slice(2, 8);
+    const insertPos = pos + 1 + node.content.size;
+    editor.view.dispatch(editor.state.tr.insertText(` ^${bid}`, insertPos));
+    return bid;
+  }, [editor]);
+
   /** 위/아래에 줄 삽입 — 커서가 리스트 항목 안이면 같은 종류의 항목을 그 줄
    *  바로 옆에 삽입한다. before(1)로 최상위 블록(리스트 전체) 옆에 넣으면
    *  현재 줄이 아니라 리스트 밖에 줄이 생긴다. */
@@ -995,22 +1009,26 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
               {
                 label: '블록 링크 복사',
                 action: () => {
-                  // 영구 블록 ID 마커(^abc123)를 블록 끝에 심어 링크가
-                  // 텍스트 수정에도 살아남게 한다 (Obsidian 방식)
                   const pos = ctxMenu.blockPos!;
-                  const node = editor.state.doc.nodeAt(pos);
-                  if (!node?.isTextblock) return;
-                  const text = node.textContent;
-                  let bid = text.match(/\^([a-z0-9]{4,})\s*$/)?.[1];
-                  if (!bid) {
-                    bid = Math.random().toString(36).slice(2, 8);
-                    const insertPos = pos + 1 + node.content.size;
-                    editor.view.dispatch(editor.state.tr.insertText(` ^${bid}`, insertPos));
-                  }
+                  const bid = ensureBlockIdAt(pos);
+                  if (!bid) return;
+                  const text = editor.state.doc.nodeAt(pos)?.textContent ?? '';
                   const plain = text.replace(/\s*\^[a-z0-9]{4,}\s*$/, '').trim();
                   const label = plain.length > 30 ? `${plain.slice(0, 30)}…` : plain || '블록';
                   const md = `[${label.replace(/([\[\]])/g, '\\$1')}](note://${noteId}#${encodeURIComponent(`^${bid}`)})`;
                   navigator.clipboard.writeText(md).catch(() => {});
+                },
+                key: '',
+              },
+              {
+                label: '동기화 블록 복사',
+                action: () => {
+                  // 붙여넣으면 원본을 실시간 미러링하는 카드가 된다 —
+                  // 원본을 수정하면 모든 미러가 자동 갱신 (Notion synced block)
+                  const bid = ensureBlockIdAt(ctxMenu.blockPos!);
+                  if (!bid) return;
+                  const html = `<div data-type="block-embed" data-note="${noteId}" data-block="^${bid}"></div>`;
+                  navigator.clipboard.writeText(html).catch(() => {});
                 },
                 key: '',
               },

@@ -1128,6 +1128,55 @@ body.col-resizing * {
   white-space: nowrap;
 }
 
+/* ── Synced Block (블록 미러) ── */
+.block-embed-card {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0.3rem 0;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-chrome);
+  border-radius: 6px;
+  background: var(--color-paper-soft);
+  cursor: default;
+}
+.block-embed-card.selected {
+  outline: 2px solid var(--color-chrome);
+  outline-offset: 2px;
+}
+.block-embed-text {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--editor-font-size);
+  color: var(--color-ink);
+}
+.block-embed-source {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 0.75em;
+  color: var(--color-ink-3);
+  cursor: pointer;
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.block-embed-source:hover {
+  color: var(--color-chrome);
+  text-decoration: underline;
+}
+.block-embed-loading,
+.block-embed-missing {
+  font-size: 0.85em;
+  color: var(--color-ink-3);
+}
+.block-embed-missing {
+  color: #c07070;
+}
+
 /* ── Block link target flash — 도착 블록을 박스로 확실히 강조 ── */
 @keyframes block-link-flash {
   0% {
