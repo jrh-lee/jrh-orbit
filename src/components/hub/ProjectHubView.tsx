@@ -253,35 +253,33 @@ export function ProjectHubView() {
         <ProjectTodoList todos={data.todos} onToggle={handleToggleTodo} />
 
         {data.doneTodos.length > 0 && (
-          <section className="px-6 pb-4">
+          <section className="pb-4">
+            {/* 열린 TODO 헤더(h2 text-sm font-semibold)와 동일한 스타일 */}
             <button
               onClick={() => setShowDone(v => !v)}
-              className="flex items-center gap-1.5 text-[11px] font-semibold text-ink-3 uppercase tracking-wider hover:text-ink-2 transition-colors"
+              className="flex items-center gap-1.5 text-sm font-semibold text-ink px-3 mb-2 hover:text-chrome transition-colors"
             >
               <svg
-                width="8" height="8" viewBox="0 0 10 10" fill="none" stroke="currentColor"
+                width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor"
                 strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
                 className={`shrink-0 transition-transform ${showDone ? 'rotate-90' : ''}`}
               >
                 <path d="M3 1.5L7.5 5 3 8.5" />
               </svg>
-              지난 TODO ({data.doneTodos.length})
+              지난 TODO <span className="text-ink-3 font-normal">({data.doneTodos.length})</span>
             </button>
-            {showDone && (
-              <div className="mt-1">
-                {data.doneTodos.map((t) => (
-                  <div key={t.id} className="flex items-start gap-2 px-3 py-1.5 rounded-lg">
-                    <span className="mt-0.5 shrink-0 text-chrome text-xs">✓</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs text-ink-3 line-through truncate">{t.title}</div>
-                    </div>
-                    {t.endDate && (
-                      <span className="text-[10px] text-ink-3 shrink-0 tabular-nums">{t.endDate}</span>
-                    )}
-                  </div>
-                ))}
+            {showDone && data.doneTodos.map((t) => (
+              // HubTodoItem(열린 TODO 항목)과 동일한 마크업/크기
+              <div key={t.id} className="flex items-start gap-2 px-3 py-1.5 rounded-lg">
+                <input type="checkbox" checked readOnly className="mt-0.5 shrink-0 accent-chrome pointer-events-none" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs text-ink truncate line-through opacity-60">{t.title}</div>
+                  {t.endDate && (
+                    <div className="text-[10px] text-ink-3 mt-0.5">{t.endDate} 완료</div>
+                  )}
+                </div>
               </div>
-            )}
+            ))}
           </section>
         )}
       </div>

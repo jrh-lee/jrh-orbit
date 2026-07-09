@@ -1128,14 +1128,24 @@ body.col-resizing * {
   white-space: nowrap;
 }
 
-/* ── Block link target flash ── */
+/* ── Block link target flash — 도착 블록을 박스로 확실히 강조 ── */
 @keyframes block-link-flash {
-  0% { background-color: color-mix(in srgb, var(--color-chrome, #6b8afd) 30%, transparent); }
-  100% { background-color: transparent; }
+  0% {
+    background-color: color-mix(in srgb, var(--color-chrome, #6b8afd) 22%, transparent);
+    box-shadow: 0 0 0 2px var(--color-chrome, #6b8afd);
+  }
+  70% {
+    background-color: color-mix(in srgb, var(--color-chrome, #6b8afd) 12%, transparent);
+    box-shadow: 0 0 0 2px var(--color-chrome, #6b8afd);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 2px transparent;
+  }
 }
 .ProseMirror .block-link-flash {
-  animation: block-link-flash 1.5s ease-out;
-  border-radius: 4px;
+  animation: block-link-flash 2.4s ease-out;
+  border-radius: 6px;
 }
 
 /* ── Slash command menu ── */
