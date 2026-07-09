@@ -1,4 +1,6 @@
-const FM_REGEX = /^---\n([\s\S]*?)\n---\n*/;
+// BOM/CRLF가 섞여도 frontmatter를 인식한다 — 엄격 매칭이 실패하면
+// frontmatter 전체가 본문으로 렌더되는 사고가 난다 (2026-07-10 quick memo 사례)
+const FM_REGEX = /^﻿?---\r?\n([\s\S]*?)\r?\n---\r?\n*/;
 
 export function splitFrontmatter(raw: string): { frontmatter: string; body: string } {
   const match = raw.match(FM_REGEX);
@@ -46,7 +48,7 @@ function parseYamlValue(raw: string): any {
 }
 
 export function parseFrontmatterFields(fm: string): Record<string, any> {
-  const match = fm.match(/^---\n([\s\S]*?)\n---/);
+  const match = fm.match(/^﻿?---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return {};
 
   const fields: Record<string, any> = {};
@@ -97,7 +99,7 @@ export function updateFrontmatterField(fm: string, key: string, value: string): 
   if (regex.test(fm)) {
     return fm.replace(regex, `$1${value}`);
   }
-  return fm.replace(/\n---\n*$/, `\n${key}: ${value}\n---\n`);
+  return fm.replace(/\r?\n---\r?\n*$/, `\n${key}: ${value}\n---\n`);
 }
 
 export function formatFrontmatterValue(value: any): string {

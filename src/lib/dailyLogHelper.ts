@@ -1594,6 +1594,19 @@ export async function removeNoteFromDailyLog(
   }
 
   if (!removed) return;
+
+  // 마지막 데이터 행을 지웠으면 표가 헤더만 남는다 — 빈 자리표시 행을 넣어
+  // 표 구조를 유지한다 (insertNoteToDailyLog가 이 빈 행을 재사용)
+  for (let i = 0; i < lines.length - 1; i++) {
+    const isSeparator = /^\|[\s-]+\|/.test(lines[i]) && lines[i].includes("---");
+    if (!isSeparator) continue;
+    const next = lines[i + 1] ?? "";
+    if (!next.trim().startsWith("|")) {
+      const cols = Math.max(1, lines[i].split("|").length - 2);
+      lines.splice(i + 1, 0, `|${"  |".repeat(cols)}`);
+    }
+  }
+
   await invoke("write_note", {
     path: dailyPath,
     content: joinFrontmatter(frontmatter, lines.join("\n")),
