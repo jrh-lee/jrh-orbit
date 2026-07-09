@@ -245,7 +245,7 @@ function extractTitle(raw: string, filename: string): string {
 }
 
 export function NoteListView() {
-  const { dataDir, pendingNotePath, pendingNoteAnchor, clearPendingNote, pendingTagFilter, clearPendingTagFilter, setActiveProject, activeProject } = useAppStore();
+  const { dataDir, pendingNotePath, pendingNoteAnchor, clearPendingNote, pendingTagFilter, clearPendingTagFilter, activeProject } = useAppStore();
   const { projects } = useProjectStore();
   const [notes, setNotes] = useState<NoteEntry[]>([]);
   const [activeNote, setActiveNote] = useState<string | null>(null);
@@ -290,9 +290,6 @@ export function NoteListView() {
   const fmRef = useRef('');
   const lastWriteTime = useRef(0);
   const prevBodyRef = useRef('');
-  /** Set when a note click updates activeProject — the filter-sync effect
-   *  must not react to it (selecting a note must never change the list filter) */
-  const skipFilterSyncRef = useRef(false);
 
   const handleListResize = useCallback((delta: number) => {
     setListWidth((w) => Math.min(NOTELIST_MAX, Math.max(NOTELIST_MIN, w + delta)));
@@ -579,10 +576,6 @@ export function NoteListView() {
   }, [pendingTagFilter]);
 
   useEffect(() => {
-    if (skipFilterSyncRef.current) {
-      skipFilterSyncRef.current = false;
-      return;
-    }
     const proj = activeProject ? projects.find(p => p.id === activeProject)?.name ?? '' : '';
     setFilterProject(proj);
   }, [activeProject, projects]);
@@ -704,13 +697,8 @@ export function NoteListView() {
         status: fields.status ?? 'draft',
       });
       setTagInput('');
-      if (noteProject.length > 0) {
-        const proj = projects.find(p => p.name === noteProject[0]);
-        if (proj && proj.id !== activeProject) {
-          skipFilterSyncRef.current = true;
-          setActiveProject(proj.id);
-        }
-      }
+      // 노트를 열어도 프로젝트 선택/필터는 건드리지 않는다 — 자동 필터링은
+      // 사용자가 원치 않음 (프로젝트 선택은 사이드바에서 명시적으로만)
     } catch {
       // 읽기 실패 시 절대 빈 본문을 올리지 않는다 — activeNote는 이전 노트인 채로
       // body=''가 되면 다음 자동저장이 이전 노트를 빈 내용으로 덮어쓴다 (실제 사고 사례)
