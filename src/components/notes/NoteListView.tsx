@@ -550,6 +550,19 @@ export function NoteListView() {
     clearPendingNote();
   }, [pendingNotePath, notes]);
 
+  // 탭을 갔다 와도 마지막에 보던 노트를 다시 연다 — 매번 빈 화면에서
+  // 다시 클릭하는 불편 제거. 명시적 열기(pendingNotePath)가 항상 우선.
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current || notes.length === 0) return;
+    restoredRef.current = true;
+    if (pendingNotePath || activeNote) return;
+    const saved = localStorage.getItem('orbit-last-open-note');
+    if (saved && notes.some(n => n.path === saved)) {
+      handleSelectNote(saved);
+    }
+  }, [notes, pendingNotePath]);
+
   useEffect(() => {
     if (!pendingTagFilter) return;
     setFilterTag(pendingTagFilter);
@@ -641,6 +654,7 @@ export function NoteListView() {
 
   async function handleSelectNote(fullPath: string) {
     setConflictNote(false);
+    localStorage.setItem('orbit-last-open-note', fullPath);
     try {
       const raw = await invoke<string>('read_note', { path: fullPath });
       const { frontmatter, body: b } = splitFrontmatter(raw);
@@ -837,6 +851,9 @@ export function NoteListView() {
         removeNoteFromDailyLog(dataDir, deletedNote.id).catch(() => {});
       }
       window.dispatchEvent(new CustomEvent('notes-changed'));
+      if (localStorage.getItem('orbit-last-open-note') === path) {
+        localStorage.removeItem('orbit-last-open-note');
+      }
       if (activeNote === path) {
         setActiveNote(null);
         setActiveNoteId('');

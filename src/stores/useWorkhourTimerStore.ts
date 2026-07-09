@@ -92,9 +92,9 @@ if (initial.running && initial.startedAt) {
 let finishing = false;
 
 export const useWorkhourTimerStore = create<WorkhourTimerState>((set, get) => {
-  if (initial.running) {
-    setTimeout(() => startInterval(), 0);
-  }
+  // 인터벌은 항상 돌린다 — 멈춘 타이머도 tick의 rollover 검사로 새벽 6시에
+  // 표시가 리셋되어야 함 (기존엔 버튼을 눌러야만 리셋을 인지했음)
+  setTimeout(() => startInterval(), 0);
 
   // The date-change reset in load() only runs at app start. When the app
   // stays open past midnight, this resets the counter for the new day
@@ -126,7 +126,6 @@ export const useWorkhourTimerStore = create<WorkhourTimerState>((set, get) => {
 
     pause: () => {
       rolloverIfNeeded();
-      stopInterval();
       const { baseElapsed, startedAt } = get();
       const session = startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0;
       const newBase = baseElapsed + session;
@@ -164,7 +163,6 @@ export const useWorkhourTimerStore = create<WorkhourTimerState>((set, get) => {
     },
 
     reset: () => {
-      stopInterval();
       set({ elapsed: 0, running: false, startedAt: null, baseElapsed: 0, date: today() });
       save({ baseElapsed: 0, running: false, startedAt: null, date: today() });
     },

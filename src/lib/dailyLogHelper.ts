@@ -42,7 +42,7 @@ export interface ActiveTodo {
   /** yyyy-MM-dd — future-start tasks render dimmed with a (시작 M/D) badge */
   startDate?: string;
   isOverdue: boolean;
-  subtasks?: { id: string; title: string; done: boolean }[];
+  subtasks?: { id: string; title: string; done: boolean; startDate?: string }[];
 }
 
 const PROJECT_HEADING_RE = /^###\s+🛰️\s+(.+)$/;
@@ -127,6 +127,11 @@ export async function getCarriedOverItems(
         text = text.slice(tidMatch[0].length);
       }
 
+      // 서브태스크(TASK-NNN.M)는 부모와 함께 렌더링된다 — 여기서 주우면
+      // 최상위 이월 항목으로 승격되어 중복이 생긴다 (부모 줄이 지워지며
+      // 최상위로 올라온 잔재 포함).
+      if (todoId && splitSubtaskId(todoId)) continue;
+
       if (/^\(이월/.test(text) || /^\\?\(이월/.test(text)) {
         if (todoId) {
           text = text.replace(/^\\?\(이월[^)]*\)\s*/, "").trim();
@@ -187,7 +192,7 @@ export async function getActiveTodos(
         dueDate: t.dueDate,
         startDate: t.startDate,
         isOverdue,
-        subtasks: t.subtasks?.length ? t.subtasks.map(s => ({ id: s.id, title: s.title, done: s.done })) : undefined,
+        subtasks: t.subtasks?.length ? t.subtasks.map(s => ({ id: s.id, title: s.title, done: s.done, startDate: s.startDate })) : undefined,
       };
     });
 }
@@ -275,21 +280,30 @@ export function buildDailyLogBody(
     if (!todo.subtasks?.length) return;
     todo.subtasks.forEach((st, idx) => {
       const check = st.done ? "[x]" : "[ ]";
-      addToProject(project, `  - ${check} [${subtaskRef(todo.id, st, idx)}] ${st.title}`);
+      // 서브태스크도 시작일 표시 — 부모보다 먼저 시작하는 사전작업이면
+      // 태그 없이 활성으로, 미래 시작이면 배지+음영
+      const stStart = st.startDate && st.startDate > dateKey
+        ? `(시작 ${formatStartTag(st.startDate)}) `
+        : "";
+      addToProject(project, `  - ${check} [${subtaskRef(todo.id, st, idx)}] ${stStart}${st.title}`);
     });
   };
 
   for (const item of carriedItems) {
+    const matchedTodo = item.todoId ? todoById.get(item.todoId) : undefined;
+    // 시작일이 아직 안 된 task는 "이월"이 아니다 — 이월 태그/카운트 없이
+    // 아래 activeTodos 루프에서 (시작 M/D) 배지로 렌더링되게 넘긴다.
+    if (matchedTodo?.startDate && matchedTodo.startDate > dateKey) continue;
     const prefix = item.todoId ? `[${item.todoId}] ` : "";
     const check = item.done ? "[x]" : "[ ]";
     const carryTag = (item.carryCount ?? 0) >= 3
       ? `(이월, 🔴 D+${item.carryCount} 연속 이월)`
       : "(이월)";
     let cleanText = item.text
+      .replace(/\\?\(시작 [^)]*\\?\)\s*/g, "")
       .replace(/\s*\((?:⚠️\s*)?D[+-]?\d+\)$/, "")
       .replace(/\s*\(⚠️\s*D-Day\)$/, "")
       .trim();
-    const matchedTodo = item.todoId ? todoById.get(item.todoId) : undefined;
     if (matchedTodo?.dueDate) {
       cleanText += ` (${formatDueTag(matchedTodo.dueDate, dateKey)})`;
     }
@@ -702,17 +716,47 @@ export async function syncDailyWithTodos(
       const todo = todoMap.get(p.id);
       if (todo) {
         const wantTag = !!(todo.startDate && todo.startDate > dateKey);
-        const hasTag = /^\\?\(시작 /.test(p.title);
+        // 손상 치유 1: 시작 전 task에 (이월...) 태그가 붙어 있으면 제거 —
+        // 시작일이 안 됐으면 이월(D+N)로 취급하지 않는다
+        if (wantTag && /\\?\(이월[^)]*\\?\)/.test(lines[i])) {
+          lines[i] = lines[i].replace(/\\?\(이월[^)]*\\?\)\s*/g, "");
+          changed = true;
+        }
+        // 손상 치유 2: (시작 ...) 태그 중복/불필요 — 전부 제거 후 아래에서
+        // 필요하면 하나만 다시 삽입 (제목 접두사만 보던 기존 검사는
+        // (이월) 뒤에 붙은 태그를 못 봐서 중복 삽입했음)
+        const startTags = lines[i].match(/\\?\(시작 [^)]*\\?\)/g) ?? [];
+        if (startTags.length > 1 || (startTags.length === 1 && !wantTag)) {
+          lines[i] = lines[i].replace(/\\?\(시작 [^)]*\\?\)\s*/g, "");
+          changed = true;
+        }
+        const hasTag = /\\?\(시작 /.test(lines[i]);
         if (wantTag && !hasTag) {
           lines[i] = lines[i].replace(
             /^([ \t]*- \[[ xX]\] \\?\[[^\]\\]+\\?\]\s*)/,
             `$1(시작 ${formatStartTag(todo.startDate!)}) `,
           );
           changed = true;
-        } else if (!wantTag && hasTag) {
-          lines[i] = lines[i].replace(/\\?\(시작 [^)]*\\?\)\s*/, "");
-          changed = true;
         }
+      }
+    }
+  }
+
+  // 손상 치유 3: 부모 줄이 지워지며 최상위로 승격된 서브태스크 잔재 제거 —
+  // 부모 task 줄이 문서에 존재하면 그 밑에서 렌더링되므로 중복이다.
+  {
+    const topLevelIds = new Set<string>();
+    for (const line of lines) {
+      const p = parseTaskLine(line);
+      if (p?.id && p.indent === 0 && !splitSubtaskId(p.id)) topLevelIds.add(p.id);
+    }
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const p = parseTaskLine(lines[i]);
+      if (!p?.id || p.indent !== 0) continue;
+      const sub = splitSubtaskId(p.id);
+      if (sub && topLevelIds.has(sub.parentId)) {
+        lines.splice(i, 1);
+        changed = true;
       }
     }
   }

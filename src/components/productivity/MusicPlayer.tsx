@@ -137,6 +137,11 @@ export function MusicEngine() {
     const shouldPlay = useMusicStore.getState().playing;
     loadYTApi().then(() => {
       if (playerRef.current) {
+        // 플레이어 생성 직후에는 API 메서드가 아직 없을 수 있음 (onReady 전)
+        if (typeof playerRef.current.loadVideoById !== 'function') {
+          prevVideoIdRef.current = null; // 다음 갱신에서 재시도
+          return;
+        }
         if (shouldPlay) playerRef.current.loadVideoById(item.videoId);
         else playerRef.current.cueVideoById(item.videoId);
         return;

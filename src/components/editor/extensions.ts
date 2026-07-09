@@ -175,6 +175,8 @@ export function getExtensions(opts?: ExtensionOptions | string) {
   return [
     StarterKit.configure({
       codeBlock: false,
+      // 아래에서 note:// 프로토콜 등 커스텀 설정으로 직접 등록 — 중복 방지
+      link: false,
     }),
     Placeholder.configure({
       placeholder: placeholder ?? 'Start writing...',

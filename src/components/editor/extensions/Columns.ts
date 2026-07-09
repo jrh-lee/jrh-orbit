@@ -288,6 +288,8 @@ export const Columns = Node.create({
               };
 
               const onMove = (ev: MouseEvent) => {
+                // 창 밖에서 버튼을 뗀 좀비 리사이즈 방지
+                if (ev.buttons === 0) { cleanup(); return; }
                 const { leftPct, rightPct } = calcPcts(ev.clientX);
                 applyWidths(leftPct, rightPct, false);
                 guide.textContent = `${Math.round(leftPct)}% : ${Math.round(rightPct)}%`;

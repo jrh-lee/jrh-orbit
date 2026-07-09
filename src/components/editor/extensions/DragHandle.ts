@@ -55,13 +55,23 @@ function resolveBlock(view: EditorView, y: number): BlockInfo | null {
   }
 
   try {
+    // 리스트 항목 등에 중첩된 이미지: 리프 노드라 depth 순회에 안 잡힌다 —
+    // 좌표가 이미지 위면(inside) 이미지 자체를 블록으로 취급
+    if (posInfo.inside >= 0) {
+      const inNode = view.state.doc.nodeAt(posInfo.inside);
+      if (inNode?.type.name === 'image') {
+        const dom = view.nodeDOM(posInfo.inside);
+        if (dom instanceof HTMLElement) return { pos: posInfo.inside, node: inNode, dom };
+      }
+    }
+
     const $pos = view.state.doc.resolve(posInfo.pos);
 
     for (let d = $pos.depth; d >= 1; d--) {
       const node = $pos.node(d);
-      // Tables/code blocks win over their containing list item — otherwise a
-      // nested block can never be selected (and moved) on its own.
-      if (node.type.name === 'table' || node.type.name === 'codeBlock') {
+      // Tables/code blocks/images win over their containing list item —
+      // otherwise a nested block can never be selected (and moved) on its own.
+      if (node.type.name === 'table' || node.type.name === 'codeBlock' || node.type.name === 'image') {
         const bp = $pos.before(d);
         const dom = view.nodeDOM(bp);
         if (dom && dom instanceof HTMLElement) return { pos: bp, node, dom };
@@ -120,6 +130,18 @@ function isInLeftGutter(view: EditorView, clientX: number, clientY: number): boo
   return false;
 }
 
+/** 마지막 블록보다 아래(빈 공간)에 드롭 — 문서 끝으로 이동 */
+function fallbackEndTarget(view: EditorView, clientY: number): BlockInfo | null {
+  const doc = view.state.doc;
+  if (!doc.childCount) return null;
+  const lastNode = doc.child(doc.childCount - 1);
+  const pos = doc.content.size - lastNode.nodeSize;
+  const dom = view.nodeDOM(pos);
+  if (!(dom instanceof HTMLElement)) return null;
+  if (clientY <= dom.getBoundingClientRect().bottom) return null;
+  return { pos, node: lastNode, dom };
+}
+
 function canDrop(doc: PmNode, srcPos: number, srcNode: PmNode, targetPos: number, targetNode: PmNode): boolean {
   try {
     const $src = doc.resolve(srcPos);
@@ -136,7 +158,10 @@ function canDrop(doc: PmNode, srcPos: number, srcNode: PmNode, targetPos: number
     // be moved at all in list-heavy documents like the daily note.
     if (!srcIsItem && targetIsItem) return true;
 
-    return false;
+    // 일반 블록 ↔ 일반 블록: 부모가 달라도 허용 — 컬럼 안 이미지를
+    // 최상위 문단 옆으로 빼내는 이동이 여기서 막혀 리스트 안으로만
+    // 옮겨지던 버그의 원인
+    return true;
   } catch { return false; }
 }
 
@@ -561,6 +586,9 @@ export const DragHandle = Extension.create({
             window.addEventListener('blur', cancelDrag);
 
             const onMove = (e: MouseEvent) => {
+              // 창 밖에서 버튼을 떼면 mouseup이 안 온다 — 버튼이 떼진 채
+              // mousemove가 오면 좀비 드래그가 되므로 즉시 중단
+              if (e.buttons === 0) { cancelDrag(); return; }
               // X counts too — make-columns drags are mostly horizontal
               if (!dragging && (Math.abs(e.clientY - startY) > 5 || Math.abs(e.clientX - startX) > 8)) {
                 dragging = true;
@@ -577,7 +605,7 @@ export const DragHandle = Extension.create({
                 }
               }
 
-              const rawTarget = resolveBlock(editorView, e.clientY);
+              const rawTarget = resolveBlock(editorView, e.clientY) ?? fallbackEndTarget(editorView, e.clientY);
               if (!rawTarget || rawTarget.pos === srcPos) { hideDropLine(); return; }
 
               const srcNode = editorView.state.doc.nodeAt(srcPos);
@@ -682,7 +710,7 @@ export const DragHandle = Extension.create({
                   }
                 }
 
-                const rawTarget = resolveBlock(editorView, e.clientY);
+                const rawTarget = resolveBlock(editorView, e.clientY) ?? fallbackEndTarget(editorView, e.clientY);
                 if (import.meta.env.DEV) console.warn('[drag] drop: target=', rawTarget?.node.type.name, '@', rawTarget?.pos, 'src=', srcNodeType, '@', srcPos);
                 if (!rawTarget) return;
                 if (!canDrop(doc, srcPos, srcNode, rawTarget.pos, rawTarget.node)) {
@@ -805,28 +833,63 @@ export const DragHandle = Extension.create({
 
           const hideColHandle = () => { colHandle.style.display = 'none'; colHoverPos = null; };
 
+          const showHandleAt = (pos: number, rect: DOMRect, x: number) => {
+            colHoverPos = pos;
+            colHandle.style.display = 'flex';
+            colHandle.style.left = `${x}px`;
+            colHandle.style.top = `${rect.top + Math.max(0, (Math.min(rect.height, 24) - 20) / 2)}px`;
+          };
+
           const onHover = (e: MouseEvent) => {
             if (editorView.dom.classList.contains('block-dragging')) { hideColHandle(); return; }
+
+            // 1) 컬럼 안 블록: 컬럼 노드의 자식들을 위치로 순회하며 DOM 일치로
+            //    찾는다 (posAtDOM은 이미지 같은 리프 노드뷰에서 실패).
             const colEl = (e.target as HTMLElement)?.closest?.('.md-column') as HTMLElement | null;
-            if (!colEl || !editorView.dom.contains(colEl)) { hideColHandle(); return; }
-            let targetEl: HTMLElement | null = null;
-            for (const child of Array.from(colEl.children) as HTMLElement[]) {
-              const r = child.getBoundingClientRect();
-              if (e.clientY >= r.top && e.clientY <= r.bottom) { targetEl = child; break; }
+            if (colEl && editorView.dom.contains(colEl)) {
+              let targetEl: HTMLElement | null = null;
+              for (const child of Array.from(colEl.children) as HTMLElement[]) {
+                const r = child.getBoundingClientRect();
+                if (e.clientY >= r.top && e.clientY <= r.bottom) { targetEl = child; break; }
+              }
+              if (!targetEl) { hideColHandle(); return; }
+              try {
+                const colInner = editorView.posAtDOM(colEl, 0);
+                const $c = editorView.state.doc.resolve(colInner);
+                if ($c.parent.type.name !== 'column') { hideColHandle(); return; }
+                let p = $c.start();
+                let found: number | null = null;
+                $c.parent.forEach((child) => {
+                  if (found === null) {
+                    const dom = editorView.nodeDOM(p);
+                    if (dom === targetEl || (dom instanceof HTMLElement && (dom.contains(targetEl) || targetEl.contains(dom)))) {
+                      found = p;
+                    }
+                  }
+                  p += child.nodeSize;
+                });
+                if (found === null) { hideColHandle(); return; }
+                const tr = targetEl.getBoundingClientRect();
+                showHandleAt(found, tr, tr.left - 17);
+              } catch { hideColHandle(); }
+              return;
             }
-            if (!targetEl) { hideColHandle(); return; }
-            try {
-              const inner = editorView.posAtDOM(targetEl, 0);
-              const $p = editorView.state.doc.resolve(inner);
-              let d = $p.depth;
-              while (d > 0 && $p.node(d - 1).type.name !== 'column') d--;
-              if (d === 0) { hideColHandle(); return; }
-              colHoverPos = $p.before(d);
-            } catch { hideColHandle(); return; }
-            const r = targetEl.getBoundingClientRect();
-            colHandle.style.display = 'flex';
-            colHandle.style.left = `${r.left - 17}px`;
-            colHandle.style.top = `${r.top + 1}px`;
+
+            // 2) 일반 블록: 보이지 않는 거터 대신 명시적인 그립 칩을 모든
+            //    블록에 표시. 최상위 블록은 바깥 슬롯(-46px)이라 접기/토글
+            //    화살표(안쪽 슬롯)와 겹치지 않는다.
+            const block = resolveBlock(editorView, e.clientY);
+            if (!block) { hideColHandle(); return; }
+            const isItem = ITEM_NAMES.includes(block.node.type.name);
+            const rect = isItem ? itemFirstLineRect(block.dom) : block.dom.getBoundingClientRect();
+            if (e.clientY < rect.top - 8 || e.clientY > (isItem ? rect.bottom + 8 : block.dom.getBoundingClientRect().bottom + 8)) {
+              hideColHandle();
+              return;
+            }
+            // X는 항상 왼쪽 여백(바깥 슬롯)으로 통일 — 들여쓰기 줄 옆에 띄우면
+            // 체크박스/불릿을 가린다. Y만 해당 줄을 따라간다.
+            const gutterX = editorView.dom.getBoundingClientRect().left + 4;
+            showHandleAt(block.pos, rect, gutterX);
           };
           const onLeave = (e: MouseEvent) => {
             // 핸들 자체로 이동하는 중이면 유지 (핸들은 body 소속이라 leave로 잡힘)
