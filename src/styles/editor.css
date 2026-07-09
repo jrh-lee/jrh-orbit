@@ -1163,6 +1163,11 @@ body.col-resizing * {
   background: var(--color-paper-soft);
   color: var(--color-ink);
 }
+.slash-menu-divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: 4px 6px;
+}
 .slash-menu-icon {
   width: 22px;
   flex-shrink: 0;

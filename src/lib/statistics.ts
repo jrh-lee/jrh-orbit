@@ -1,5 +1,6 @@
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, getDay, getISOWeek } from 'date-fns';
 import { listNotes, readNote, readJsonFile } from './fileSystem';
+import { getNoteActivity } from './activityLog';
 import { parseFrontmatterFields } from './frontmatter';
 import { loadDailyWorkhour } from './workhour';
 import { FOLDERS, FILES } from './constants';
@@ -153,6 +154,28 @@ export function invalidateNotesCache() {
   _notesCache = null;
 }
 
+/** 일자별 "수정한 노트 수" — frontmatter updated(마지막 수정일)와 활동 로그를
+ *  합친다. 활동 로그 도입 이전 날짜는 updated 기준의 근사치만 나온다. */
+function buildEditedCounter(
+  allNotes: ParsedNoteMeta[],
+  activity: Record<string, string[]>,
+): (dk: string) => number {
+  const byId = new Map<string, ParsedNoteMeta>();
+  for (const n of allNotes) if (n.id) byId.set(n.id, n);
+  return (dk: string): number => {
+    const s = new Set<string>();
+    for (const n of allNotes) {
+      if (n.type === 'daily-log' || !n.id) continue;
+      if ((n.updated?.slice(0, 10) ?? '') === dk && n.date !== dk) s.add(n.id);
+    }
+    for (const id of activity[dk] ?? []) {
+      const n = byId.get(id);
+      if (n && n.type !== 'daily-log' && n.date !== dk) s.add(id);
+    }
+    return s.size;
+  };
+}
+
 function filterByDateRange(notes: ParsedNoteMeta[], range: DateRange): ParsedNoteMeta[] {
   const startStr = format(range.start, 'yyyy-MM-dd');
   const endStr = format(range.end, 'yyyy-MM-dd');
@@ -224,12 +247,29 @@ export async function getDashboardStats(
 
   const rangeStartStr = format(range.start, 'yyyy-MM-dd');
   const rangeEndStr = format(range.end, 'yyyy-MM-dd');
-  const editedNotes = allNotes.filter(n => {
-    if (n.type === 'daily-log') return false;
+  // 기간 내 수정된 노트 (기간 내 생성분 제외 — 생성 수와 이중 계산 방지):
+  // frontmatter updated + 활동 로그 합집합
+  const activity = await getNoteActivity(dataDir);
+  const byId = new Map<string, ParsedNoteMeta>();
+  for (const n of allNotes) if (n.id) byId.set(n.id, n);
+  const editedIds = new Set<string>();
+  for (const n of allNotes) {
+    if (n.type === 'daily-log' || !n.id) continue;
     const upd = n.updated?.slice(0, 10) ?? '';
-    // 기간 내 수정됐지만 기간 내 생성분은 제외 (생성 카드와 이중 계산 방지)
-    return upd >= rangeStartStr && upd <= rangeEndStr && !(n.date >= rangeStartStr && n.date <= rangeEndStr);
-  }).length;
+    if (upd >= rangeStartStr && upd <= rangeEndStr && !(n.date >= rangeStartStr && n.date <= rangeEndStr)) {
+      editedIds.add(n.id);
+    }
+  }
+  for (const [day, ids] of Object.entries(activity)) {
+    if (day < rangeStartStr || day > rangeEndStr) continue;
+    for (const id of ids) {
+      const n = byId.get(id);
+      if (n && n.type !== 'daily-log' && !(n.date >= rangeStartStr && n.date <= rangeEndStr)) {
+        editedIds.add(id);
+      }
+    }
+  }
+  const editedNotes = editedIds.size;
 
   const notesByType: Record<string, number> = {};
   for (const n of rangeNotes) {
@@ -292,6 +332,7 @@ export async function getWorkhourByDay(
 ): Promise<WorkhourByDay[]> {
   const now = new Date();
   const allNotes = await collectAllNotes(dataDir);
+  const editedFor = buildEditedCounter(allNotes, await getNoteActivity(dataDir));
 
   if (period === 'week') {
     const range = { start: startOfWeek(now, { weekStartsOn: 1 }), end: endOfWeek(now, { weekStartsOn: 1 }) };
@@ -302,7 +343,7 @@ export async function getWorkhourByDay(
       try { mins = (await loadDailyWorkhour(dataDir, dk)).total_minutes; } catch {}
       const dow = getDay(day);
       const created = allNotes.filter(n => n.type !== 'daily-log' && n.date === dk).length;
-      const edited = allNotes.filter(n => n.type !== 'daily-log' && n.updated?.slice(0, 10) === dk && n.date !== dk).length;
+      const edited = editedFor(dk);
       return {
         day: `${DAY_LABELS[dow]} ${format(day, 'M/d')}`,
         dayIndex: dow,
@@ -331,7 +372,7 @@ export async function getWorkhourByDay(
       weekMap.set(week, (weekMap.get(week) ?? 0) + daily.total_minutes);
     } catch {}
     const created = allNotes.filter(n => n.type !== 'daily-log' && n.date === dk).length;
-    const edited = allNotes.filter(n => n.type !== 'daily-log' && n.updated?.slice(0, 10) === dk && n.date !== dk).length;
+    const edited = editedFor(dk);
     weekCreatedMap.set(week, (weekCreatedMap.get(week) ?? 0) + created);
     weekEditedMap.set(week, (weekEditedMap.get(week) ?? 0) + edited);
   }

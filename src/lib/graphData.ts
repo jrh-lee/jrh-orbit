@@ -155,8 +155,16 @@ export async function buildGraphData(dataDir: string): Promise<GraphData> {
     }
   }
 
+  // Daily Log 노드는 그래프에서 제외 — 매일 생겨서 허브처럼 모든 노트에
+  // 연결되고, 실제 지식 구조 파악에는 노이즈만 된다.
+  const dailyIds = new Set(
+    Array.from(nodeMap.values()).filter((n) => n.type === 'daily-log').map((n) => n.id),
+  );
+  for (const id of dailyIds) nodeMap.delete(id);
+  const filteredEdges = edges.filter((e) => !dailyIds.has(e.source) && !dailyIds.has(e.target));
+
   return {
     nodes: Array.from(nodeMap.values()),
-    edges,
+    edges: filteredEdges,
   };
 }

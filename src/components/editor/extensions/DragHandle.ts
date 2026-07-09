@@ -465,6 +465,7 @@ export const DragHandle = Extension.create({
   },
 
   addProseMirrorPlugins() {
+    const editor = this.editor;
     let dropLine: HTMLElement | null = null;
     function hideDropLine() { if (dropLine) dropLine.style.opacity = '0'; }
 
@@ -912,11 +913,130 @@ export const DragHandle = Extension.create({
           editorView.dom.addEventListener('mouseleave', onLeave);
           colHandle.addEventListener('mousedown', onColHandleDown);
 
+          // ── 그립 칩 우클릭: 블록 변환/삽입 메뉴 ──
+          let blockMenu: HTMLDivElement | null = null;
+          const closeBlockMenu = () => {
+            blockMenu?.remove();
+            blockMenu = null;
+            document.removeEventListener('mousedown', onDocDownForMenu, true);
+          };
+          const onDocDownForMenu = (ev: MouseEvent) => {
+            if (blockMenu && ev.target instanceof Node && !blockMenu.contains(ev.target)) closeBlockMenu();
+          };
+
+          const insertColumnsBelow = (pos: number, count: number) => {
+            const node = editorView.state.doc.nodeAt(pos);
+            const { columns, column, paragraph } = editorView.state.schema.nodes;
+            if (!node || !columns || !column || !paragraph) return;
+            const cols = Array.from({ length: count }, () => column.create(null, paragraph.create()));
+            try {
+              const tr = editorView.state.tr.insert(pos + node.nodeSize, columns.create(null, cols));
+              editorView.dispatch(tr.scrollIntoView());
+              editorView.focus();
+            } catch { /* schema가 허용하지 않는 위치 */ }
+          };
+          const wrapInToggle = (pos: number) => {
+            const node = editorView.state.doc.nodeAt(pos);
+            const { toggle, paragraph } = editorView.state.schema.nodes;
+            if (!node || !toggle || !paragraph) return;
+            const content = node.type.name === 'paragraph' ? [node] : [paragraph.create(), node];
+            try {
+              const tr = editorView.state.tr.replaceWith(pos, pos + node.nodeSize, toggle.create({ open: true }, content));
+              editorView.dispatch(tr.scrollIntoView());
+              editorView.focus();
+            } catch { /* 첫 문단 자리 등 스키마 제약 */ }
+          };
+          const duplicateBlock = (pos: number) => {
+            const node = editorView.state.doc.nodeAt(pos);
+            if (!node) return;
+            try {
+              editorView.dispatch(editorView.state.tr.insert(pos + node.nodeSize, node).scrollIntoView());
+            } catch { /* 복제 불가 위치 */ }
+          };
+          const deleteBlock = (pos: number) => {
+            const node = editorView.state.doc.nodeAt(pos);
+            if (!node) return;
+            let delFrom = pos;
+            let delTo = pos + node.nodeSize;
+            try {
+              const $d = editorView.state.doc.resolve(delFrom);
+              if ($d.parent.type.name === 'column' && $d.parent.childCount === 1) {
+                delFrom = $d.before();
+                delTo = delFrom + $d.parent.nodeSize;
+              }
+              editorView.dispatch(editorView.state.tr.delete(delFrom, delTo));
+            } catch { /* delete failed */ }
+          };
+
+          const openBlockMenu = (x: number, y: number, pos: number) => {
+            closeBlockMenu();
+            const node = editorView.state.doc.nodeAt(pos);
+            if (!node) return;
+            const menu = document.createElement('div');
+            menu.className = 'slash-menu';
+
+            const add = (label: string, action: () => void) => {
+              const btn = document.createElement('button');
+              btn.type = 'button';
+              btn.className = 'slash-menu-item';
+              const span = document.createElement('span');
+              span.textContent = label;
+              btn.appendChild(span);
+              btn.addEventListener('mousedown', (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                closeBlockMenu();
+                action();
+              });
+              menu.appendChild(btn);
+            };
+            const divider = () => {
+              const d = document.createElement('div');
+              d.className = 'slash-menu-divider';
+              menu.appendChild(d);
+            };
+
+            const inside = Math.min(pos + 1, editorView.state.doc.content.size);
+            const chain = () => editor.chain().focus().setTextSelection(inside);
+
+            if (node.isTextblock) {
+              add('문단으로 전환', () => chain().setNode('paragraph').run());
+              add('제목 1', () => chain().setNode('heading', { level: 1 }).run());
+              add('제목 2', () => chain().setNode('heading', { level: 2 }).run());
+              add('제목 3', () => chain().setNode('heading', { level: 3 }).run());
+              add('코드 블록으로', () => chain().setNode('codeBlock').run());
+              add('인용구 토글', () => chain().toggleBlockquote().run());
+              divider();
+            }
+            add('아래에 2단 컬럼 삽입', () => insertColumnsBelow(pos, 2));
+            add('아래에 3단 컬럼 삽입', () => insertColumnsBelow(pos, 3));
+            if (node.type.name !== 'toggle' && node.type.name !== 'columns') {
+              add('토글로 감싸기', () => wrapInToggle(pos));
+            }
+            divider();
+            add('블록 복제', () => duplicateBlock(pos));
+            add('블록 삭제', () => deleteBlock(pos));
+
+            document.body.appendChild(menu);
+            const mr = menu.getBoundingClientRect();
+            menu.style.left = `${Math.min(x, window.innerWidth - mr.width - 8)}px`;
+            menu.style.top = `${Math.min(y, window.innerHeight - mr.height - 8)}px`;
+            blockMenu = menu;
+            setTimeout(() => document.addEventListener('mousedown', onDocDownForMenu, true), 0);
+          };
+
+          colHandle.addEventListener('contextmenu', (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            if (colHoverPos !== null) openBlockMenu(ev.clientX, ev.clientY, colHoverPos);
+          });
+
           return {
             destroy() {
               editorView.dom.removeEventListener('mousedown', onMouseDown, true);
               editorView.dom.removeEventListener('mousemove', onHover);
               editorView.dom.removeEventListener('mouseleave', onLeave);
+              closeBlockMenu();
               colHandle.remove();
               dropLine?.remove();
               dropLine = null;

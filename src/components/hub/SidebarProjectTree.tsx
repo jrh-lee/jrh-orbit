@@ -13,6 +13,7 @@ export function SidebarProjectTree() {
   const { filterProject, setFilterProject } = useTaskStore();
   const experiments = useExperimentStore((s) => s.experiments);
   const [dashboards, setDashboards] = useState<Record<string, string>>({});
+  const [expOpen, setExpOpen] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (dataDir) useExperimentStore.getState().load(dataDir).catch(() => {});
@@ -136,24 +137,44 @@ export function SidebarProjectTree() {
                     <span>🛰️</span> Dashboard
                   </button>
                 )}
-                {experimentsForProject(experiments, project.id).map((ex) => (
-                  <button
-                    key={ex.id}
-                    onClick={() => openExperimentHub(ex.name, project.name)}
-                    className={clsx(
-                      'flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] transition-colors min-w-0',
-                      view === 'hub' && hubTarget?.type === 'experiment' && hubTarget.name === ex.name
-                        ? 'text-chrome font-medium bg-chrome/10'
-                        : ex.status === 'active'
-                          ? 'text-ink-3 hover:text-ink-2 hover:bg-paper-muted/30'
-                          : 'text-ink-3/60 hover:text-ink-3 hover:bg-paper-muted/30',
-                    )}
-                    title={ex.name}
-                  >
-                    <span>{experimentEmoji(ex.name)}</span>
-                    <span className="truncate">{ex.name}</span>
-                  </button>
-                ))}
+                {experimentsForProject(experiments, project.id).length > 0 && (
+                  <>
+                    <button
+                      onClick={() => setExpOpen((prev) => ({ ...prev, [project.id]: !prev[project.id] }))}
+                      className="flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] text-ink-3 hover:text-ink-2 hover:bg-paper-muted/30 transition-colors"
+                    >
+                      <svg
+                        width="7" height="7" viewBox="0 0 10 10" fill="none" stroke="currentColor"
+                        strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+                        className={clsx('shrink-0 transition-transform', expOpen[project.id] && 'rotate-90')}
+                      >
+                        <path d="M3 1.5L7.5 5 3 8.5" />
+                      </svg>
+                      <span>🧪</span> Experiment
+                      <span className="ml-auto text-[9px] text-ink-3/70">
+                        {experimentsForProject(experiments, project.id).length}
+                      </span>
+                    </button>
+                    {expOpen[project.id] && experimentsForProject(experiments, project.id).map((ex) => (
+                      <button
+                        key={ex.id}
+                        onClick={() => openExperimentHub(ex.name, project.name)}
+                        className={clsx(
+                          'flex items-center gap-1.5 pl-6 pr-2 py-0.5 rounded text-[10px] transition-colors min-w-0',
+                          view === 'hub' && hubTarget?.type === 'experiment' && hubTarget.name === ex.name
+                            ? 'text-chrome font-medium bg-chrome/10'
+                            : ex.status === 'active'
+                              ? 'text-ink-3 hover:text-ink-2 hover:bg-paper-muted/30'
+                              : 'text-ink-3/60 hover:text-ink-3 hover:bg-paper-muted/30',
+                        )}
+                        title={ex.name}
+                      >
+                        <span>{experimentEmoji(ex.name)}</span>
+                        <span className="truncate">{ex.name}</span>
+                      </button>
+                    ))}
+                  </>
+                )}
               </div>
             )}
           </div>

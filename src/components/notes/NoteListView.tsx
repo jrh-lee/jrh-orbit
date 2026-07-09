@@ -20,6 +20,7 @@ import type { TodosFile } from '../../types/task';
 import type { TopicsFile, TopicEntry } from '../../types/dataFiles';
 import { useExperimentStore } from '../../stores/useExperimentStore';
 import { experimentEmoji } from '../../types/experiment';
+import { recordNoteEdit } from '../../lib/activityLog';
 import { reindexNote } from '../../lib/searchIndex';
 import { indexNote, removeNoteIndex } from '../../lib/db';
 import { AutoSuggestionBanner } from './AutoSuggestionBanner';
@@ -782,6 +783,7 @@ export function NoteListView() {
         }
         fmRef.current = updateFrontmatterField(fmRef.current, 'updated', new Date().toISOString());
         invoke('write_note', { path: activeNote, content: joinFrontmatter(fmRef.current, md) }).catch(() => {});
+        if (dataDir && activeNoteId) recordNoteEdit(dataDir, activeNoteId);
 
         if (dataDir && activeNoteId) {
           const noteType = fields.type ?? 'analysis-note';

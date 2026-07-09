@@ -5,8 +5,8 @@ import { ForceGraph, type ForceGraphHandle } from './ForceGraph';
 import { Dropdown, type DropdownOption } from '../ui/Dropdown';
 import { NOTE_TYPE_LABELS, type NoteType } from '../../types/note';
 
+// daily-log는 그래프에서 제외됨 (buildGraphData) — 필터/범례에서도 제외
 const NOTE_TYPES: NoteType[] = [
-  'daily-log',
   'quick-memo',
   'analysis-note',
   'test-log',
@@ -201,7 +201,7 @@ export function GraphView() {
         </div>
 
         <span className="text-[10px] text-ink-3 ml-2 tabular-nums" title="노트 수 (Daily Log 제외)">
-          {filtered.nodes.filter((n) => n.type !== 'daily-log').length} / {graphData?.nodes.filter((n) => n.type !== 'daily-log').length ?? 0}
+          {filtered.nodes.length} / {graphData?.nodes.length ?? 0}
         </span>
       </div>
 
