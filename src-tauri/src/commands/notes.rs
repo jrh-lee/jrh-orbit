@@ -135,6 +135,55 @@ pub fn snapshot_data(
     Ok(count)
 }
 
+/// List snapshot stamps under `backup_root` (newest first). Only date-stamped
+/// dirs count — helper dirs like `rescue/` are excluded.
+#[tauri::command]
+pub fn list_snapshots(backup_root: String) -> Result<Vec<String>, String> {
+    let root = PathBuf::from(&backup_root);
+    if !root.exists() {
+        return Ok(vec![]);
+    }
+    let mut dirs: Vec<String> = fs::read_dir(&root)
+        .map_err(|e| e.to_string())?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .filter_map(|e| e.file_name().to_str().map(String::from))
+        .filter(|n| n.starts_with(|c: char| c.is_ascii_digit()))
+        .collect();
+    dirs.sort();
+    dirs.reverse();
+    Ok(dirs)
+}
+
+/// Restore a snapshot: copy its notes/*.md and data/*.json back over the
+/// originals. Files created after the snapshot are left untouched (no
+/// deletion — restore only overwrites what the snapshot contains).
+#[tauri::command]
+pub fn restore_snapshot(
+    data_dir: String,
+    backup_root: String,
+    stamp: String,
+) -> Result<u32, String> {
+    let src = PathBuf::from(&backup_root).join(&stamp);
+    if !src.exists() {
+        return Err(format!("snapshot not found: {stamp}"));
+    }
+    let mut count = 0u32;
+    count += copy_tree(
+        &src.join("notes"),
+        &PathBuf::from(&data_dir).join("notes"),
+        &["md"],
+    )
+    .map_err(|e| e.to_string())?;
+    count += copy_tree(
+        &src.join("data"),
+        &PathBuf::from(&data_dir).join("data"),
+        &["json"],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(count)
+}
+
 #[tauri::command]
 pub fn write_binary(path: String, data: Vec<u8>) -> Result<(), String> {
     if let Some(parent) = PathBuf::from(&path).parent() {

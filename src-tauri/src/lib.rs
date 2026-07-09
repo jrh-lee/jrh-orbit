@@ -28,6 +28,8 @@ pub fn run() {
             notes::ensure_dir,
             notes::path_exists,
             notes::snapshot_data,
+            notes::list_snapshots,
+            notes::restore_snapshot,
             notes::write_binary,
             notes::write_binary_b64,
             notes::copy_file,

@@ -8,6 +8,7 @@ import { POMODORO_DEFAULTS } from '../../lib/constants';
 import { migrateNotes } from '../../lib/migration';
 import { resetOnboarding } from '../layout/OnboardingTour';
 import { ImportExportSection } from './ImportExportSection';
+import { BackupSection } from './BackupSection';
 import { ReviewSchedulerStatus } from '../productivity/ReviewSchedulerStatus';
 import type { Theme } from '../../stores/useAppStore';
 
@@ -336,6 +337,11 @@ export function SettingsView() {
       <section>
         <h2 className="text-base font-medium text-ink mb-2">Import / Export</h2>
         <ImportExportSection />
+      </section>
+
+      <section>
+        <h2 className="text-base font-medium text-ink mb-2">백업 / 복원</h2>
+        <BackupSection />
       </section>
 
       <section>
