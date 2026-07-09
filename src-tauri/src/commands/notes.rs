@@ -84,8 +84,13 @@ fn copy_tree(src: &PathBuf, dst: &PathBuf, exts: &[&str]) -> std::io::Result<u32
             .is_some_and(|e| exts.contains(&e))
         {
             fs::create_dir_all(dst)?;
-            fs::copy(&path, dst.join(entry.file_name()))?;
-            count += 1;
+            // 개별 파일 복사 실패(클라우드 드라이브 잠금 등)는 건너뛰고 계속 —
+            // `?`로 중단하면 그 뒤 파일 전부가 스냅샷에서 빠진다 (2026-07-09 사고에서
+            // 특정 노트가 모든 스냅샷에 누락됐던 원인)
+            match fs::copy(&path, dst.join(entry.file_name())) {
+                Ok(_) => count += 1,
+                Err(e) => eprintln!("[snapshot] copy failed, skipping {:?}: {}", path, e),
+            }
         }
     }
     Ok(count)

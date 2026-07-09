@@ -364,6 +364,11 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const lastEmittedContent = useRef<string | null>(null);
   const isLoadingContent = useRef(false);
+  // 사용자가 실제로 상호작용하기 전에는 어떤 저장도 하지 않는다.
+  // 마운트 직후의 정규화 트랜잭션(컬럼 정리 등)이 debounce를 걸고, 노트 전환 시
+  // unmount flush가 그걸 저장하면서 — 읽기 레이스와 겹치면 — 다른 노트의 내용이
+  // 현재 파일에 써지는 사고가 있었다 (2026-07-09 노트 섞임 사고).
+  const hadUserInputRef = useRef(false);
   const [mathEdit, setMathEdit] = useState<MathClickInfo | null>(null);
   const [wikiLink, setWikiLink] = useState<WikiLinkState | null>(null);
   const [wikiResults, setWikiResults] = useState<SearchResult[]>([]);
@@ -657,6 +662,9 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
     },
     onUpdate: ({ editor: e }) => {
       if (isLoadingContent.current) return;
+      // 포커스된 상태의 변경(타이핑, 칩 메뉴의 .focus() 체인 등)은 사용자 입력
+      if (e.isFocused) hadUserInputRef.current = true;
+      if (!hadUserInputRef.current) return;
       clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
         debounceRef.current = undefined;
@@ -952,6 +960,23 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
     }
     isLoadingContent.current = false;
   }, [editor, content]);
+
+  // 에디터 DOM에서의 직접 조작(키 입력, 클릭, 드롭, 붙여넣기)을 사용자 입력으로 마킹
+  useEffect(() => {
+    if (!editor) return;
+    const dom = editor.view.dom;
+    const mark = () => { hadUserInputRef.current = true; };
+    dom.addEventListener('keydown', mark);
+    dom.addEventListener('mousedown', mark);
+    dom.addEventListener('paste', mark);
+    dom.addEventListener('drop', mark);
+    return () => {
+      dom.removeEventListener('keydown', mark);
+      dom.removeEventListener('mousedown', mark);
+      dom.removeEventListener('paste', mark);
+      dom.removeEventListener('drop', mark);
+    };
+  }, [editor]);
 
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;

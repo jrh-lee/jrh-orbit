@@ -256,6 +256,7 @@ export function NoteListView() {
   const [noteIcon, setNoteIcon] = useState('');
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [iconInput, setIconInput] = useState('');
+  const selectSeqRef = useRef(0);
   const [meta, setMeta] = useState<NoteMeta>({ title: '', project: [], topic: '', experiment: '', subsystem: [], tags: [], status: 'draft' });
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
   const [tagInput, setTagInput] = useState('');
@@ -676,8 +677,12 @@ export function NoteListView() {
   async function handleSelectNote(fullPath: string) {
     setConflictNote(false);
     localStorage.setItem('orbit-last-open-note', fullPath);
+    // 빠르게 연속 클릭하면 느린 읽기(대용량 노트)가 나중에 도착해 상태를
+    // 다른 노트의 내용으로 덮을 수 있다 — 마지막 선택만 반영 (노트 섞임 사고 방지)
+    const seq = ++selectSeqRef.current;
     try {
       const raw = await invoke<string>('read_note', { path: fullPath });
+      if (seq !== selectSeqRef.current) return;
       const { frontmatter, body: b } = splitFrontmatter(raw);
       fmRef.current = frontmatter;
       prevBodyRef.current = b;
@@ -737,6 +742,7 @@ export function NoteListView() {
     fmRef.current = fm;
 
     if (activeNote) {
+      if (!writeGuardOk(activeNote)) return;
       lastWriteTime.current = Date.now();
       invoke('write_note', { path: activeNote, content: joinFrontmatter(fm, body) }).catch(() => {});
 
@@ -795,9 +801,23 @@ export function NoteListView() {
     updateMeta('tags', meta.tags.filter(t => t !== tag));
   }
 
+  /** 최후의 안전망: 저장하려는 내용의 id가 대상 파일명과 다르면 차단.
+   *  (연구노트는 파일명 = id) 레이스로 다른 노트의 상태가 남아 있어도
+   *  교차 오염이 파일에 닿기 전에 막는다. */
+  function writeGuardOk(targetPath: string): boolean {
+    const stem = (targetPath.split(/[\\/]/).pop() ?? '').replace(/\.md$/, '');
+    const fmId = parseFrontmatterFields(fmRef.current).id;
+    if (fmId && stem && fmId !== stem) {
+      console.error(`[write-guard] 내용 id "${fmId}" ≠ 파일 "${stem}" — 저장 차단`);
+      setError(`저장 차단: 노트 상태 불일치 감지 (${fmId} → ${stem}) — 노트를 다시 열어주세요`);
+      return false;
+    }
+    return true;
+  }
+
   /** 노트별 이모지 아이콘 설정/해제 — frontmatter icon 필드 */
   function updateNoteIcon(emoji: string) {
-    if (!activeNote) return;
+    if (!activeNote || !writeGuardOk(activeNote)) return;
     const v = emoji.trim();
     setNoteIcon(v);
     setIconPickerOpen(false);
@@ -812,6 +832,7 @@ export function NoteListView() {
     (md: string) => {
       setBody(md);
       if (activeNote) {
+        if (!writeGuardOk(activeNote)) return;
         lastWriteTime.current = Date.now();
         const fields = parseFrontmatterFields(fmRef.current);
         if (fields.status === 'draft' && md.trim().length > 0) {
