@@ -28,6 +28,11 @@ export const BlockEmbed = Node.create({
         default: '',
         parseHTML: (el) => (el.getAttribute('data-block') ?? '').replace(/^\^/, ''),
       },
+      /** 영역 동기화: 끝 블록의 ID (없으면 단일 블록) */
+      blockEnd: {
+        default: '',
+        parseHTML: (el) => (el.getAttribute('data-block-end') ?? '').replace(/^\^/, ''),
+      },
     };
   },
 
@@ -42,6 +47,7 @@ export const BlockEmbed = Node.create({
         'data-type': 'block-embed',
         'data-note': node.attrs.noteId,
         'data-block': `^${node.attrs.blockId}`,
+        ...(node.attrs.blockEnd ? { 'data-block-end': `^${node.attrs.blockEnd}` } : {}),
         class: 'block-embed',
       }),
     ];
@@ -56,8 +62,9 @@ export const BlockEmbed = Node.create({
       markdown: {
         serialize(state: any, node: PmNode) {
           const esc = (s: unknown) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+          const endAttr = node.attrs.blockEnd ? ` data-block-end="^${esc(node.attrs.blockEnd)}"` : '';
           state.write(
-            `<div data-type="block-embed" data-note="${esc(node.attrs.noteId)}" data-block="^${esc(node.attrs.blockId)}"></div>`,
+            `<div data-type="block-embed" data-note="${esc(node.attrs.noteId)}" data-block="^${esc(node.attrs.blockId)}"${endAttr}></div>`,
           );
           state.closeBlock(node);
         },

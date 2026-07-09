@@ -720,8 +720,33 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
     if (!el) return false;
     // 부드러운 스크롤 유지 — 플래시는 스크롤이 "도착한 뒤" 시작해야 보인다
     const startFlash = () => {
-      el.classList.add('block-link-flash');
-      setTimeout(() => el.classList.remove('block-link-flash'), 2600);
+      // PM 리렌더로 el이 교체됐을 수 있음 — 위치로 다시 조회
+      let target: HTMLElement | null = el;
+      if (!target.isConnected) {
+        const dom2 = editor.view.nodeDOM(pos);
+        target = dom2 instanceof HTMLElement ? dom2 : (dom2 as Node | null)?.parentElement ?? null;
+      }
+      if (!target) return;
+      target.classList.add('block-link-flash');
+      const t = target;
+      setTimeout(() => t.classList.remove('block-link-flash'), 2600);
+      // 에디터 DOM과 무관한 고정 오버레이 링 — 어떤 경우에도 확실히 보임.
+      // 표시 중 스크롤하면 블록을 따라가야 하므로 매 프레임 위치 추적.
+      const overlay = document.createElement('div');
+      overlay.className = 'block-link-flash-overlay';
+      document.body.appendChild(overlay);
+      let raf = 0;
+      const track = () => {
+        if (!t.isConnected) { overlay.remove(); return; }
+        const r = t.getBoundingClientRect();
+        overlay.style.left = `${r.left - 5}px`;
+        overlay.style.top = `${r.top - 4}px`;
+        overlay.style.width = `${r.width + 10}px`;
+        overlay.style.height = `${r.height + 8}px`;
+        raf = requestAnimationFrame(track);
+      };
+      track();
+      setTimeout(() => { cancelAnimationFrame(raf); overlay.remove(); }, 2600);
     };
     const scroller = el.closest('.overflow-y-auto') as HTMLElement | null;
     const sr = scroller?.getBoundingClientRect();
@@ -1024,10 +1049,31 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
                 label: '동기화 블록 복사',
                 action: () => {
                   // 붙여넣으면 원본을 실시간 미러링하는 카드가 된다 —
-                  // 원본을 수정하면 모든 미러가 자동 갱신 (Notion synced block)
-                  const bid = ensureBlockIdAt(ctxMenu.blockPos!);
-                  if (!bid) return;
-                  const html = `<div data-type="block-embed" data-note="${noteId}" data-block="^${bid}"></div>`;
+                  // 원본을 수정하면 모든 미러가 자동 갱신 (Notion synced block).
+                  // 여러 블록을 드래그로 선택한 상태면 그 영역 전체를 미러링.
+                  const nearestTextblockPos = (p: number): number | null => {
+                    try {
+                      const $p = editor.state.doc.resolve(p);
+                      for (let d = $p.depth; d > 0; d--) {
+                        if ($p.node(d).isTextblock) return $p.before(d);
+                      }
+                    } catch { /* ignore */ }
+                    return null;
+                  };
+                  let startPos = ctxMenu.blockPos!;
+                  let endPos = startPos;
+                  const sel = editor.state.selection;
+                  if (!sel.empty) {
+                    const s = nearestTextblockPos(sel.from);
+                    const e = nearestTextblockPos(Math.max(sel.from, sel.to - 1));
+                    if (s !== null && e !== null && e > s) { startPos = s; endPos = e; }
+                  }
+                  // 끝 블록에 먼저 ID 삽입 (앞쪽 삽입이 뒤 위치를 밀지 않게)
+                  const bidEnd = endPos !== startPos ? ensureBlockIdAt(endPos) : null;
+                  const bidStart = ensureBlockIdAt(startPos);
+                  if (!bidStart) return;
+                  const endAttr = bidEnd ? ` data-block-end="^${bidEnd}"` : '';
+                  const html = `<div data-type="block-embed" data-note="${noteId}" data-block="^${bidStart}"${endAttr}></div>`;
                   navigator.clipboard.writeText(html).catch(() => {});
                 },
                 key: '',
