@@ -90,6 +90,7 @@ export const HeadingFold = Extension.create({
                       btn.type = 'button';
                       btn.title = folded ? '펼치기' : '접기';
                       btn.contentEditable = 'false';
+                      btn.tabIndex = -1; // Tab 포커스 이동 대상에서 제외
                       btn.innerHTML =
                         '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 1.5L7.5 5 3 8.5"/></svg>';
                       btn.addEventListener('mousedown', (e) => {

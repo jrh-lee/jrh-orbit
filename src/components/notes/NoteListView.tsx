@@ -952,12 +952,14 @@ export function NoteListView() {
         date: today,
         project: sourceNote.project,
         topic: sourceNote.topic,
+        experiment: sourceNote.experiment, // 승격 시 experiment 승계 (초기화 버그)
         subsystem: sourceNote.subsystem,
         tags: sourceNote.tags,
         related: [sourceNote.id, `${today}-daily`].filter(Boolean),
         status: 'draft',
         created: iso,
         updated: iso,
+        ...(sourceNote.icon ? { icon: sourceNote.icon } : {}),
       });
 
       const newBody = sourceBody || template?.body || '\n';

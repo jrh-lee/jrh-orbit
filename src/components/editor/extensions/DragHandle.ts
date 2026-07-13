@@ -443,7 +443,9 @@ export const DragHandle = Extension.create({
             return true;
           } catch { break; }
         }
-        return false;
+        // 들여쓸 수 없어도 키는 소비 — 브라우저 기본 Tab이 토글/접기
+        // 화살표 버튼으로 포커스를 옮겨버리는 것 방지
+        return true;
       },
       'Shift-Tab': () => {
         if (outdentSelectedBlock()) return true;
@@ -456,10 +458,13 @@ export const DragHandle = Extension.create({
         for (let d = $from.depth; d >= 1; d--) {
           if (LIST_TYPES.includes($from.node(d).type.name)) listLevels++;
         }
-        if (listLevels <= 1) return listLevels === 1;
-        if (this.editor.can().liftListItem('taskItem')) return this.editor.commands.liftListItem('taskItem');
-        if (this.editor.can().liftListItem('listItem')) return this.editor.commands.liftListItem('listItem');
-        return false;
+        if (listLevels <= 1 && listLevels === 1) return true;
+        if (listLevels >= 2) {
+          if (this.editor.can().liftListItem('taskItem')) return this.editor.commands.liftListItem('taskItem');
+          if (this.editor.can().liftListItem('listItem')) return this.editor.commands.liftListItem('listItem');
+        }
+        // 리스트 밖에서도 키 소비 — Shift-Tab이 이전 포커스 요소로 튀는 것 방지
+        return true;
       },
     };
   },
