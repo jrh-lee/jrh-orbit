@@ -229,10 +229,20 @@ export function DailyLog() {
         // Unknown-ID healing (today only): a line whose [ID] doesn't exist in
         // todos.json (mangled/bogus id, deleted elsewhere) is invisible to the
         // Tasks tab and every sync. Re-register it and swap the id in place.
-        if (isToday) {
-          const todosNow = await readJsonFile<TodosFile>(dataDir, FILES.todos).catch(() => null);
+        // todos.json이 안 읽히면(Drive 미수화 등) 모든 등록 스윕을 건너뛴다.
+        // 읽기 실패를 "태스크 없음"으로 간주하고 재등록하면 전체 태스크가
+        // 새 ID로 뭉개지고 todos.json이 덮어써진다 (2026-07-15 TASK-001 사고).
+        const todosNow = isToday
+          ? await readJsonFile<TodosFile>(dataDir, FILES.todos).catch(() => null)
+          : null;
+        const todosReadable = !!todosNow?.todos;
+        if (isToday && !todosReadable) {
+          console.warn('[daily-sync] todos.json unreadable — skipping all registration sweeps');
+        }
+
+        if (isToday && todosReadable) {
           const knownIds = new Set(
-            (todosNow?.todos ?? []).flatMap((t) => [t.id, ...(t.subtasks ?? []).map((s) => s.id)]),
+            (todosNow!.todos).flatMap((t) => [t.id, ...(t.subtasks ?? []).map((s) => s.id)]),
           );
           for (const line of resolvedBody.split('\n')) {
             const p = parseTaskLine(line);
@@ -244,49 +254,15 @@ export function DailyLog() {
             if (!title) continue;
             const oldId = p.id;
             const project = detectProjectForItem(resolvedBody, p.title);
-            registerNewTodo(dataDir, title, project).then((newId) => {
-              if (import.meta.env.DEV) console.warn('[daily-sync] unknown id re-registered:', oldId, '→', newId);
-              setBody((current) => {
-                const escOld = '\\[' + oldId + '\\]';
-                if (!current.includes(`[${oldId}]`) && !current.includes(escOld)) return current;
-                const updated = current.replace(escOld, '\\[' + newId + '\\]').replace(`[${oldId}]`, `[${newId}]`);
-                prevBodyRef.current = updated;
-                detectionBaseRef.current = updated;
-                (async () => {
-                  try {
-                    await invoke('write_note', { path: fullPath, content: joinFrontmatter(fmRef.current, updated) });
-                  } catch {}
-                })();
-                return updated;
-              });
-            }).catch(() => {});
-          }
-        }
-
-        // Orphan sweep: any ID-less checkbox line at load time means a
-        // registration cycle was cut short (e.g. the user switched views
-        // before the 3s detection timer fired). Register them now — both
-        // top-level tasks and indented subtasks. registerNewTodo /
-        // registerNewSubtask are idempotent by title, so re-sweeps are safe.
-        // Today only — past dates must stay write-free at load time.
-        const orphans = isToday ? detectNewCheckboxItems('', resolvedBody) : [];
-        for (const item of orphans) {
-          if (inflightRef.current.has(item.text)) continue;
-          inflightRef.current.set(item.text, '');
-          const reg = item.parentId
-            ? registerNewSubtask(dataDir, item.parentId, item.text)
-            : registerNewTodo(dataDir, item.text, detectProjectForItem(resolvedBody, item.text));
-          reg.then((newId) => {
-            if (!newId) {
-              inflightRef.current.delete(item.text);
-              return;
-            }
-            if (import.meta.env.DEV) console.warn('[daily-sync] load sweep registered:', newId, item.parentId ? `under ${item.parentId}` : '');
-            inflightRef.current.set(item.text, newId);
+            // 순차 등록 — 병렬로 돌면 todos.json read-modify-write가 레이스를
+            // 일으켜 전원이 같은 순번 ID를 받는다 (위 사고의 두 번째 원인)
+            const newId = await registerNewTodo(dataDir, title, project).catch(() => null);
+            if (!newId) continue;
+            if (import.meta.env.DEV) console.warn('[daily-sync] unknown id re-registered:', oldId, '→', newId);
             setBody((current) => {
-              const marker = `- [ ] ${item.text}`;
-              if (!current.includes(marker)) return current;
-              const updated = current.replace(marker, `- [ ] [${newId}] ${item.text}`);
+              const escOld = '\\[' + oldId + '\\]';
+              if (!current.includes(`[${oldId}]`) && !current.includes(escOld)) return current;
+              const updated = current.replace(escOld, '\\[' + newId + '\\]').replace(`[${oldId}]`, `[${newId}]`);
               prevBodyRef.current = updated;
               detectionBaseRef.current = updated;
               (async () => {
@@ -296,8 +272,42 @@ export function DailyLog() {
               })();
               return updated;
             });
-          }).catch(() => {
+          }
+        }
+
+        // Orphan sweep: any ID-less checkbox line at load time means a
+        // registration cycle was cut short (e.g. the user switched views
+        // before the 3s detection timer fired). Register them now — both
+        // top-level tasks and indented subtasks. registerNewTodo /
+        // registerNewSubtask are idempotent by title, so re-sweeps are safe.
+        // Today only + todos.json이 읽힐 때만 (읽기 실패 시 등록 = 덮어쓰기 사고).
+        // 순차 등록 — 병렬 등록은 순번 ID 레이스를 일으킨다.
+        const orphans = isToday && todosReadable ? detectNewCheckboxItems('', resolvedBody) : [];
+        for (const item of orphans) {
+          if (inflightRef.current.has(item.text)) continue;
+          inflightRef.current.set(item.text, '');
+          const newId = await (item.parentId
+            ? registerNewSubtask(dataDir, item.parentId, item.text)
+            : registerNewTodo(dataDir, item.text, detectProjectForItem(resolvedBody, item.text))
+          ).catch(() => null);
+          if (!newId) {
             inflightRef.current.delete(item.text);
+            continue;
+          }
+          if (import.meta.env.DEV) console.warn('[daily-sync] load sweep registered:', newId, item.parentId ? `under ${item.parentId}` : '');
+          inflightRef.current.set(item.text, newId);
+          setBody((current) => {
+            const marker = `- [ ] ${item.text}`;
+            if (!current.includes(marker)) return current;
+            const updated = current.replace(marker, `- [ ] [${newId}] ${item.text}`);
+            prevBodyRef.current = updated;
+            detectionBaseRef.current = updated;
+            (async () => {
+              try {
+                await invoke('write_note', { path: fullPath, content: joinFrontmatter(fmRef.current, updated) });
+              } catch {}
+            })();
+            return updated;
           });
         }
       } catch {
