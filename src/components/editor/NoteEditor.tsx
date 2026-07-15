@@ -10,6 +10,7 @@ import type { MathClickInfo } from './extensions';
 import { EditorToolbar } from './EditorToolbar';
 import { MathEditor } from './MathEditor';
 import { searchNotes, getNoteByExactId, type SearchResult } from '../../lib/db';
+import { attachmentsToDisplay, attachmentsToStorage, sanitizeAttachmentSubdir } from '../../lib/attachmentUrls';
 import type { EditorView } from '@tiptap/pm/view';
 import type { Slice, Node as PmDocNode, Fragment } from '@tiptap/pm/model';
 import '../../styles/editor.css';
@@ -346,6 +347,8 @@ interface NoteEditorProps {
   onEditorBlur?: () => void;
   /** Frontmatter id of the note being edited — enables 블록 링크 복사 */
   noteId?: string;
+  /** 첨부파일을 저장할 attachments/ 하위 폴더 (노트 stem 또는 Daily 날짜) */
+  attachmentSubdir?: string;
   /** Block-link anchor to scroll to once content is loaded */
   scrollAnchor?: string | null;
   /** Called after the anchor scroll attempt finishes (found or not) */
@@ -358,7 +361,7 @@ interface WikiLinkState {
   coords: { left: number; top: number };
 }
 
-export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsertion, sectionGuides, editorRef, onEditorBlur, noteId, scrollAnchor, onAnchorScrolled }: NoteEditorProps) {
+export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsertion, sectionGuides, editorRef, onEditorBlur, noteId, attachmentSubdir, scrollAnchor, onAnchorScrolled }: NoteEditorProps) {
   const { dataDir, openNote } = useAppStore();
   const smartTransformEnabled = useConfigStore((s) => s.editor.smart_transform);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -401,6 +404,14 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
     setMathEdit(info);
   }, []);
 
+  // 노트별 첨부 폴더 — attachmentSubdir가 있으면 attachments/<subdir>/에 저장
+  const attachmentSubdirRef = useRef(attachmentSubdir);
+  attachmentSubdirRef.current = attachmentSubdir;
+  const resolveAttachDir = useCallback(async (baseDir: string) => {
+    const sub = attachmentSubdirRef.current ? sanitizeAttachmentSubdir(attachmentSubdirRef.current) : '';
+    return sub ? join(baseDir, 'attachments', sub) : join(baseDir, 'attachments');
+  }, []);
+
   const handleImageDrop = useCallback(async (file: File) => {
     if (!dataDir || !file.type.startsWith('image/')) return null;
     // Read once as data URI — used both for the base64 IPC payload and as fallback src
@@ -413,7 +424,7 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
     try {
       const ext = file.name.split('.').pop() ?? 'png';
       const filename = `img-${Date.now().toString(36)}.${ext}`;
-      const attachDir = await join(dataDir, 'attachments');
+      const attachDir = await resolveAttachDir(dataDir);
       await invoke('ensure_dir', { path: attachDir });
       const destPath = await join(attachDir, filename);
 
@@ -425,7 +436,7 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
       console.warn('[image] save to attachments failed, falling back to data URI:', err);
       return dataUri;
     }
-  }, [dataDir]);
+  }, [dataDir, resolveAttachDir]);
 
   /** PDF/문서 등 일반 파일을 attachments에 복사하고 file:// href를 돌려준다 */
   const handleFileDrop = useCallback(async (file: File) => {
@@ -442,10 +453,11 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
     });
     if (!dataUri) return null;
     try {
-      const attachDir = await join(dataDir, 'attachments');
+      const attachDir = await resolveAttachDir(dataDir);
       await invoke('ensure_dir', { path: attachDir });
-      // 원본 이름 유지 + 충돌 방지 접두사
-      const destPath = await join(attachDir, `${Date.now().toString(36)}-${file.name}`);
+      // 원본 이름 유지 + 충돌 방지 접두사 (괄호는 마크다운 링크를 깨므로 치환)
+      const safeName = file.name.replace(/[()]/g, '_');
+      const destPath = await join(attachDir, `${Date.now().toString(36)}-${safeName}`);
       const base64 = dataUri.slice(dataUri.indexOf(',') + 1);
       await invoke('write_binary_b64', { path: destPath, data: base64 });
       // 공백/한글 경로가 마크다운 링크 괄호를 깨지 않도록 인코딩
@@ -454,13 +466,13 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
       console.warn('[file] save to attachments failed:', err);
       return null;
     }
-  }, [dataDir]);
+  }, [dataDir, resolveAttachDir]);
 
   const lastAutoFitRef = useRef(0);
 
   const editor = useEditor({
     extensions: getExtensions({ placeholder, onMathClick, smartTransform: smartTransformEnabled, sectionGuides }),
-    content: preprocessEmptyCheckboxes(content),
+    content: preprocessEmptyCheckboxes(attachmentsToDisplay(content, dataDir)),
     shouldRerenderOnTransaction: true,
     editorProps: {
       clipboardTextSerializer: (slice) => sliceToPlainText(slice),
@@ -671,7 +683,8 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
         const storage = e.storage as Record<string, any>;
         const md: string = storage.markdown?.getMarkdown?.() ?? '';
         const tight = stripLooseListItems(md);
-        const spaced = unescapeHtmlGt(ensureMarkdownSpacing(tight));
+        // 파일에는 기기 종속 asset/file URL 대신 attachments/ 상대 경로로 저장
+        const spaced = attachmentsToStorage(unescapeHtmlGt(ensureMarkdownSpacing(tight)));
         lastEmittedContent.current = spaced;
         onChange(spaced);
       }, 300);
@@ -947,7 +960,7 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
     // Save/restore the cursor so external body updates don't yank it away mid-typing.
     const hadFocus = editor.isFocused;
     const { from, to } = editor.state.selection;
-    editor.commands.setContent(preprocessEmptyCheckboxes(content));
+    editor.commands.setContent(preprocessEmptyCheckboxes(attachmentsToDisplay(content, dataDir)));
     if (!skipBlankLineInsertion) {
       insertBlankLinesBeforeHeadings(editor);
     }
@@ -959,7 +972,7 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
       } catch { /* selection restore is best-effort */ }
     }
     isLoadingContent.current = false;
-  }, [editor, content]);
+  }, [editor, content, dataDir]);
 
   // 에디터 DOM에서의 직접 조작(키 입력, 클릭, 드롭, 붙여넣기)을 사용자 입력으로 마킹
   useEffect(() => {
@@ -996,7 +1009,7 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
         const storage = editor.storage as Record<string, any>;
         const md: string = storage.markdown?.getMarkdown?.() ?? '';
         const tight = stripLooseListItems(md);
-        const spaced = unescapeHtmlGt(ensureMarkdownSpacing(tight));
+        const spaced = attachmentsToStorage(unescapeHtmlGt(ensureMarkdownSpacing(tight)));
         lastEmittedContent.current = spaced;
         onChangeRef.current(spaced);
       } catch { /* flush is best-effort */ }
@@ -1058,7 +1071,7 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
 
   return (
     <div className="flex flex-col flex-1 min-h-0 min-w-0">
-      <EditorToolbar editor={editor} />
+      <EditorToolbar editor={editor} attachmentSubdir={attachmentSubdir} />
       {mathEdit && editor && (
         <MathEditor
           editor={editor}

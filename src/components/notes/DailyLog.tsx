@@ -932,6 +932,7 @@ export function DailyLog() {
             placeholder="Write today's log..."
             editorRef={editorRef}
             onEditorBlur={normalizeHeadingsInEditor}
+            attachmentSubdir={dateKey}
           />
         </div>
       )}

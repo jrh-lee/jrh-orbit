@@ -4,10 +4,13 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import { join } from '@tauri-apps/api/path';
 import { useAppStore } from '../../stores/useAppStore';
+import { sanitizeAttachmentSubdir } from '../../lib/attachmentUrls';
 import type { Editor } from '@tiptap/react';
 
 interface EditorToolbarProps {
   editor: Editor | null;
+  /** 첨부파일을 저장할 attachments/ 하위 폴더 (노트 stem 또는 Daily 날짜) */
+  attachmentSubdir?: string;
 }
 
 interface ToolbarButton {
@@ -713,7 +716,12 @@ function AlignButtons({ editor }: { editor: Editor }) {
   );
 }
 
-async function pickAttachFile(dataDir: string): Promise<{ path: string; filename: string } | null> {
+async function resolveAttachDir(dataDir: string, subdir?: string): Promise<string> {
+  const sub = subdir ? sanitizeAttachmentSubdir(subdir) : '';
+  return sub ? join(dataDir, 'attachments', sub) : join(dataDir, 'attachments');
+}
+
+async function pickAttachFile(dataDir: string, subdir?: string): Promise<{ path: string; filename: string } | null> {
   try {
     const result = await open({
       multiple: false,
@@ -726,7 +734,7 @@ async function pickAttachFile(dataDir: string): Promise<{ path: string; filename
     const originalName = filePath.split(/[/\\]/).pop() ?? 'file';
     const ext = originalName.split('.').pop() ?? '';
     const filename = `att-${Date.now().toString(36)}.${ext}`;
-    const attachDir = await join(dataDir, 'attachments');
+    const attachDir = await resolveAttachDir(dataDir, subdir);
     await invoke('ensure_dir', { path: attachDir });
     const destPath = await join(attachDir, filename);
     await invoke('copy_file', { src: filePath, dest: destPath });
@@ -736,7 +744,7 @@ async function pickAttachFile(dataDir: string): Promise<{ path: string; filename
   }
 }
 
-async function pickImageFile(dataDir: string): Promise<string | null> {
+async function pickImageFile(dataDir: string, subdir?: string): Promise<string | null> {
   try {
     const result = await open({
       multiple: false,
@@ -746,7 +754,7 @@ async function pickImageFile(dataDir: string): Promise<string | null> {
     const filePath = result;
     const ext = filePath.split('.').pop() ?? 'png';
     const filename = `img-${Date.now().toString(36)}.${ext}`;
-    const attachDir = await join(dataDir, 'attachments');
+    const attachDir = await resolveAttachDir(dataDir, subdir);
     await invoke('ensure_dir', { path: attachDir });
     const destPath = await join(attachDir, filename);
     await invoke('copy_file', { src: filePath, dest: destPath });
@@ -756,7 +764,7 @@ async function pickImageFile(dataDir: string): Promise<string | null> {
   }
 }
 
-export function EditorToolbar({ editor }: EditorToolbarProps) {
+export function EditorToolbar({ editor, attachmentSubdir }: EditorToolbarProps) {
   const { dataDir } = useAppStore();
   const [showImageInput, setShowImageInput] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -780,7 +788,7 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
 
   const handleImageInsert = async () => {
     if (!dataDir) return;
-    const src = await pickImageFile(dataDir);
+    const src = await pickImageFile(dataDir, attachmentSubdir);
     if (src) {
       editor.chain().focus().setImage({ src }).run();
     }
@@ -788,13 +796,15 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
 
   const handleFileAttach = async () => {
     if (!dataDir) return;
-    const result = await pickAttachFile(dataDir);
+    const result = await pickAttachFile(dataDir, attachmentSubdir);
     if (result) {
+      // file:// URL로 저장해야 저장 시 attachments/ 상대 경로로 변환된다
+      const href = `file://${encodeURI(result.path.replace(/\\/g, '/'))}`;
       editor.chain().focus().insertContent({
         type: 'paragraph',
         content: [{
           type: 'text',
-          marks: [{ type: 'link', attrs: { href: result.path } }],
+          marks: [{ type: 'link', attrs: { href } }],
           text: result.filename,
         }],
       }).run();

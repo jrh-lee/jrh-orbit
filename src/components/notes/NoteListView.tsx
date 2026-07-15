@@ -1911,6 +1911,7 @@ ${content}
                   placeholder="Start writing..."
                   sectionGuides={activeGuideMap}
                   noteId={activeNoteId || undefined}
+                  attachmentSubdir={activeNoteId || undefined}
                   scrollAnchor={scrollAnchor}
                   onAnchorScrolled={() => setScrollAnchor(null)}
                 />
