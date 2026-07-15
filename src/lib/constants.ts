@@ -27,6 +27,7 @@ export const FILES = {
   calendarFeeds: 'data/calendar-feeds.json',
   playlist: 'data/playlist.json',
   templates: 'data/templates.json',
+  timerState: 'data/timer-state.json',
   config: 'config.json',
 } as const;
 

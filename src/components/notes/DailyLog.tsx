@@ -894,15 +894,21 @@ export function DailyLog() {
     } catch {}
   }, [dataDir, dateKey]);
 
+  // 파일 워처가 감지한 외부 변경(다른 PC에서 Drive로 동기화된 편집 등):
+  // 이 날짜의 Daily 파일이 바뀐 경우에만 병합 리로드를 요청한다.
+  // tryReload가 입력 중 보류·커서 라인 보존 병합을 처리하므로 안전하다.
   useEffect(() => {
-    const handler = () => {
-      if (Date.now() - lastWriteTime.current > 2000) {
-        setConflict(true);
-      }
+    const handler = (e: Event) => {
+      const paths: string[] = (e as CustomEvent<{ paths?: string[] }>).detail?.paths ?? [];
+      const mine = paths.some((p) => p.replace(/\\/g, '/').endsWith(`/daily/${dateKey}.md`));
+      if (!mine) return;
+      // 우리 자신의 저장 에코(워처 지연 ~0.8s)는 무시
+      if (Date.now() - lastWriteTime.current < 2000) return;
+      tryReloadRef.current();
     };
     window.addEventListener('notes-changed', handler);
     return () => window.removeEventListener('notes-changed', handler);
-  }, []);
+  }, [dateKey]);
 
   // 외부 갱신(daily-log-updated 등)에 의한 리로드 정책 (2026-07-15):
   // 리로드는 setBody → setContent로 이어져 커서를 리셋하므로, 에디터에

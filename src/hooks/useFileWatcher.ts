@@ -21,6 +21,7 @@ type SyncEvent =
   | 'subsystems-changed'
   | 'topics-changed'
   | 'workhours-changed'
+  | 'timer-changed'
   | 'calendar-changed';
 
 const JSON_FILE_EVENTS: Record<string, SyncEvent> = {
@@ -32,6 +33,7 @@ const JSON_FILE_EVENTS: Record<string, SyncEvent> = {
   'links.json': 'links-changed',
   'subsystems.json': 'subsystems-changed',
   'topics.json': 'topics-changed',
+  'timer-state.json': 'timer-changed',
 };
 
 async function safeReindexNote(filePath: string, fallbackType: string) {
@@ -88,6 +90,9 @@ export function useFileWatcher() {
             if (Date.now() < writeLockUntil.current) return;
 
             const dispatched = new Set<SyncEvent>();
+            // notes-changed 수신자가 "내 노트가 바뀌었나"를 판단할 수 있도록
+            // 변경된 노트 경로를 detail로 전달 (Daily 자동 리로드용)
+            const notePaths: string[] = [];
 
             for (const p of event.paths) {
               if (!p) continue;
@@ -96,14 +101,21 @@ export function useFileWatcher() {
               if (!classified) continue;
 
               if (classified.notePath) {
+                notePaths.push(classified.notePath);
                 const fallback = classified.notePath.includes('/daily/') ? 'daily-log' : 'analysis-note';
                 safeReindexNote(classified.notePath, fallback);
               }
 
               if (!dispatched.has(classified.event)) {
                 dispatched.add(classified.event);
-                window.dispatchEvent(new CustomEvent(classified.event));
+                if (classified.event !== 'notes-changed') {
+                  window.dispatchEvent(new CustomEvent(classified.event));
+                }
               }
+            }
+
+            if (dispatched.has('notes-changed')) {
+              window.dispatchEvent(new CustomEvent('notes-changed', { detail: { paths: notePaths } }));
             }
 
             if (dispatched.has('notes-changed')) {

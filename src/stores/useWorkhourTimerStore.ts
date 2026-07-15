@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { addWorkhourSession, loadDailyWorkhour } from '../lib/workhour';
 import { workdayKey } from '../lib/dateUtils';
+import { readJsonFile, writeJsonFile } from '../lib/fileSystem';
+import { FILES } from '../lib/constants';
 import { useAppStore } from './useAppStore';
 
 const STORAGE_KEY = 'jrh-orbit-workhour-timer';
@@ -11,6 +13,26 @@ interface Saved {
   running: boolean;
   startedAt: number | null;
   date: string;
+}
+
+/** 기기 간 타이머 동기화 파일 (data/timer-state.json).
+ *  진행 중 세션은 startedAt 타임스탬프만 있으면 어느 기기든 경과를 계산할
+ *  수 있으므로, 파일 쓰기는 사용자 액션(시작/정지/±분/종료)에만 발생한다 —
+ *  주기적 쓰기가 없어 Drive 동기화 충돌 창이 거의 없다. */
+interface TimerFileState extends Saved {
+  /** 이 상태를 만든 사용자 액션 시각 (epoch ms) — last-writer-wins 기준 */
+  updatedAt: number;
+}
+
+// 우리가 만들었거나 이미 반영한 상태의 updatedAt — 이보다 오래된 파일 내용은 무시
+let appliedUpTo = 0;
+
+function persistToFile(s: Saved) {
+  const { dataDir } = useAppStore.getState();
+  if (!dataDir) return;
+  const updatedAt = Date.now();
+  appliedUpTo = updatedAt;
+  writeJsonFile(dataDir, FILES.timerState, { ...s, updatedAt } satisfies TimerFileState).catch(() => {});
 }
 
 /** 근무일 키 (새벽 6시 경계) — dateUtils.workdayKey로 통일 */
@@ -118,6 +140,7 @@ export const useWorkhourTimerStore = create<WorkhourTimerState>((set, get) => {
       const { baseElapsed } = get();
       set({ running: true, startedAt: now });
       save({ baseElapsed, running: true, startedAt: now, date: today() });
+      persistToFile({ baseElapsed, running: true, startedAt: now, date: today() });
       startInterval();
     },
 
@@ -128,6 +151,7 @@ export const useWorkhourTimerStore = create<WorkhourTimerState>((set, get) => {
       const newBase = baseElapsed + session;
       set({ running: false, elapsed: newBase, baseElapsed: newBase, startedAt: null });
       save({ baseElapsed: newBase, running: false, startedAt: null, date: today() });
+      persistToFile({ baseElapsed: newBase, running: false, startedAt: null, date: today() });
     },
 
     finish: async () => {
@@ -162,6 +186,7 @@ export const useWorkhourTimerStore = create<WorkhourTimerState>((set, get) => {
     reset: () => {
       set({ elapsed: 0, running: false, startedAt: null, baseElapsed: 0, date: today() });
       save({ baseElapsed: 0, running: false, startedAt: null, date: today() });
+      persistToFile({ baseElapsed: 0, running: false, startedAt: null, date: today() });
     },
 
     addMinutes: (min: number) => {
@@ -171,6 +196,7 @@ export const useWorkhourTimerStore = create<WorkhourTimerState>((set, get) => {
         const newBase = s.baseElapsed + added;
         const session = s.startedAt ? Math.floor((Date.now() - s.startedAt) / 1000) : 0;
         save({ baseElapsed: newBase, running: s.running, startedAt: s.startedAt, date: today() });
+        persistToFile({ baseElapsed: newBase, running: s.running, startedAt: s.startedAt, date: today() });
         return { baseElapsed: newBase, elapsed: newBase + session };
       });
     },
@@ -187,6 +213,7 @@ export const useWorkhourTimerStore = create<WorkhourTimerState>((set, get) => {
         const newBase = Math.max(0, s.baseElapsed + session - sub);
         const startedAt = s.running ? now : null;
         save({ baseElapsed: newBase, running: s.running, startedAt, date: today() });
+        persistToFile({ baseElapsed: newBase, running: s.running, startedAt, date: today() });
         return { baseElapsed: newBase, elapsed: newBase, startedAt };
       });
     },
@@ -212,6 +239,44 @@ export function ensureWorkhourInterval() {
   if (running && intervalId === undefined) {
     startInterval();
   }
+}
+
+/** 다른 기기가 쓴 timer-state.json을 반영 — 앱 시작 시 + timer-changed 워처.
+ *  updatedAt이 우리가 만든/이미 반영한 것보다 새로울 때만 적용(LWW).
+ *  실행 중 세션은 startedAt(epoch)으로 경과를 계산하므로 기기를 옮겨도
+ *  타이머가 그대로 이어진다. */
+export async function syncTimerFromFile(): Promise<void> {
+  const { dataDir } = useAppStore.getState();
+  if (!dataDir) return;
+  const ext = await readJsonFile<TimerFileState>(dataDir, FILES.timerState);
+  if (!ext || typeof ext.updatedAt !== 'number') return;
+  if (ext.updatedAt <= appliedUpTo) return; // 우리 액션이거나 이미 반영됨
+  if (ext.date !== today()) return; // 지난 근무일 상태는 무시
+  appliedUpTo = ext.updatedAt;
+  const startedAt = ext.running ? ext.startedAt : null;
+  const session = startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0;
+  const baseElapsed = Math.max(0, ext.baseElapsed ?? 0);
+  useWorkhourTimerStore.setState({
+    date: ext.date,
+    baseElapsed,
+    running: !!ext.running,
+    startedAt,
+    elapsed: baseElapsed + session,
+  });
+  save({ baseElapsed, running: !!ext.running, startedAt, date: ext.date });
+  if (ext.running) ensureWorkhourInterval();
+}
+
+if (typeof window !== 'undefined') {
+  // 워처가 timer-state.json 변경을 감지하면 즉시 반영
+  window.addEventListener('timer-changed', () => {
+    syncTimerFromFile();
+  });
+  // 앱 시작 직후 1회 — 다른 기기에서 돌던 타이머 이어받기.
+  // (Drive 미수화로 읽기 실패하면 로컬 상태 유지, 워처가 이후에 다시 시도)
+  setTimeout(() => {
+    syncTimerFromFile();
+  }, 2000);
 }
 
 if (typeof document !== 'undefined') {
