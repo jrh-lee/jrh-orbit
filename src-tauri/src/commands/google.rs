@@ -17,14 +17,46 @@ pub struct GoogleTokens {
 }
 
 fn spawn_browser(url: &str) -> Result<(), String> {
-    // NOT `cmd /c start` — cmd treats the `&` between query params as a
-    // command separator and truncates the URL. rundll32 takes the URL as a
-    // plain argument with no shell parsing involved.
-    std::process::Command::new("rundll32")
-        .args(["url.dll,FileProtocolHandler", url])
-        .spawn()
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    #[cfg(target_os = "windows")]
+    {
+        // NOT `cmd /c start` — cmd treats the `&` between query params as a
+        // command separator and truncates the URL. rundll32 takes the URL as a
+        // plain argument with no shell parsing involved. PATH가 제한된 환경도
+        // 있으므로 절대경로로 호출하고, 실패 시 explorer로 폴백.
+        let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".into());
+        let rundll = format!("{system_root}\\System32\\rundll32.exe");
+        if std::process::Command::new(&rundll)
+            .args(["url.dll,FileProtocolHandler", url])
+            .spawn()
+            .is_ok()
+        {
+            return Ok(());
+        }
+        let explorer = format!("{system_root}\\explorer.exe");
+        std::process::Command::new(explorer)
+            .arg(url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    #[allow(unreachable_code)]
+    Err("지원하지 않는 OS".into())
 }
 
 /// Wait for the OAuth redirect on the loopback listener and pull `code` out

@@ -74,13 +74,26 @@ async function getAccessToken(dataDir: string): Promise<string | null> {
   if (cachedAccess && Date.now() < cachedAccess.expiresAt) return cachedAccess.token;
   const auth = await getGoogleAuth(dataDir);
   if (!auth) return null;
-  const tokens = await invoke<Tokens>('google_refresh_token', {
-    clientId: auth.clientId,
-    clientSecret: auth.clientSecret,
-    refreshToken: auth.refreshToken,
-  });
-  cachedAccess = { token: tokens.access_token, expiresAt: Date.now() + (tokens.expires_in - 60) * 1000 };
-  return cachedAccess.token;
+  try {
+    const tokens = await invoke<Tokens>('google_refresh_token', {
+      clientId: auth.clientId,
+      clientSecret: auth.clientSecret,
+      refreshToken: auth.refreshToken,
+    });
+    cachedAccess = { token: tokens.access_token, expiresAt: Date.now() + (tokens.expires_in - 60) * 1000 };
+    return cachedAccess.token;
+  } catch (e) {
+    const msg = String(e);
+    if (msg.includes('invalid_grant')) {
+      // OAuth 앱이 테스트 모드면 리프레시 토큰이 7일 후 만료된다 —
+      // 원인 없는 400 대신 해결 방법을 안내
+      throw new Error(
+        '토큰 만료 — [해제] 후 [Google 연결]로 다시 로그인해주세요. ' +
+        '(Google Cloud Console에서 앱을 테스트 모드에서 프로덕션으로 게시하면 7일 만료가 없어집니다)',
+      );
+    }
+    throw e;
+  }
 }
 
 /** List the account's calendars (for the picker UI). */
