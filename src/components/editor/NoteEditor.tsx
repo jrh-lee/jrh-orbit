@@ -457,9 +457,12 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
     try {
       const attachDir = await resolveAttachDir(dataDir);
       await invoke('ensure_dir', { path: attachDir });
-      // 원본 이름 유지 + 충돌 방지 접두사 (괄호는 마크다운 링크를 깨므로 치환)
-      const safeName = file.name.replace(/[()]/g, '_');
-      const filename = `${Date.now().toString(36)}-${safeName}`;
+      // 원본 이름 그대로 저장 (괄호는 마크다운 링크를 깨므로 치환).
+      // 같은 이름이 이미 있을 때만 충돌 방지 접두사를 붙인다.
+      const safeName = file.name.replace(/[()]/g, '_').replace(/[/\\]/g, '-');
+      let filename = safeName;
+      const exists = await invoke<boolean>('path_exists', { path: await join(attachDir, filename) }).catch(() => false);
+      if (exists) filename = `${Date.now().toString(36)}-${safeName}`;
       const destPath = await join(attachDir, filename);
       const base64 = dataUri.slice(dataUri.indexOf(',') + 1);
       await invoke('write_binary_b64', { path: destPath, data: base64 });
@@ -527,17 +530,27 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
               view.dispatch(tr);
             }
           }
-          // PDF/문서 등 일반 파일 — attachments에 복사하고 열 수 있는 링크 삽입
+          // PDF/문서 등 일반 파일 — attachments에 복사하고 열 수 있는 링크 삽입.
+          // 드롭 지점이 텍스트 블록 안이면 그 줄에 인라인으로 붙인다 —
+          // 문단으로 감싸 넣으면 bullet 안에서 줄바꿈이 생기고, 그걸 지우려면
+          // bullet 구조가 깨진다.
           for (const file of docFiles) {
             const href = await handleFileDrop(file);
             if (href && view.state) {
               const pos = dropPos?.pos ?? view.state.doc.content.size;
               const { schema } = view.state;
-              const para = schema.nodes.paragraph.create(null, [
+              const inline = [
                 schema.text('📄 '),
                 schema.text(file.name, [schema.marks.link.create({ href })]),
-              ]);
-              view.dispatch(view.state.tr.insert(pos, para));
+              ];
+              let isInline = false;
+              try {
+                isInline = view.state.doc.resolve(pos).parent.isTextblock;
+              } catch { /* 경계 위치 — 블록 삽입으로 폴백 */ }
+              const tr = isInline
+                ? view.state.tr.insert(pos, inline)
+                : view.state.tr.insert(pos, schema.nodes.paragraph.create(null, inline));
+              view.dispatch(tr);
             }
           }
         })();

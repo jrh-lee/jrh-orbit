@@ -732,10 +732,13 @@ async function pickAttachFile(dataDir: string, subdir?: string): Promise<{ href:
     if (!result) return null;
     const filePath = result;
     const originalName = filePath.split(/[/\\]/).pop() ?? 'file';
-    const ext = originalName.split('.').pop() ?? '';
-    const filename = `att-${Date.now().toString(36)}.${ext}`;
     const attachDir = await resolveAttachDir(dataDir, subdir);
     await invoke('ensure_dir', { path: attachDir });
+    // 원본 이름 그대로 저장 — 같은 이름이 이미 있을 때만 접두사로 회피
+    const safeName = originalName.replace(/[()]/g, '_');
+    let filename = safeName;
+    const exists = await invoke<boolean>('path_exists', { path: await join(attachDir, filename) }).catch(() => false);
+    if (exists) filename = `att-${Date.now().toString(36)}-${safeName}`;
     const destPath = await join(attachDir, filename);
     await invoke('copy_file', { src: filePath, dest: destPath });
     // 상대 경로 href — 클릭 시 dataDir 기준으로 해석해서 연다 (NoteEditor)

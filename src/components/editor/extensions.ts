@@ -366,8 +366,10 @@ export function getExtensions(opts?: ExtensionOptions | string) {
       autolink: true,
       // note:// 스킴은 main.tsx에서 앱 시작 시 한 번만 linkify에 등록 —
       // 여기(protocols)에 넣으면 에디터 생성마다 재등록 경고가 뜬다.
-      // URL 검증만 note://를 허용하도록 통과시킨다.
-      isAllowedUri: (url, ctx) => url.startsWith('note://') || ctx.defaultValidate(url),
+      // URL 검증: note://와 첨부 상대 경로(attachments/...)를 허용 —
+      // 안 하면 마크다운 로드 시 링크 마크가 벗겨져 일반 텍스트가 된다.
+      isAllowedUri: (url, ctx) =>
+        url.startsWith('note://') || url.startsWith('attachments/') || ctx.defaultValidate(url),
       HTMLAttributes: {
         target: null,
         rel: null,
