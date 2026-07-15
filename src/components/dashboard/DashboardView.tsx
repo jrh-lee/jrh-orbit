@@ -446,11 +446,13 @@ function attitudeTemplate(projectName: string): string {
 function docsTemplate(projectName: string): string {
   return [
     '', `## ${projectName} 주요 문서`, '',
-    '문서 파일(PDF 등)을 이 노트에 드래그하면 attachments에 저장되고 클릭해서 열 수 있는 링크가 생깁니다. 웹 문서는 URL을 붙여넣으세요.', '',
-    '- ICD: ',
-    '- User Guide: ',
-    '- Command & Telemetry: ',
-    '- Parameter 정의: ',
+    '문서 파일(PDF 등)을 표의 문서 칸에 드래그하면 attachments에 저장되고 클릭해서 열 수 있는 링크가 생깁니다. 웹 문서는 URL을 붙여넣으세요.', '',
+    '| 구분 | 문서 |',
+    '|------|------|',
+    '| ICD |  |',
+    '| User Guide |  |',
+    '| Command & Telemetry |  |',
+    '| Parameter 정의 |  |',
     '',
   ].join('\n');
 }
