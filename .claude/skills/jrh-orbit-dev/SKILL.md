@@ -97,11 +97,26 @@ npm run tauri build  # 릴리즈 빌드
 4. **orbit.db FTS 인덱스(notes_fts.content)가 사실상의 백업.** 파일이 덮어써져도 인덱스에 이전 본문이 남아 있을 수 있다 (단, 워처가 재인덱싱하기 전까지만 — 발견 즉시 덤프할 것).
 5. **일일 스냅샷 백업**: 앱 시작 20초 후 `snapshot_data` 커맨드가 `<dataDir>/backups/<stamp>/`에 notes+data를 복사 (하루 1회, 30개 보관, `src/lib/backup.ts`). 복구 = 앱 종료 후 스냅샷의 notes/·data/를 원위치로 복사.
 
-## 이미지/파일 첨부
+## 이미지/파일 첨부 (크로스플랫폼 상대 경로 — 2026-07-15 전환)
 
-- 이미지는 `attachments/`에 저장 후 `convertFileSrc()`로 asset protocol URL 생성
+- **마크다운 파일에는 `attachments/<노트stem 또는 날짜>/파일명` 상대 경로만 저장**한다.
+  절대 asset/file URL을 파일에 쓰면 다른 OS/기기에서 깨진다 (Windows↔Mac 사고 사례).
+- 변환은 `src/lib/attachmentUrls.ts`가 담당: 로드 시 `attachmentsToDisplay()`(상대→asset/file URL),
+  저장 시 `attachmentsToStorage()`(URL→상대). NoteEditor의 setContent/onChange 경계에서만 호출.
+- 레거시 절대 URL(`http://asset.localhost/G%3A...`)은 표시 시 현재 dataDir로 재해석되고,
+  사용자가 그 노트를 편집하면 저장 시 상대 경로로 자연 이행된다 — 일괄 마이그레이션 금지 (Drive 안전 규칙).
+- 새 첨부는 노트별 폴더에 저장: NoteEditor/EditorToolbar의 `attachmentSubdir` prop
+  (연구노트 = activeNoteId, Daily = dateKey).
 - `tauri.conf.json`의 `assetProtocol.scope`가 dataDir을 커버해야 이미지가 로드됨
 - IPC로 바이너리 전송 시 JSON 숫자 배열 금지 — base64 문자열로 전송
+
+## 음악 플레이어 (YouTube 브리지)
+
+- macOS 프로덕션 빌드의 origin은 `tauri://localhost`라 YouTube IFrame API가 동작하지 않는다
+  (Windows는 `http://tauri.localhost`라 동작). 그래서 `docs/player/index.html`(GitHub Pages 호스팅)을
+  숨김 iframe으로 띄우고 postMessage로 제어한다 — `MusicPlayer.tsx`의 `MusicEngine` 참조.
+- 브리지 페이지 수정 시 `docs/player/index.html`을 고치고 push하면 Pages가 자동 배포.
+- 디버깅: localStorage `orbit-player-url`로 브리지 URL 오버라이드 가능.
 
 ## UI 디자인
 

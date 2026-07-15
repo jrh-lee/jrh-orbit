@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>JRH-Orbit Player Bridge</title>
+<style>html,body{margin:0;background:#000}</style>
+</head>
+<body>
+<div id="yt"></div>
+<script>
+// JRH-Orbit 음악 플레이어 브리지.
+//
+// macOS Tauri 앱의 페이지 origin은 tauri://localhost라서 YouTube IFrame API의
+// postMessage 핸드셰이크가 실패한다. 이 페이지는 정상 https origin(GitHub Pages)
+// 위에서 YT.Player를 돌리고, 앱과는 postMessage로만 통신하는 얇은 껍데기다.
+// 플레이리스트 등 데이터는 전혀 갖지 않는다 — videoId를 그때그때 받을 뿐이다.
+//
+// 앱 → 페이지: { type: 'orbit-player-cmd', cmd, videoId? }
+// 페이지 → 앱: { type: 'orbit-player', event: 'ready'|'state'|'error', data? }
+
+var player = null;
+var ready = false;
+var parentWin = null;
+var pending = [];
+
+function send(event, data) {
+  if (parentWin) parentWin.postMessage({ type: 'orbit-player', event: event, data: data }, '*');
+}
+
+function handle(msg) {
+  switch (msg.cmd) {
+    case 'load': player.loadVideoById(msg.videoId); break;
+    case 'cue': player.cueVideoById(msg.videoId); break;
+    case 'play': player.playVideo(); break;
+    case 'pause': player.pauseVideo(); break;
+    case 'stop': player.stopVideo(); break;
+    case 'replay': player.seekTo(0); player.playVideo(); break;
+    case 'seek': player.seekTo(msg.seconds, true); break;
+  }
+}
+
+// 시크 바용 재생 위치 브로드캐스트 (0.5초 간격)
+setInterval(function () {
+  if (!ready || !parentWin || typeof player.getCurrentTime !== 'function') return;
+  send('time', {
+    position: player.getCurrentTime() || 0,
+    duration: player.getDuration() || 0,
+  });
+}, 500);
+
+window.addEventListener('message', function (e) {
+  var msg = e.data;
+  if (!msg || msg.type !== 'orbit-player-cmd') return;
+  parentWin = e.source;
+  if (ready) handle(msg);
+  else pending.push(msg);
+});
+
+window.onYouTubeIframeAPIReady = function () {
+  player = new YT.Player('yt', {
+    height: '1',
+    width: '1',
+    playerVars: { controls: 0 },
+    events: {
+      onReady: function () {
+        ready = true;
+        send('ready');
+        var q = pending;
+        pending = [];
+        q.forEach(handle);
+      },
+      onStateChange: function (ev) { send('state', ev.data); },
+      onError: function (ev) { send('error', ev.data); },
+    },
+  });
+};
+
+var tag = document.createElement('script');
+tag.src = 'https://www.youtube.com/iframe_api';
+document.head.appendChild(tag);
+</script>
+</body>
+</html>

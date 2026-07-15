@@ -27,33 +27,19 @@ async function fetchVideoTitle(videoId: string): Promise<string> {
   return `Video ${videoId}`;
 }
 
-declare global {
-  interface Window {
-    YT: any;
-    onYouTubeIframeAPIReady: (() => void) | undefined;
-  }
-}
-
-let apiLoaded = false;
-function loadYTApi(): Promise<void> {
-  if (apiLoaded && window.YT?.Player) return Promise.resolve();
-  return new Promise((resolve) => {
-    if (window.YT?.Player) { apiLoaded = true; resolve(); return; }
-    const prev = window.onYouTubeIframeAPIReady;
-    window.onYouTubeIframeAPIReady = () => {
-      apiLoaded = true;
-      prev?.();
-      resolve();
-    };
-    if (!document.querySelector('script[src*="youtube.com/iframe_api"]')) {
-      const tag = document.createElement('script');
-      tag.src = 'https://www.youtube.com/iframe_api';
-      document.head.appendChild(tag);
-    }
-  });
-}
-
 // ─── Engine: always mounted in AppShell, manages YouTube player ───
+//
+// YouTube IFrame API는 부모 페이지가 정상 http(s) origin일 때만 동작한다.
+// macOS 프로덕션 빌드의 origin은 tauri://localhost라 API 핸드셰이크가 실패하므로,
+// GitHub Pages(docs/player/index.html)에 올린 브리지 페이지를 숨김 iframe으로
+// 띄우고 postMessage로 제어한다. 플레이리스트 데이터는 앱 로컬에만 있다.
+
+// localStorage 'orbit-player-url'로 오버라이드 가능 (로컬 http 서버로 브리지 테스트용)
+const PLAYER_PAGE_URL =
+  localStorage.getItem('orbit-player-url') ?? 'https://jrh-lee.github.io/jrh-orbit/player/';
+
+// YT.PlayerState 상수 (브리지 페이지가 원본 코드를 그대로 중계)
+const YT_STATE = { ENDED: 0, PLAYING: 1, PAUSED: 2 } as const;
 
 interface PlaylistFile {
   items: PlaylistItem[];
@@ -63,10 +49,14 @@ interface PlaylistFile {
 export function MusicEngine() {
   const { dataDir } = useAppStore();
   const { playlist, currentIndex } = useMusicStore();
-  const playerRef = useRef<any>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const playerReadyRef = useRef(false);
   const prevVideoIdRef = useRef<string | null>(null);
   const loadedRef = useRef(false);
+
+  const post = useCallback((msg: { cmd: string; videoId?: string; seconds?: number }) => {
+    iframeRef.current?.contentWindow?.postMessage({ type: 'orbit-player-cmd', ...msg }, '*');
+  }, []);
 
   const loadPlaylist = useCallback(() => {
     if (!dataDir) return;
@@ -108,8 +98,7 @@ export function MusicEngine() {
   handleEndedRef.current = () => {
     const { playlist, currentIndex, repeat, setCurrentIndex, setPlaying } = useMusicStore.getState();
     if (repeat === 'one') {
-      playerRef.current?.seekTo(0);
-      playerRef.current?.playVideo();
+      post({ cmd: 'replay' });
     } else if (repeat === 'all' || currentIndex < playlist.length - 1) {
       const next = (currentIndex + 1) % playlist.length;
       setPlaying(true);
@@ -119,10 +108,33 @@ export function MusicEngine() {
     }
   };
 
+  // 브리지 페이지 → 앱 이벤트 수신
+  useEffect(() => {
+    function onMessage(e: MessageEvent) {
+      const d = e.data;
+      if (!d || d.type !== 'orbit-player') return;
+      if (d.event === 'ready') {
+        playerReadyRef.current = true;
+        // ready 전에 선택된 트랙이 있으면 반영
+        const { playlist, currentIndex, playing } = useMusicStore.getState();
+        const item = playlist[currentIndex];
+        if (item) post({ cmd: playing ? 'load' : 'cue', videoId: item.videoId });
+      } else if (d.event === 'state') {
+        if (d.data === YT_STATE.PLAYING) useMusicStore.getState().setPlaying(true);
+        if (d.data === YT_STATE.PAUSED) useMusicStore.getState().setPlaying(false);
+        if (d.data === YT_STATE.ENDED) handleEndedRef.current();
+      } else if (d.event === 'time') {
+        useMusicStore.getState().setTime(d.data?.position ?? 0, d.data?.duration ?? 0);
+      }
+    }
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [post]);
+
   useEffect(() => {
     if (playlist.length === 0) {
-      if (playerRef.current) {
-        playerRef.current.stopVideo();
+      if (playerReadyRef.current) {
+        post({ cmd: 'stop' });
         useMusicStore.getState().setPlaying(false);
       }
       prevVideoIdRef.current = null;
@@ -131,49 +143,30 @@ export function MusicEngine() {
     const item = playlist[currentIndex];
     if (!item) return;
 
-    if (prevVideoIdRef.current === item.videoId && playerRef.current) return;
+    if (prevVideoIdRef.current === item.videoId) return;
     prevVideoIdRef.current = item.videoId;
+    useMusicStore.getState().setTime(0, 0);
 
+    // 아직 ready 전이면 ready 이벤트 핸들러가 현재 트랙을 반영한다
+    if (!playerReadyRef.current) return;
     const shouldPlay = useMusicStore.getState().playing;
-    loadYTApi().then(() => {
-      if (playerRef.current) {
-        // 플레이어 생성 직후에는 API 메서드가 아직 없을 수 있음 (onReady 전)
-        if (typeof playerRef.current.loadVideoById !== 'function') {
-          prevVideoIdRef.current = null; // 다음 갱신에서 재시도
-          return;
-        }
-        if (shouldPlay) playerRef.current.loadVideoById(item.videoId);
-        else playerRef.current.cueVideoById(item.videoId);
-        return;
-      }
-      if (!containerRef.current) return;
-      playerRef.current = new window.YT.Player(containerRef.current, {
-        height: '0',
-        width: '0',
-        videoId: item.videoId,
-        playerVars: { autoplay: shouldPlay ? 1 : 0, controls: 0 },
-        events: {
-          onReady: () => { if (useMusicStore.getState().playing) useMusicStore.getState().setPlaying(true); },
-          onStateChange: (e: any) => {
-            if (e.data === window.YT.PlayerState.PLAYING) useMusicStore.getState().setPlaying(true);
-            if (e.data === window.YT.PlayerState.PAUSED) useMusicStore.getState().setPlaying(false);
-            if (e.data === window.YT.PlayerState.ENDED) handleEndedRef.current();
-          },
-        },
-      });
-    });
-  }, [playlist, currentIndex]);
+    post({ cmd: shouldPlay ? 'load' : 'cue', videoId: item.videoId });
+  }, [playlist, currentIndex, post]);
 
   useEffect(() => {
     function handler(e: Event) {
-      const cmd = (e as CustomEvent).detail;
-      const player = playerRef.current;
+      const detail = (e as CustomEvent).detail;
+      const cmd = typeof detail === 'string' ? detail : detail?.cmd;
       const state = useMusicStore.getState();
 
-      if (cmd === 'toggle') {
-        if (!player) return;
-        if (state.playing) player.pauseVideo();
-        else player.playVideo();
+      if (cmd === 'seek') {
+        if (!playerReadyRef.current) return;
+        post({ cmd: 'seek', seconds: detail.seconds });
+        state.setTime(detail.seconds, state.duration); // 낙관적 갱신 — 다음 time 이벤트 전까지 썸 위치 유지
+      } else if (cmd === 'toggle') {
+        if (!playerReadyRef.current) return;
+        if (state.playing) post({ cmd: 'pause' });
+        else post({ cmd: 'play' });
       } else if (cmd === 'next') {
         if (state.playlist.length === 0) return;
         const next = (state.currentIndex + 1) % state.playlist.length;
@@ -188,24 +181,43 @@ export function MusicEngine() {
     }
     window.addEventListener('music-cmd', handler);
     return () => window.removeEventListener('music-cmd', handler);
-  }, []);
+  }, [post]);
 
   return (
     <div className="fixed -left-[9999px] -top-[9999px] w-0 h-0 overflow-hidden" aria-hidden>
-      <div ref={containerRef} />
+      <iframe
+        ref={iframeRef}
+        src={PLAYER_PAGE_URL}
+        title="music-player-bridge"
+        style={{ width: 1, height: 1, border: 0 }}
+        allow="autoplay; encrypted-media"
+      />
     </div>
   );
 }
 
 // ─── UI: rendered in StatusBar, pure presentation + store updates ───
 
+function formatTime(s: number): string {
+  const t = Math.max(0, Math.floor(s));
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+}
+
 export function MusicPlayer() {
   const store = useMusicStore();
   const [open, setOpen] = useState(false);
   const [url, setUrl] = useState('');
   const [adding, setAdding] = useState(false);
+  // 드래그 중에는 0.5초 간격 time 이벤트가 썸을 되돌리지 않도록 로컬 값 우선
+  const [dragPos, setDragPos] = useState<number | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
+
+  function commitSeek() {
+    if (dragPos === null) return;
+    window.dispatchEvent(new CustomEvent('music-cmd', { detail: { cmd: 'seek', seconds: dragPos } }));
+    setDragPos(null);
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -291,6 +303,28 @@ export function MusicPlayer() {
             <div className="px-3 py-2 border-b border-border/50">
               <div className="text-[10px] text-ink-3 mb-0.5">Now Playing</div>
               <div className="text-xs text-ink truncate">{currentItem.title}</div>
+              <div className="flex items-center gap-1.5 mt-1.5">
+                <span className="text-[9px] text-ink-3 tabular-nums shrink-0 w-7 text-right">
+                  {formatTime(dragPos ?? store.position)}
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.max(1, Math.floor(store.duration))}
+                  step={1}
+                  value={Math.min(Math.floor(dragPos ?? store.position), Math.floor(store.duration))}
+                  disabled={store.duration === 0}
+                  onChange={(e) => setDragPos(Number(e.target.value))}
+                  onPointerUp={commitSeek}
+                  onKeyUp={(e) => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') commitSeek(); }}
+                  className="flex-1 h-1 cursor-pointer disabled:cursor-default"
+                  style={{ accentColor: 'var(--color-chrome)' }}
+                  aria-label="Seek"
+                />
+                <span className="text-[9px] text-ink-3 tabular-nums shrink-0 w-7">
+                  {formatTime(store.duration)}
+                </span>
+              </div>
             </div>
           )}
 
