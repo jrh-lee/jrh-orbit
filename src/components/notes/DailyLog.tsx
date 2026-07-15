@@ -784,32 +784,71 @@ export function DailyLog() {
     return () => window.removeEventListener('notes-changed', handler);
   }, []);
 
+  // 외부 갱신(daily-log-updated 등)에 의한 리로드 정책 (2026-07-15):
+  // 리로드는 setBody → setContent로 이어져 커서를 리셋하므로, 에디터에
+  // 포커스가 있고 커서가 같은 줄에 머무는 동안은 보류한다. 커서가 다른
+  // 블록으로 이동하거나 에디터가 블러되면 그때 실행 — 입력 중 커서 튐 방지.
+  const tryReloadRef = useRef<() => void>(() => {});
   useEffect(() => {
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
-    const handler = () => {
-      clearTimeout(retryTimer);
-      if (Date.now() - lastWriteTime.current > 1000) {
-        reloadDaily();
-      } else {
-        retryTimer = setTimeout(() => reloadDaily(), 1200);
-      }
+    let detach: (() => void) | null = null;
+
+    const cursorBlockStart = (): number => {
+      const ed = editorRef.current;
+      if (!ed || ed.isDestroyed) return -1;
+      const { $from } = ed.state.selection;
+      return $from.parent.isTextblock ? $from.start() : -1;
     };
+
+    const tryReload = () => {
+      clearTimeout(retryTimer);
+      // 방금 저장한 내 변경이 디스크에 닿기 전일 수 있다 — 잠시 뒤 재확인
+      if (Date.now() - lastWriteTime.current < 1000) {
+        retryTimer = setTimeout(tryReload, 1200);
+        return;
+      }
+      const ed = editorRef.current;
+      if (ed && !ed.isDestroyed && ed.isFocused) {
+        if (detach) return; // 이미 커서 이동을 기다리는 중
+        const baseline = cursorBlockStart();
+        const release = () => {
+          detach?.();
+          detach = null;
+          tryReload();
+        };
+        const onSelection = () => {
+          if (cursorBlockStart() !== baseline) release();
+        };
+        ed.on('selectionUpdate', onSelection);
+        ed.on('blur', release);
+        detach = () => {
+          ed.off('selectionUpdate', onSelection);
+          ed.off('blur', release);
+        };
+        return;
+      }
+      reloadDaily();
+    };
+    tryReloadRef.current = tryReload;
+
+    const handler = () => tryReload();
     window.addEventListener('daily-log-updated', handler);
     return () => {
       window.removeEventListener('daily-log-updated', handler);
       clearTimeout(retryTimer);
+      detach?.();
     };
   }, [reloadDaily]);
 
-  // 동기화 블록(미러)에서 이 Daily를 역기입한 경우 즉시 다시 읽는다
+  // 동기화 블록(미러)에서 이 Daily를 역기입한 경우 — 같은 보류 정책으로 리로드
   useEffect(() => {
     const handler = (e: Event) => {
       const path = (e as CustomEvent<{ path: string }>).detail?.path;
-      if (path && path.replace(/\\/g, '/').endsWith(`/${dateKey}.md`)) reloadDaily();
+      if (path && path.replace(/\\/g, '/').endsWith(`/${dateKey}.md`)) tryReloadRef.current();
     };
     window.addEventListener('note-external-edit', handler);
     return () => window.removeEventListener('note-external-edit', handler);
-  }, [dateKey, reloadDaily]);
+  }, [dateKey]);
 
   return (
     <div className="flex flex-col flex-1 min-h-0 min-w-0">
