@@ -1170,3 +1170,43 @@ body {
 [data-theme="solarized"] [data-mode="sidebar"] .w-px {
   background: #d8d0b8 !important;
 }
+
+/* ─── 음악 플레이어 시크 바 ───
+   네이티브 슬라이더 대체: 3px 트랙 + 호버/드래그 시에만 나타나는 썸.
+   진행률 채움은 MusicPlayer.tsx가 --seek-fill 변수(inline gradient)로 주입. */
+input.seek-bar {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 12px; /* 클릭/터치 영역 — 시각 트랙은 아래 3px */
+  background: transparent;
+  outline: none;
+  margin: 0;
+}
+input.seek-bar::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--seek-fill, var(--color-border));
+}
+input.seek-bar::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  margin-top: -3.5px;
+  border-radius: 50%;
+  background: var(--color-chrome);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+  opacity: 0;
+  transition: opacity 0.15s;
+  cursor: pointer;
+}
+input.seek-bar:hover::-webkit-slider-thumb,
+input.seek-bar:active::-webkit-slider-thumb,
+input.seek-bar:focus-visible::-webkit-slider-thumb {
+  opacity: 1;
+}
+input.seek-bar:disabled::-webkit-slider-thumb {
+  opacity: 0;
+}
+input.seek-bar:disabled {
+  opacity: 0.5;
+}

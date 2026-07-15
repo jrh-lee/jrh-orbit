@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, type CSSProperties } from 'react';
 import { useAppStore } from '../../stores/useAppStore';
 import { useMusicStore, type PlaylistItem } from '../../stores/useMusicStore';
 import { readJsonFile, writeJsonFile } from '../../lib/fileSystem';
@@ -317,8 +317,12 @@ export function MusicPlayer() {
                   onChange={(e) => setDragPos(Number(e.target.value))}
                   onPointerUp={commitSeek}
                   onKeyUp={(e) => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') commitSeek(); }}
-                  className="flex-1 h-1 cursor-pointer disabled:cursor-default"
-                  style={{ accentColor: 'var(--color-chrome)' }}
+                  className="seek-bar flex-1 cursor-pointer disabled:cursor-default"
+                  style={{
+                    '--seek-fill': `linear-gradient(to right, var(--color-chrome) ${
+                      store.duration > 0 ? Math.min(100, ((dragPos ?? store.position) / store.duration) * 100) : 0
+                    }%, var(--color-border) 0)`,
+                  } as CSSProperties}
                   aria-label="Seek"
                 />
                 <span className="text-[9px] text-ink-3 tabular-nums shrink-0 w-7">
