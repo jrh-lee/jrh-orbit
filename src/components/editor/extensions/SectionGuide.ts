@@ -73,11 +73,7 @@ export const SectionGuide = Extension.create<{ guideMap: SectionGuideMap }>({
   addProseMirrorPlugins() {
     const guideMap = this.options.guideMap;
 
-    return [
-      new Plugin({
-        key: sectionGuideKey,
-        props: {
-          decorations(state) {
+    const build = (state: { doc: any }): DecorationSet => {
             if (!guideMap || Object.keys(guideMap).length === 0) {
               return DecorationSet.empty;
             }
@@ -85,7 +81,7 @@ export const SectionGuide = Extension.create<{ guideMap: SectionGuideMap }>({
             const decorations: Decoration[] = [];
             const headings: { text: string; pos: number; endPos: number }[] = [];
 
-            state.doc.descendants((node, pos) => {
+            state.doc.descendants((node: any, pos: number) => {
               if (node.type.name === 'heading') {
                 headings.push({
                   text: node.textContent.trim(),
@@ -135,6 +131,19 @@ export const SectionGuide = Extension.create<{ guideMap: SectionGuideMap }>({
             }
 
             return DecorationSet.create(state.doc, decorations);
+    };
+
+    return [
+      new Plugin({
+        key: sectionGuideKey,
+        // 성능: 문서가 바뀔 때만 재계산 — 커서 이동에는 기존 데코레이션 재사용
+        state: {
+          init: (_cfg, state) => build(state),
+          apply: (tr, old, _oldState, newState) => (tr.docChanged ? build(newState) : old.map(tr.mapping, tr.doc)),
+        },
+        props: {
+          decorations(state) {
+            return sectionGuideKey.getState(state);
           },
         },
       }),

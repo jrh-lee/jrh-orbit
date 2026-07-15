@@ -83,13 +83,10 @@ export const Toggle = Node.create({
   },
 
   addProseMirrorPlugins() {
-    return [
-      new Plugin({
-        key: new PluginKey('toggleArrow'),
-        props: {
-          decorations(state) {
+    const toggleArrowKey = new PluginKey<DecorationSet>('toggleArrow');
+    const build = (doc: PmNode): DecorationSet => {
             const decos: Decoration[] = [];
-            state.doc.descendants((node, pos) => {
+            doc.descendants((node, pos) => {
               if (node.type.name !== 'toggle') return true;
               const open = node.attrs.open !== false;
               decos.push(
@@ -118,7 +115,19 @@ export const Toggle = Node.create({
               );
               return true; // 토글 안 토글도 지원
             });
-            return DecorationSet.create(state.doc, decos);
+            return DecorationSet.create(doc, decos);
+    };
+    return [
+      new Plugin({
+        key: toggleArrowKey,
+        // 성능: 문서가 바뀔 때만 재계산 — 커서 이동에는 기존 데코레이션 재사용
+        state: {
+          init: (_cfg, state) => build(state.doc),
+          apply: (tr, old) => (tr.docChanged ? build(tr.doc) : old.map(tr.mapping, tr.doc)),
+        },
+        props: {
+          decorations(state) {
+            return toggleArrowKey.getState(state);
           },
         },
       }),

@@ -179,11 +179,15 @@ export const useWorkhourTimerStore = create<WorkhourTimerState>((set, get) => {
       rolloverIfNeeded();
       const sub = min * 60;
       set(s => {
-        const newBase = Math.max(0, s.baseElapsed - sub);
-        const session = s.startedAt ? Math.floor((Date.now() - s.startedAt) / 1000) : 0;
-        const newElapsed = Math.max(0, newBase + session);
-        save({ baseElapsed: newBase, running: s.running, startedAt: s.startedAt, date: today() });
-        return { baseElapsed: newBase, elapsed: newElapsed };
+        // 실행 중인 세션 시간을 먼저 base로 흡수한 뒤 "총량"에서 뺀다 —
+        // base에서만 빼면 세션에 쌓인 시간은 못 깎아서, -1h를 눌러도
+        // base 바닥까지만 줄고 멈추던 버그 (2h39m에서 3번만 눌리던 증상)
+        const now = Date.now();
+        const session = s.running && s.startedAt ? Math.floor((now - s.startedAt) / 1000) : 0;
+        const newBase = Math.max(0, s.baseElapsed + session - sub);
+        const startedAt = s.running ? now : null;
+        save({ baseElapsed: newBase, running: s.running, startedAt, date: today() });
+        return { baseElapsed: newBase, elapsed: newBase, startedAt };
       });
     },
 

@@ -83,28 +83,37 @@ const TightListSerializer = Extension.create({
 const TASK_META_RE = /^(\\?\[[^\]\\]+\\?\]\s*)?(\\?\(이월[^)]*\\?\)\s*)?(\\?\(시작 [^)]*\\?\)\s*)?/;
 
 /** 블록 링크의 영구 ID 마커(^abc123)를 화면에서 숨긴다 —
- *  마크다운에는 남아 링크 대상 식별에 쓰인다 (Obsidian block id 방식) */
+ *  마크다운에는 남아 링크 대상 식별에 쓰인다 (Obsidian block id 방식)
+ *  성능: 문서가 바뀔 때만 전체 스캔, 커서 이동 등에는 기존 데코레이션 재사용 */
+const hideBlockIdsKey = new PluginKey<DecorationSet>('hideBlockIds');
+function buildBlockIdDecos(doc: PmNode): DecorationSet {
+  const decorations: Decoration[] = [];
+  doc.descendants((node, pos) => {
+    if (!node.isTextblock) return true;
+    const text = node.textContent;
+    // 마커가 연달아 붙을 수 있음 (편집으로 시작/끝 마커가 한 줄에 합쳐진 경우)
+    const m = text.match(/(\s\^[a-z0-9]{4,})+$/);
+    if (m && m.index !== undefined) {
+      const from = pos + 1 + m.index;
+      decorations.push(Decoration.inline(from, from + m[0].length, { class: 'block-id-marker' }));
+    }
+    return true;
+  });
+  return DecorationSet.create(doc, decorations);
+}
 const HideBlockIds = Extension.create({
   name: 'hideBlockIds',
   addProseMirrorPlugins() {
     return [
       new Plugin({
-        key: new PluginKey('hideBlockIds'),
+        key: hideBlockIdsKey,
+        state: {
+          init: (_cfg, state) => buildBlockIdDecos(state.doc),
+          apply: (tr, old) => (tr.docChanged ? buildBlockIdDecos(tr.doc) : old.map(tr.mapping, tr.doc)),
+        },
         props: {
           decorations(state) {
-            const decorations: Decoration[] = [];
-            state.doc.descendants((node, pos) => {
-              if (!node.isTextblock) return true;
-              const text = node.textContent;
-              // 마커가 연달아 붙을 수 있음 (편집으로 시작/끝 마커가 한 줄에 합쳐진 경우)
-              const m = text.match(/(\s\^[a-z0-9]{4,})+$/);
-              if (m && m.index !== undefined) {
-                const from = pos + 1 + m.index;
-                decorations.push(Decoration.inline(from, from + m[0].length, { class: 'block-id-marker' }));
-              }
-              return true;
-            });
-            return DecorationSet.create(state.doc, decorations);
+            return hideBlockIdsKey.getState(state);
           },
         },
       }),
@@ -112,18 +121,12 @@ const HideBlockIds = Extension.create({
   },
 });
 
-const HideTaskMeta = Extension.create({
-  name: 'hideTaskMeta',
-  addProseMirrorPlugins() {
-    return [
-      new Plugin({
-        key: new PluginKey('hideTaskMeta'),
-        props: {
-          decorations(state) {
-            const decorations: Decoration[] = [];
-            state.doc.descendants((node, pos) => {
-              if (!node.isText) return;
-              const $pos = state.doc.resolve(pos);
+const hideTaskMetaKey = new PluginKey<DecorationSet>('hideTaskMeta');
+function buildTaskMetaDecos(doc: PmNode): DecorationSet {
+  const decorations: Decoration[] = [];
+  doc.descendants((node, pos) => {
+    if (!node.isText) return;
+    const $pos = doc.resolve(pos);
               if ($pos.depth < 2) return;
               const grandparent = $pos.node($pos.depth - 1);
               if (grandparent?.type.name !== 'taskItem') return;
@@ -162,8 +165,23 @@ const HideTaskMeta = Extension.create({
                   Decoration.node(itemPos, itemPos + grandparent.nodeSize, { class: 'task-scheduled' }),
                 );
               }
-            });
-            return DecorationSet.create(state.doc, decorations);
+  });
+  return DecorationSet.create(doc, decorations);
+}
+
+const HideTaskMeta = Extension.create({
+  name: 'hideTaskMeta',
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: hideTaskMetaKey,
+        state: {
+          init: (_cfg, state) => buildTaskMetaDecos(state.doc),
+          apply: (tr, old) => (tr.docChanged ? buildTaskMetaDecos(tr.doc) : old.map(tr.mapping, tr.doc)),
+        },
+        props: {
+          decorations(state) {
+            return hideTaskMetaKey.getState(state);
           },
         },
       }),

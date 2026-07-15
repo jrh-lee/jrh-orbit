@@ -52,12 +52,8 @@ export const HeadingFold = Extension.create({
   },
 
   addProseMirrorPlugins() {
-    return [
-      new Plugin({
-        key: new PluginKey('headingFold'),
-        props: {
-          decorations(state) {
-            const doc = state.doc;
+    const headingFoldKey = new PluginKey<DecorationSet>('headingFold');
+    const build = (doc: PMNode): DecorationSet => {
             const children: { node: PMNode; pos: number }[] = [];
             doc.forEach((node, offset) => children.push({ node, pos: offset }));
 
@@ -115,6 +111,18 @@ export const HeadingFold = Extension.create({
             }
 
             return DecorationSet.create(doc, decos);
+    };
+    return [
+      new Plugin({
+        key: headingFoldKey,
+        // 성능: 문서가 바뀔 때만 재계산 — 커서 이동에는 기존 데코레이션 재사용
+        state: {
+          init: (_cfg, state) => build(state.doc),
+          apply: (tr, old) => (tr.docChanged ? build(tr.doc) : old.map(tr.mapping, tr.doc)),
+        },
+        props: {
+          decorations(state) {
+            return headingFoldKey.getState(state);
           },
         },
       }),
