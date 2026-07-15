@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, type CSSProperties } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAppStore } from '../../stores/useAppStore';
 import { useMusicStore, type PlaylistItem } from '../../stores/useMusicStore';
 import { readJsonFile, writeJsonFile } from '../../lib/fileSystem';
@@ -212,10 +212,38 @@ export function MusicPlayer() {
   const [dragPos, setDragPos] = useState<number | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
+  // 시크 바 — TitleBar의 OpacitySlider와 동일한 div 기반 커스텀 슬라이더
+  const seekTrackRef = useRef<HTMLDivElement>(null);
+  const seekDragging = useRef(false);
 
-  function commitSeek() {
-    if (dragPos === null) return;
-    window.dispatchEvent(new CustomEvent('music-cmd', { detail: { cmd: 'seek', seconds: dragPos } }));
+  function seekCalc(clientX: number): number {
+    const track = seekTrackRef.current;
+    const dur = useMusicStore.getState().duration;
+    if (!track || dur <= 0) return 0;
+    const rect = track.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    return ratio * dur;
+  }
+
+  function onSeekPointerDown(e: React.PointerEvent) {
+    if (store.duration <= 0) return;
+    e.preventDefault();
+    seekDragging.current = true;
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    setDragPos(seekCalc(e.clientX));
+  }
+
+  function onSeekPointerMove(e: React.PointerEvent) {
+    if (!seekDragging.current) return;
+    setDragPos(seekCalc(e.clientX));
+  }
+
+  function onSeekPointerUp(e: React.PointerEvent) {
+    if (!seekDragging.current) return;
+    seekDragging.current = false;
+    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    const seconds = seekCalc(e.clientX);
+    window.dispatchEvent(new CustomEvent('music-cmd', { detail: { cmd: 'seek', seconds } }));
     setDragPos(null);
   }
 
@@ -307,24 +335,31 @@ export function MusicPlayer() {
                 <span className="text-[9px] text-ink-3 tabular-nums shrink-0 w-7 text-right">
                   {formatTime(dragPos ?? store.position)}
                 </span>
-                <input
-                  type="range"
-                  min={0}
-                  max={Math.max(1, Math.floor(store.duration))}
-                  step={1}
-                  value={Math.min(Math.floor(dragPos ?? store.position), Math.floor(store.duration))}
-                  disabled={store.duration === 0}
-                  onChange={(e) => setDragPos(Number(e.target.value))}
-                  onPointerUp={commitSeek}
-                  onKeyUp={(e) => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') commitSeek(); }}
-                  className="seek-bar flex-1 cursor-pointer disabled:cursor-default"
-                  style={{
-                    '--seek-fill': `linear-gradient(to right, var(--color-chrome) ${
-                      store.duration > 0 ? Math.min(100, ((dragPos ?? store.position) / store.duration) * 100) : 0
-                    }%, var(--color-border) 0)`,
-                  } as CSSProperties}
-                  aria-label="Seek"
-                />
+                {(() => {
+                  const pct = store.duration > 0
+                    ? Math.min(100, ((dragPos ?? store.position) / store.duration) * 100)
+                    : 0;
+                  return (
+                    <div
+                      ref={seekTrackRef}
+                      className={`relative flex-1 select-none ${store.duration > 0 ? 'cursor-pointer' : ''}`}
+                      style={{ height: 14 }}
+                      onPointerDown={onSeekPointerDown}
+                      onPointerMove={onSeekPointerMove}
+                      onPointerUp={onSeekPointerUp}
+                      aria-label="Seek"
+                    >
+                      <div className="absolute left-0 top-1/2 -translate-y-1/2 rounded-full bg-border" style={{ width: '100%', height: 3 }} />
+                      <div className="absolute left-0 top-1/2 -translate-y-1/2 rounded-full bg-chrome/60" style={{ width: `${pct}%`, height: 3 }} />
+                      {store.duration > 0 && (
+                        <div
+                          className="absolute top-1/2 -translate-y-1/2 rounded-full bg-chrome hover:brightness-110 transition-colors"
+                          style={{ width: 10, height: 10, left: `calc(${pct}% - 5px)` }}
+                        />
+                      )}
+                    </div>
+                  );
+                })()}
                 <span className="text-[9px] text-ink-3 tabular-nums shrink-0 w-7">
                   {formatTime(store.duration)}
                 </span>
