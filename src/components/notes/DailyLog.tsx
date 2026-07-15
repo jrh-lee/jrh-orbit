@@ -624,6 +624,34 @@ export function DailyLog() {
       // instead of losing the registration when the user switches views.
       const runDetection = () => {
         normalizeHeadingsInEditor();
+
+        // 구조적 보류: 커서가 "아직 ID 없는 태스크 줄" 위에 있으면 텍스트와
+        // 무관하게 이번 사이클 전체를 보류한다. 텍스트 비교(300ms 디바운스
+        // 스냅샷)는 백스페이스·IME 조합 중에 어긋나 가드가 뚫렸다 —
+        // 노드 구조 판단은 어긋날 수 없다. 커서가 줄을 떠나면 최종 텍스트로
+        // 정확히 등록된다.
+        {
+          const ed = editorRef.current;
+          if (ed && !ed.isDestroyed && ed.isFocused) {
+            const { $from } = ed.state.selection;
+            for (let d = $from.depth; d > 0; d--) {
+              const n = $from.node(d);
+              if (n.type.name !== 'taskItem') continue;
+              const t = (n.firstChild?.textContent ?? '').replace(/[​‌‍﻿]/g, '').trim();
+              if (!t.startsWith('[')) {
+                if (newItemTimerRef.current) clearTimeout(newItemTimerRef.current);
+                newItemTimerRef.current = setTimeout(() => {
+                  newItemTimerRef.current = null;
+                  detectionRunRef.current?.();
+                }, NEW_ITEM_DEBOUNCE_MS);
+                if (import.meta.env.DEV) console.warn('[daily-sync] deferred (cursor on unregistered task line)');
+                return;
+              }
+              break;
+            }
+          }
+        }
+
         const currentBody = prevBodyRef.current;
         const base = detectionBaseRef.current;
         const newItems = detectNewCheckboxItems(base, currentBody);
@@ -805,13 +833,63 @@ export function DailyLog() {
       const fullPath = await join(dataDir, FOLDERS.daily, `${dateKey}.md`);
       const raw = await invoke<string>('read_note', { path: fullPath });
       const { frontmatter, body: b } = splitFrontmatter(raw);
+      let body = b;
+
+      // 커서 위치 기반 병합: 에디터가 포커스 중이면 커서가 있는 줄은 항상
+      // 에디터(사용자 입력)가 이긴다. 디스크는 쓰기 비행 중이라 한 박자
+      // 늦을 수 있고, 그대로 실으면 입력 중인 텍스트가 사라진다
+      // (2026-07-15 "테스트 테스트" → "테스트" 손실).
+      const ed = editorRef.current;
+      if (ed && !ed.isDestroyed && ed.isFocused) {
+        // IME 조합 중 문서 교체는 조합을 깨뜨린다 — 이번 리로드는 포기
+        // (다음 이벤트나 커서 이동에서 다시 시도된다)
+        if (ed.view.composing) {
+          if (import.meta.env.DEV) console.warn('[daily-sync] reload skipped: composing');
+          return;
+        }
+        const { $from } = ed.state.selection;
+        const cursorText = $from.parent.isTextblock
+          ? $from.parent.textContent.replace(/[​‌‍﻿]/g, '').trim()
+          : '';
+        if (cursorText) {
+          const unesc = (s: string) =>
+            s.replace(/\\([\\`*_{}[\]()#+\-.!>~|])/g, '$1').replace(/[​‌‍﻿]/g, '').trim();
+          const stripMarker = (s: string) => s.replace(/^\s*(?:- \[[ xX]\]|[-*+]|\d+\.)\s*/, '');
+          const prevLines = prevBodyRef.current.split('\n');
+          const idx = prevLines.findIndex((l) => unesc(stripMarker(l)) === cursorText);
+          if (idx >= 0) {
+            const editorLine = prevLines[idx];
+            const diskLines = b.split('\n');
+            const idMatch = editorLine.match(/\\?\[((?:TASK-[\d.]+)|[a-z0-9]{6,10})\\?\]/);
+            let dIdx = idMatch ? diskLines.findIndex((l) => l.includes(`[${idMatch[1]}]`)) : -1;
+            if (dIdx < 0) dIdx = diskLines.findIndex((l) => unesc(stripMarker(l)) === cursorText);
+            if (dIdx >= 0) {
+              if (diskLines[dIdx] !== editorLine) {
+                diskLines[dIdx] = editorLine;
+                body = diskLines.join('\n');
+              }
+            } else {
+              // 커서 줄이 디스크에 아직 없음(방금 만든 줄, 쓰기 비행 중) —
+              // 지금 리로드하면 그 줄이 통째로 사라진다. 포기.
+              if (import.meta.env.DEV) console.warn('[daily-sync] reload skipped: cursor line not on disk yet');
+              return;
+            }
+          }
+        }
+      }
+
       fmRef.current = frontmatter;
-      if (import.meta.env.DEV) console.warn('[daily-sync] reloadDaily: replacing body from disk');
-      prevBodyRef.current = b;
-      detectionBaseRef.current = b;
+      if (body === prevBodyRef.current) {
+        // 내용 변화 없음(또는 병합으로 상쇄) — 문서 교체 자체를 피한다
+        setConflict(false);
+        return;
+      }
+      if (import.meta.env.DEV) console.warn('[daily-sync] reloadDaily: replacing body from disk (merged)');
+      prevBodyRef.current = body;
+      detectionBaseRef.current = body;
       inflightRef.current.clear();
       reloadingRef.current = true;
-      setBody(b);
+      setBody(body);
       setConflict(false);
     } catch {}
   }, [dataDir, dateKey]);
@@ -835,11 +913,17 @@ export function DailyLog() {
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let detach: (() => void) | null = null;
 
-    const cursorBlockStart = (): number => {
+    // 커서가 있는 줄의 식별자 — 절대 위치(pos)는 위쪽 줄에 ID가 주입되면
+    // 밀려서 "같은 줄인데 다른 줄"로 오판했다 (입력 중 리로드 발동 사고).
+    // 블록 인덱스 경로는 같은 줄에서 타이핑하는 동안 절대 변하지 않는다.
+    const cursorBlockKey = (): string => {
       const ed = editorRef.current;
-      if (!ed || ed.isDestroyed) return -1;
+      if (!ed || ed.isDestroyed) return '';
       const { $from } = ed.state.selection;
-      return $from.parent.isTextblock ? $from.start() : -1;
+      if (!$from.parent.isTextblock) return '';
+      let key = '';
+      for (let d = 0; d < $from.depth; d++) key += $from.index(d) + '.';
+      return key;
     };
 
     const tryReload = () => {
@@ -852,14 +936,16 @@ export function DailyLog() {
       const ed = editorRef.current;
       if (ed && !ed.isDestroyed && ed.isFocused) {
         if (detach) return; // 이미 커서 이동을 기다리는 중
-        const baseline = cursorBlockStart();
+        const baseline = cursorBlockKey();
         const release = () => {
           detach?.();
           detach = null;
           tryReload();
         };
         const onSelection = () => {
-          if (cursorBlockStart() !== baseline) release();
+          // IME 조합 중에는 해제하지 않는다 (조합 중 문서 교체 방지)
+          if (ed.view.composing) return;
+          if (cursorBlockKey() !== baseline) release();
         };
         ed.on('selectionUpdate', onSelection);
         ed.on('blur', release);
