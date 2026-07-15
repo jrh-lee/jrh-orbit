@@ -56,6 +56,7 @@ export function CalendarView() {
   const [newTitle, setNewTitle] = useState('');
   const [newTime, setNewTime] = useState('');
   const [newReminder, setNewReminder] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [newEndDate, setNewEndDate] = useState('');
   const [googleEvents, setGoogleEvents] = useState<CalendarEvent[]>([]);
   const [googleConnected, setGoogleConnected] = useState(false);
@@ -263,9 +264,34 @@ export function CalendarView() {
     });
   }, [weeks, spans]);
 
+  const clearForm = useCallback(() => {
+    setNewTitle('');
+    setNewTime('');
+    setNewEndDate('');
+    setNewReminder('');
+    setEditingId(null);
+  }, []);
+
   const addEvent = useCallback(() => {
     const title = newTitle.trim();
     if (!title) return;
+    if (editingId) {
+      // 수정 모드: id/원래 날짜는 유지하고 나머지 필드만 교체
+      persistEvents(events.map((e) => {
+        if (e.id !== editingId) return e;
+        return {
+          id: e.id,
+          title,
+          date: e.date,
+          ...(newEndDate && newEndDate > e.date ? { endDate: newEndDate } : {}),
+          ...(newTime ? { startTime: newTime } : {}),
+          ...(newReminder !== '' ? { reminderMinutes: parseInt(newReminder, 10) } : {}),
+          source: 'local' as const,
+        };
+      }));
+      clearForm();
+      return;
+    }
     const ev: CalendarEvent = {
       id: generateId(),
       title,
@@ -277,11 +303,16 @@ export function CalendarView() {
       source: 'local',
     };
     persistEvents([...events, ev]);
-    setNewTitle('');
-    setNewTime('');
-    setNewEndDate('');
-    setNewReminder('');
-  }, [newTitle, newTime, newEndDate, newReminder, selected, events, persistEvents]);
+    clearForm();
+  }, [newTitle, newTime, newEndDate, newReminder, selected, events, persistEvents, editingId, clearForm]);
+
+  const beginEditEvent = useCallback((ev: CalendarEvent) => {
+    setEditingId(ev.id);
+    setNewTitle(ev.title);
+    setNewTime(ev.startTime ?? '');
+    setNewEndDate(ev.endDate ?? '');
+    setNewReminder(ev.reminderMinutes !== undefined ? String(ev.reminderMinutes) : '');
+  }, []);
 
   const removeEvent = useCallback((id: string) => {
     persistEvents(events.filter((e) => e.id !== id));
@@ -574,13 +605,22 @@ export function CalendarView() {
                 <span className="text-[9px] shrink-0" title={`알림: ${it.event.reminderMinutes === 0 ? '정시' : it.event.reminderMinutes >= 1440 ? `${it.event.reminderMinutes / 1440}일 전` : it.event.reminderMinutes >= 60 ? `${it.event.reminderMinutes / 60}시간 전` : `${it.event.reminderMinutes}분 전`}`}>⏰</span>
               )}
               {it.kind === 'event' && it.event && (
-                <button
-                  onClick={() => removeEvent(it.event!.id)}
-                  className="opacity-0 group-hover:opacity-100 text-ink-3 hover:text-badge-high text-[10px] transition-opacity shrink-0"
-                  title="삭제"
-                >
-                  ×
-                </button>
+                <>
+                  <button
+                    onClick={() => beginEditEvent(it.event!)}
+                    className="opacity-0 group-hover:opacity-100 text-ink-3 hover:text-chrome text-[10px] transition-opacity shrink-0"
+                    title="수정 — 아래 입력줄에서 편집"
+                  >
+                    ✎
+                  </button>
+                  <button
+                    onClick={() => removeEvent(it.event!.id)}
+                    className="opacity-0 group-hover:opacity-100 text-ink-3 hover:text-badge-high text-[10px] transition-opacity shrink-0"
+                    title="삭제"
+                  >
+                    ×
+                  </button>
+                </>
               )}
             </div>
           ))}
@@ -597,9 +637,14 @@ export function CalendarView() {
             type="text"
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') addEvent(); }}
-            placeholder="새 일정 추가... (Enter)"
-            className="flex-1 text-xs px-2 py-1 rounded border border-border bg-paper text-ink placeholder:text-ink-3"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') addEvent();
+              if (e.key === 'Escape' && editingId) clearForm();
+            }}
+            placeholder={editingId ? '일정 수정 중... (Enter 저장 / Esc 취소)' : '새 일정 추가... (Enter)'}
+            className={`flex-1 text-xs px-2 py-1 rounded border bg-paper text-ink placeholder:text-ink-3 ${
+              editingId ? 'border-chrome' : 'border-border'
+            }`}
           />
           <span className="text-[10px] text-ink-3 shrink-0">~</span>
           <input
@@ -628,10 +673,22 @@ export function CalendarView() {
           </select>
           <button
             onClick={addEvent}
-            className="px-2.5 py-1 text-xs rounded-lg border border-border text-ink-2 hover:bg-paper-soft transition-colors shrink-0"
+            className={`px-2.5 py-1 text-xs rounded-lg border transition-colors shrink-0 ${
+              editingId
+                ? 'border-chrome/60 text-ink font-medium hover:bg-chrome/20'
+                : 'border-border text-ink-2 hover:bg-paper-soft'
+            }`}
           >
-            추가
+            {editingId ? '저장' : '추가'}
           </button>
+          {editingId && (
+            <button
+              onClick={clearForm}
+              className="px-2 py-1 text-xs rounded-lg border border-border text-ink-3 hover:bg-paper-soft transition-colors shrink-0"
+            >
+              취소
+            </button>
+          )}
         </div>
         </div>
       </div>
