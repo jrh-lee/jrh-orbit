@@ -20,7 +20,9 @@
 
 var player = null;
 var ready = false;
-var parentWin = null;
+// iframe으로 임베드되므로 부모는 항상 window.parent — 앱의 첫 메시지를
+// 기다렸다가 e.source로 알아내면 ready 신호를 서로 기다리는 교착이 생긴다.
+var parentWin = window.parent !== window ? window.parent : null;
 var pending = [];
 
 function send(event, data) {
