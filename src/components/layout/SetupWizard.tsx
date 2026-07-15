@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useAppStore } from '../../stores/useAppStore';
-import { ensureDataDir, writeJsonFile, initDataFiles } from '../../lib/fileSystem';
+import { ensureDataDir, writeJsonIfMissing, initDataFiles } from '../../lib/fileSystem';
 import { FILES } from '../../lib/constants';
 
 export function SetupWizard() {
@@ -25,23 +25,26 @@ export function SetupWizard() {
     try {
       await ensureDataDir(selectedDir);
 
-      await writeJsonFile(selectedDir, FILES.todos, {
+      // 기존 데이터 폴더를 선택하는 경우(기기 추가/재설치)가 흔하므로
+      // 모든 초기 파일은 "없을 때만" 생성한다 — 무조건 쓰면 기존 데이터가
+      // 통째로 날아간다 (2026-07-15 todos/projects/playlist 소실 사고).
+      await writeJsonIfMissing(selectedDir, FILES.todos, {
         version: 1,
         lastModified: new Date().toISOString(),
         todos: [],
       });
 
-      await writeJsonFile(selectedDir, FILES.projects, {
+      await writeJsonIfMissing(selectedDir, FILES.projects, {
         version: 1,
         projects: [],
       });
 
       await initDataFiles(selectedDir);
 
-      await writeJsonFile(selectedDir, FILES.ddays, { events: [] });
-      await writeJsonFile(selectedDir, FILES.playlist, { items: [], lastIndex: 0 });
+      await writeJsonIfMissing(selectedDir, FILES.ddays, { events: [] });
+      await writeJsonIfMissing(selectedDir, FILES.playlist, { items: [], lastIndex: 0 });
 
-      await writeJsonFile(selectedDir, FILES.config, {
+      await writeJsonIfMissing(selectedDir, FILES.config, {
         theme: 'light',
         pomodoroWork: 25,
         pomodoroBreak: 5,

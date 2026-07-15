@@ -112,21 +112,30 @@ export function DailyLog() {
 
   /** Inject a task ID into the editor doc via a ProseMirror transaction.
    *  Unlike setBody() this doesn't replace the content prop, so the user's
-   *  cursor stays put even while they keep typing. Returns false if the
-   *  matching task item can't be found (caller falls back to setBody). */
-  const injectTaskIdInEditor = useCallback(function inject(itemText: string, taskId: string, attempt = 0): boolean {
+   *  cursor stays put even while they keep typing. Returns the matched line's
+   *  live doc text on success, null if no matching task item was found
+   *  (caller falls back to setBody).
+   *
+   *  정확 일치 실패 시 접두 일치도 허용한다 — 등록은 300ms 디바운스 스냅샷
+   *  기준이라, 사용자가 그 사이 더 타이핑하면 문서의 줄이 등록 텍스트보다
+   *  길다. 여기서 못 찾으면 setBody 폴백이 문서를 통째로 교체해 입력 중
+   *  커서·텍스트가 깨진다 (2026-07-15 "테스트 테스트" 손실 버그). */
+  const injectTaskIdInEditor = useCallback(function inject(itemText: string, taskId: string, attempt = 0): string | null {
     const editor = editorRef.current;
-    if (!editor || editor.isDestroyed) return false;
+    if (!editor || editor.isDestroyed) return null;
     // Don't dispatch mid-IME-composition (Korean input) — the composition
     // breaks and the cursor jumps. Retry shortly instead.
     if (editor.view.composing) {
       if (attempt < 10) setTimeout(() => inject(itemText, taskId, attempt + 1), 400);
-      return true; // disk write is handled separately; the doc catches up on retry
+      return itemText; // disk write is handled separately; the doc catches up on retry
     }
     // markdown serializer escapes punctuation; doc text is unescaped
     const target = itemText.replace(/\\([\\`*_{}[\]()#+\-.!>~|])/g, '$1').trim();
-    if (!target) return false;
+    if (!target) return null;
     let insertPos = -1;
+    let matchedText: string | null = null;
+    let prefixPos = -1;
+    let prefixText: string | null = null;
     editor.state.doc.descendants((node, pos) => {
       if (insertPos >= 0) return false;
       if (node.type.name !== 'taskItem') return true;
@@ -136,15 +145,24 @@ export function DailyLog() {
       if (text.startsWith('[')) return true; // already has an ID
       if (text === target) {
         insertPos = pos + 2; // taskItem(+1) > paragraph(+1) > text start
+        matchedText = text;
         return false;
+      }
+      if (prefixPos < 0 && text.startsWith(target)) {
+        prefixPos = pos + 2;
+        prefixText = text;
       }
       return true;
     });
-    if (insertPos < 0) return false;
+    if (insertPos < 0 && prefixPos >= 0) {
+      insertPos = prefixPos;
+      matchedText = prefixText;
+    }
+    if (insertPos < 0) return null;
     const tr = editor.state.tr.insertText(`[${taskId}] `, insertPos);
     tr.setMeta('addToHistory', false);
     editor.view.dispatch(tr);
-    return true;
+    return matchedText;
   }, []);
 
   /** Prefix user-typed project headings in the 작업 section with the emoji
@@ -627,17 +645,31 @@ export function DailyLog() {
         const unesc = (s: string) => s.replace(/\\([\\`*_{}[\]()#+\-.!>~|])/g, '$1').trim();
         const skippedTexts: string[] = [];
         const itemsToProcess = newItems.filter((it) => {
-          if (activeLine !== null && unesc(it.text) === activeLine) {
-            skippedTexts.push(it.text);
-            return false;
+          if (activeLine !== null) {
+            const t = unesc(it.text);
+            // 정확 일치뿐 아니라 접두 관계도 "커서가 있는 줄"로 간주 —
+            // 감지는 300ms 디바운스 스냅샷 기준이라 사용자가 계속 타이핑
+            // 중이면 감지 텍스트가 라이브 줄보다 짧다. 이때 등록을 진행하면
+            // 스테일 제목으로 등록되고 주입 실패 → setBody 폴백으로 커서가
+            // 깨진다 (2026-07-15 사고).
+            if (t === activeLine || activeLine.startsWith(t) || t.startsWith(activeLine)) {
+              skippedTexts.push(it.text);
+              return false;
+            }
           }
           return true;
         });
         if (skippedTexts.length > 0) {
-          const skipSet = new Set(skippedTexts.map((t) => `- [ ] ${t}`));
+          // 접두 매칭으로 스킵된 경우 라이브 줄이 더 길 수 있으므로
+          // 정확 일치가 아니라 접두 일치로 베이스에서 제거해야 재시도에서
+          // 다시 감지된다.
+          const skipPrefixes = skippedTexts.map((t) => `- [ ] ${t}`);
           detectionBaseRef.current = currentBody
             .split('\n')
-            .filter((l) => !skipSet.has(l.trim()))
+            .filter((l) => {
+              const trimmed = l.trim();
+              return !skipPrefixes.some((p) => trimmed === p || trimmed.startsWith(p));
+            })
             .join('\n');
           if (newItemTimerRef.current) clearTimeout(newItemTimerRef.current);
           newItemTimerRef.current = setTimeout(() => {
