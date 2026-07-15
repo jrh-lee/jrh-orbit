@@ -9,6 +9,7 @@ import { buildFrontmatter } from '../../lib/frontmatter';
 import { todayKey } from '../../lib/dateUtils';
 import { reindexNote } from '../../lib/searchIndex';
 import { findNotesForProject, getNoteByExactId, type HubNoteRow } from '../../lib/db';
+import { attachmentsToDisplay, resolveAttachmentHref } from '../../lib/attachmentUrls';
 import type { ProjectsFile } from '../../types/project';
 import '../../styles/editor.css';
 
@@ -102,7 +103,7 @@ function stripFrontmatter(raw: string): string {
 }
 
 export function DashboardView() {
-  const { dataDir, openNote } = useAppStore();
+  const { dataDir, openNote, pendingDashboardProject, clearPendingDashboardProject } = useAppStore();
   const { projects, setProjects } = useProjectStore();
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [projectNotes, setProjectNotes] = useState<Record<string, HubNoteRow[]>>({});
@@ -118,6 +119,13 @@ export function DashboardView() {
       if (pf?.projects) setProjects(pf.projects);
     });
   }, [dataDir, setProjects]);
+
+  // 사이드바 Dashboard 버튼에서 넘어온 프로젝트 선택
+  useEffect(() => {
+    if (!pendingDashboardProject) return;
+    setActiveProjectId(pendingDashboardProject);
+    clearPendingDashboardProject();
+  }, [pendingDashboardProject, clearPendingDashboardProject]);
 
   useEffect(() => {
     if (!activeProjectId && projects.length > 0) {
@@ -187,7 +195,8 @@ export function DashboardView() {
     return notes.find(n => n.tags?.includes(key) || (sec && n.title.includes(sec.label))) ?? null;
   }, [notes]);
 
-  // 인라인 뷰의 문서/링크 클릭 — file://는 OS로 열고, note://는 앱 안에서, 웹은 브라우저로
+  // 인라인 뷰의 문서/링크 클릭 — 첨부(attachments/)와 file://는 OS로 열고,
+  // note://는 앱 안에서, 웹은 브라우저로
   const handleContentClick = useCallback((e: React.MouseEvent) => {
     const a = (e.target as HTMLElement).closest('a');
     if (!a) return;
@@ -197,6 +206,9 @@ export function DashboardView() {
     if (href.startsWith('note://')) {
       const targetId = href.slice(7).split('#')[0];
       getNoteByExactId(targetId).then((n) => { if (n) openNote(n.path); });
+    } else if (href.startsWith('attachments/')) {
+      const resolved = dataDir ? resolveAttachmentHref(href, dataDir) : null;
+      if (resolved) invoke('open_path', { path: resolved }).catch(() => {});
     } else if (href.startsWith('file://')) {
       let path = href.slice(7);
       try { path = decodeURI(path); } catch { /* raw path */ }
@@ -204,7 +216,7 @@ export function DashboardView() {
     } else {
       invoke('open_path', { path: href }).catch(() => window.open(href, '_blank'));
     }
-  }, [openNote]);
+  }, [openNote, dataDir]);
 
   const handleCreateGlobalLinks = useCallback(async () => {
     if (!dataDir) return;
@@ -344,7 +356,7 @@ export function DashboardView() {
                 <div
                   className="dashboard-content"
                   onClick={handleContentClick}
-                  dangerouslySetInnerHTML={{ __html: mdToHtml(globalLinks.content) }}
+                  dangerouslySetInnerHTML={{ __html: mdToHtml(dataDir ? attachmentsToDisplay(globalLinks.content, dataDir) : globalLinks.content) }}
                 />
               ) : (
                 <div className="text-xs text-ink-3 italic">
@@ -357,7 +369,7 @@ export function DashboardView() {
         {activeProjectId !== '__global__' && activeProject && SECTIONS.map(sec => {
           const note = findNote(sec.key);
           const content = note ? noteContents[note.path] ?? '' : '';
-          const html = content ? mdToHtml(content) : '';
+          const html = content ? mdToHtml(dataDir ? attachmentsToDisplay(content, dataDir) : content) : '';
           return (
             <div key={sec.key} className="border border-border rounded-lg overflow-hidden">
               <div className="px-4 py-2 bg-paper-soft border-b border-border flex items-center justify-between">

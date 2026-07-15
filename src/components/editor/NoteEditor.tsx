@@ -10,7 +10,7 @@ import type { MathClickInfo } from './extensions';
 import { EditorToolbar } from './EditorToolbar';
 import { MathEditor } from './MathEditor';
 import { searchNotes, getNoteByExactId, type SearchResult } from '../../lib/db';
-import { attachmentsToDisplay, attachmentsToStorage, sanitizeAttachmentSubdir } from '../../lib/attachmentUrls';
+import { attachmentsToDisplay, attachmentsToStorage, sanitizeAttachmentSubdir, encodeAttachmentHref, resolveAttachmentHref } from '../../lib/attachmentUrls';
 import type { EditorView } from '@tiptap/pm/view';
 import type { Slice, Node as PmDocNode, Fragment } from '@tiptap/pm/model';
 import '../../styles/editor.css';
@@ -384,6 +384,8 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
   // values through refs (the editor instance outlives prop changes).
   const noteIdRef = useRef<string | undefined>(noteId);
   noteIdRef.current = noteId;
+  const dataDirRef = useRef(dataDir);
+  dataDirRef.current = dataDir;
   const scrollToAnchorRef = useRef<(anchor: string) => boolean>(() => false);
 
   // Keep the context menu fully on-screen — right-clicking near the bottom
@@ -457,11 +459,14 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
       await invoke('ensure_dir', { path: attachDir });
       // 원본 이름 유지 + 충돌 방지 접두사 (괄호는 마크다운 링크를 깨므로 치환)
       const safeName = file.name.replace(/[()]/g, '_');
-      const destPath = await join(attachDir, `${Date.now().toString(36)}-${safeName}`);
+      const filename = `${Date.now().toString(36)}-${safeName}`;
+      const destPath = await join(attachDir, filename);
       const base64 = dataUri.slice(dataUri.indexOf(',') + 1);
       await invoke('write_binary_b64', { path: destPath, data: base64 });
-      // 공백/한글 경로가 마크다운 링크 괄호를 깨지 않도록 인코딩
-      return `file://${encodeURI(destPath.replace(/\\/g, '/'))}`;
+      // 상대 경로 href — file://는 markdown-it이 거부해 재로드 시 원문
+      // 텍스트로 깨진다. 클릭 시 dataDir로 해석해서 연다.
+      const sub = attachmentSubdirRef.current ? sanitizeAttachmentSubdir(attachmentSubdirRef.current) : '';
+      return 'attachments/' + encodeAttachmentHref(sub ? `${sub}/${filename}` : filename);
     } catch (err) {
       console.warn('[file] save to attachments failed:', err);
       return null;
@@ -623,6 +628,12 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
                   if (results.length > 0) openNote(results[0].path, anchor);
                 });
               });
+              return true;
+            }
+            // 첨부파일 상대 경로 링크 — dataDir 기준으로 해석해서 OS로 연다
+            if (href.startsWith('attachments/')) {
+              const resolved = resolveAttachmentHref(href, dataDirRef.current);
+              if (resolved) invoke('open_path', { path: resolved }).catch(() => {});
               return true;
             }
             const isLocal = href.startsWith('/') || href.startsWith('file://');

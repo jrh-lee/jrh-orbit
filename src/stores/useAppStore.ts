@@ -18,6 +18,8 @@ interface AppState {
   pendingTagFilter: string | null;
   /** yyyy-MM-dd — date the Daily view should jump to on next open */
   pendingDailyDate: string | null;
+  /** Dashboard 뷰가 열리면 선택할 프로젝트 id (사이드바 Dashboard 버튼) */
+  pendingDashboardProject: string | null;
   activeProject: string | null;
   hubTarget:
     | { type: 'project'; name: string }
@@ -36,6 +38,8 @@ interface AppState {
   clearPendingNote: () => void;
   openDaily: (date: string) => void;
   clearPendingDailyDate: () => void;
+  openDashboard: (projectId: string) => void;
+  clearPendingDashboardProject: () => void;
   filterByTag: (tag: string) => void;
   filterByTaskTag: (tag: string) => void;
   clearPendingTagFilter: () => void;
@@ -59,6 +63,7 @@ export const useAppStore = create<AppState>((set) => ({
   pendingNoteAnchor: null,
   pendingTagFilter: null,
   pendingDailyDate: null,
+  pendingDashboardProject: null,
   activeProject: null,
   hubTarget: null,
   sidebarHidden: localStorage.getItem('orbit-sidebar-hidden') === '1',
@@ -79,6 +84,8 @@ export const useAppStore = create<AppState>((set) => ({
   clearPendingNote: () => set({ pendingNotePath: null, pendingNoteAnchor: null }),
   openDaily: (date) => set({ view: 'daily', pendingDailyDate: date }),
   clearPendingDailyDate: () => set({ pendingDailyDate: null }),
+  openDashboard: (projectId) => set({ view: 'dashboard', pendingDashboardProject: projectId }),
+  clearPendingDashboardProject: () => set({ pendingDashboardProject: null }),
   filterByTag: (tag) => set({ view: 'notes', pendingTagFilter: tag }),
   filterByTaskTag: (tag) => set({ view: 'tasks', pendingTagFilter: tag }),
   clearPendingTagFilter: () => set({ pendingTagFilter: null }),

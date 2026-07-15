@@ -11,7 +11,7 @@ import type { TodosFile } from '../../types/task';
 import clsx from 'clsx';
 
 export function SidebarProjectTree() {
-  const { view, setView, setActiveProject, openNote, openProjectHub, openExperimentHub, hubTarget, dataDir } = useAppStore();
+  const { view, setView, setActiveProject, openDashboard, openProjectHub, openExperimentHub, hubTarget, dataDir } = useAppStore();
   const { projects } = useProjectStore();
   const { filterProject, setFilterProject } = useTaskStore();
   // 프로젝트별 3일 이내 마감(미완료) 여부 — 붉은 펄스 점 표시용.
@@ -91,9 +91,11 @@ export function SidebarProjectTree() {
     setView(targetView);
   }, [setFilterProject, setActiveProject, setView]);
 
-  const handleOpenDashboard = useCallback((path: string) => {
-    openNote(path);
-  }, [openNote]);
+  // Dashboard 버튼 → Dashboard 뷰를 열고 해당 프로젝트 탭을 선택한다
+  // (이전에는 openNote로 대시보드 노트가 Notes 탭에 열려버렸음)
+  const handleOpenDashboard = useCallback((projectId: string) => {
+    openDashboard(projectId);
+  }, [openDashboard]);
 
   if (projects.length === 0) {
     return <div className="px-2 text-[10px] text-ink-3">No projects</div>;
@@ -164,7 +166,7 @@ export function SidebarProjectTree() {
                 </button>
                 {dbPath && (
                   <button
-                    onClick={() => handleOpenDashboard(dbPath)}
+                    onClick={() => handleOpenDashboard(project.id)}
                     className="flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] text-ink-3 hover:text-ink-2 hover:bg-paper-muted/30 transition-colors"
                   >
                     <span>🛰️</span> Dashboard

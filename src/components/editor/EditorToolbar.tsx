@@ -4,7 +4,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import { join } from '@tauri-apps/api/path';
 import { useAppStore } from '../../stores/useAppStore';
-import { sanitizeAttachmentSubdir } from '../../lib/attachmentUrls';
+import { sanitizeAttachmentSubdir, encodeAttachmentHref } from '../../lib/attachmentUrls';
 import type { Editor } from '@tiptap/react';
 
 interface EditorToolbarProps {
@@ -721,7 +721,7 @@ async function resolveAttachDir(dataDir: string, subdir?: string): Promise<strin
   return sub ? join(dataDir, 'attachments', sub) : join(dataDir, 'attachments');
 }
 
-async function pickAttachFile(dataDir: string, subdir?: string): Promise<{ path: string; filename: string } | null> {
+async function pickAttachFile(dataDir: string, subdir?: string): Promise<{ href: string; filename: string } | null> {
   try {
     const result = await open({
       multiple: false,
@@ -738,7 +738,10 @@ async function pickAttachFile(dataDir: string, subdir?: string): Promise<{ path:
     await invoke('ensure_dir', { path: attachDir });
     const destPath = await join(attachDir, filename);
     await invoke('copy_file', { src: filePath, dest: destPath });
-    return { path: destPath, filename: originalName };
+    // 상대 경로 href — 클릭 시 dataDir 기준으로 해석해서 연다 (NoteEditor)
+    const sub = subdir ? sanitizeAttachmentSubdir(subdir) : '';
+    const href = 'attachments/' + encodeAttachmentHref(sub ? `${sub}/${filename}` : filename);
+    return { href, filename: originalName };
   } catch {
     return null;
   }
@@ -798,13 +801,11 @@ export function EditorToolbar({ editor, attachmentSubdir }: EditorToolbarProps) 
     if (!dataDir) return;
     const result = await pickAttachFile(dataDir, attachmentSubdir);
     if (result) {
-      // file:// URL로 저장해야 저장 시 attachments/ 상대 경로로 변환된다
-      const href = `file://${encodeURI(result.path.replace(/\\/g, '/'))}`;
       editor.chain().focus().insertContent({
         type: 'paragraph',
         content: [{
           type: 'text',
-          marks: [{ type: 'link', attrs: { href } }],
+          marks: [{ type: 'link', attrs: { href: result.href } }],
           text: result.filename,
         }],
       }).run();
