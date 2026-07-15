@@ -152,6 +152,19 @@ Releases 페이지에서 draft를 publish하면 다운로드 가능.
 
 GitHub Releases에서 `.exe` 다운로드 → 기존 앱 위에 설치 (덮어쓰기).
 
+### macOS에서 새 버전 적용
+
+GitHub Releases에서 `.dmg` 다운로드 (Apple Silicon = `aarch64`, 인텔 = `x64`) → Applications에 덮어쓰기.
+
+앱 실행 시 **"'JRH-Orbit'은(는) 손상되었기 때문에 열 수 없습니다"** 경고가 뜨면 — 실제 손상이 아니라
+서명/공증 없는 앱에 macOS Gatekeeper가 붙이는 격리(quarantine) 플래그 때문이다. 아래 한 줄로 해제:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/JRH-Orbit.app
+```
+
+새 버전을 설치할 때마다 다시 실행해야 한다.
+
 ## 기술 스택
 
 | 레이어 | 기술 |
