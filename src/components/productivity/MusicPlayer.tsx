@@ -331,7 +331,7 @@ export function MusicPlayer() {
             <div className="px-3 py-2 border-b border-border/50">
               <div className="text-[10px] text-ink-3 mb-0.5">Now Playing</div>
               <div className="text-xs text-ink truncate">{currentItem.title}</div>
-              <div className="flex items-center gap-1.5 mt-1.5">
+              <div className="flex items-center gap-3 mt-1.5">
                 <span className="text-[9px] text-ink-3 tabular-nums shrink-0 w-7 text-right">
                   {formatTime(dragPos ?? store.position)}
                 </span>
