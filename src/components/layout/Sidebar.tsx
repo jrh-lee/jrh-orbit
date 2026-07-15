@@ -215,7 +215,7 @@ export function Sidebar() {
       <WorkhourTimer />
 
       <div className="px-2.5 py-1.5 shrink-0">
-        <div className="text-[10px] text-ink-3">JRH-Orbit v0.4.2</div>
+        <div className="text-[10px] text-ink-3">JRH-Orbit v0.4.3</div>
       </div>
     </aside>
   );
