@@ -456,7 +456,7 @@ export function SettingsView() {
 
       <section>
         <h2 className="text-base font-medium text-ink mb-2">About</h2>
-        <p className="text-sm text-ink-2">JRH-Orbit v0.2.0</p>
+        <p className="text-sm text-ink-2">JRH-Orbit v{__APP_VERSION__}</p>
       </section>
     </div>
   );
