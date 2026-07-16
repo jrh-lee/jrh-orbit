@@ -11,6 +11,7 @@ import { EditorToolbar } from './EditorToolbar';
 import { MathEditor } from './MathEditor';
 import { searchNotes, getNoteByExactId, type SearchResult } from '../../lib/db';
 import { attachmentsToDisplay, attachmentsToStorage, sanitizeAttachmentSubdir, encodeAttachmentHref, resolveAttachmentHref } from '../../lib/attachmentUrls';
+import { smbToOpenTarget } from '../../lib/netPaths';
 import type { EditorView } from '@tiptap/pm/view';
 import type { Slice, Node as PmDocNode, Fragment } from '@tiptap/pm/model';
 import '../../styles/editor.css';
@@ -647,6 +648,11 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
             if (href.startsWith('attachments/')) {
               const resolved = resolveAttachmentHref(href, dataDirRef.current);
               if (resolved) invoke('open_path', { path: resolved }).catch(() => {});
+              return true;
+            }
+            // 네트워크 공유(smb://)는 즉시 열기 — Windows는 UNC로 변환
+            if (href.startsWith('smb://')) {
+              invoke('open_path', { path: smbToOpenTarget(href) }).catch(() => {});
               return true;
             }
             const isLocal = href.startsWith('/') || href.startsWith('file://');

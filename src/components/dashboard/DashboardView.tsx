@@ -10,6 +10,7 @@ import { todayKey } from '../../lib/dateUtils';
 import { reindexNote } from '../../lib/searchIndex';
 import { findNotesForProject, getNoteByExactId, type HubNoteRow } from '../../lib/db';
 import { attachmentsToDisplay, resolveAttachmentHref } from '../../lib/attachmentUrls';
+import { smbToOpenTarget } from '../../lib/netPaths';
 import type { ProjectsFile } from '../../types/project';
 import '../../styles/editor.css';
 
@@ -27,10 +28,13 @@ function escHtml(s: string): string {
 
 function inlineFmt(s: string): string {
   return s
-    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2" class="dash-doc-link">$1</a>')
+    // 라벨에 이스케이프된 대괄호(\[GOST-...\])가 있어도 매칭되도록 \\. 허용
+    .replace(/\[((?:\\.|[^\]\\])+)\]\(([^)\s]+)\)/g, '<a href="$2" class="dash-doc-link">$1</a>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/`(.+?)`/g, '<code>$1</code>');
+    .replace(/`(.+?)`/g, '<code>$1</code>')
+    // tiptap 직렬화가 붙인 마크다운 이스케이프 해제 (\[ \] \_ 등)
+    .replace(/\\([\\`*_{}[\]()#+\-.!>~|])/g, '$1');
 }
 
 function mdToHtml(md: string): string {
@@ -214,7 +218,8 @@ export function DashboardView() {
       try { path = decodeURI(path); } catch { /* raw path */ }
       invoke('open_path', { path }).catch(() => {});
     } else {
-      invoke('open_path', { path: href }).catch(() => window.open(href, '_blank'));
+      // smb:// 네트워크 공유는 Windows에서 UNC로 변환해서 연다
+      invoke('open_path', { path: smbToOpenTarget(href) }).catch(() => window.open(href, '_blank'));
     }
   }, [openNote, dataDir]);
 
