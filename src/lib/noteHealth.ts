@@ -161,6 +161,11 @@ export async function runHealthCheck(
   // Tag duplicate check — 오타로 갈라진 태그 후보.
   // 짧은 태그는 거리 2가 너무 관대해서 aocs↔docs, adcs↔ac 같은 정상
   // 태그들이 전부 걸린다. 5자 미만은 거리 1(한 글자 오타)만, 그 이상은 2.
+  // 서로 다른 태그로 확정된 쌍은 제외 (aocs=자세·궤도 제어, adcs=자세 제어).
+  const TAG_DUPLICATE_IGNORE: [string, string][] = [
+    ['aocs', 'adcs'],
+  ];
+  const ignorePairs = new Set(TAG_DUPLICATE_IGNORE.map(([a, b]) => [a, b].sort().join('|')));
   const uniqueTags = new Set<string>();
   for (const note of notesMeta) {
     for (const tag of note.tags) {
@@ -173,6 +178,7 @@ export async function runHealthCheck(
       const tagA = tagList[i];
       const tagB = tagList[j];
       if (tagA === tagB) continue;
+      if (ignorePairs.has([tagA.toLowerCase(), tagB.toLowerCase()].sort().join('|'))) continue;
       const maxDist = Math.min(tagA.length, tagB.length) >= 5 ? 2 : 1;
       if (levenshtein(tagA.toLowerCase(), tagB.toLowerCase()) <= maxDist) {
         issues.push({
