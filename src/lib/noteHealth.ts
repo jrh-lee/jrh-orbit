@@ -24,6 +24,9 @@ export interface HealthIssue {
   noteTitle?: string;
   todoId?: string;
   todoTitle?: string;
+  /** tag-duplicate 전용 — UI에서 태그별 필터 칩을 만들 수 있도록 */
+  tagA?: string;
+  tagB?: string;
 }
 
 const LABELS: Record<HealthIssueType, string> = {
@@ -176,6 +179,8 @@ export async function runHealthCheck(
           type: 'tag-duplicate',
           label: LABELS['tag-duplicate'],
           description: `"${tagA}" similar to "${tagB}"`,
+          tagA,
+          tagB,
         });
       }
     }

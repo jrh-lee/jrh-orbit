@@ -70,7 +70,7 @@ function RateCard({ label, rate, total }: { label: string; rate: number; total: 
   );
 }
 
-function HealthBanner({ issues, onClickIssue }: { issues: HealthIssue[]; onClickIssue: (issue: HealthIssue) => void }) {
+function HealthBanner({ issues, onClickIssue, onClickTag }: { issues: HealthIssue[]; onClickIssue: (issue: HealthIssue) => void; onClickTag: (tag: string) => void }) {
   if (issues.length === 0) {
     return (
       <div className="bg-paper-soft rounded-xl p-3 border border-border text-center">
@@ -101,12 +101,27 @@ function HealthBanner({ issues, onClickIssue }: { issues: HealthIssue[]; onClick
                 onClick={() => onClickIssue(issue)}
                 className="w-full text-left flex items-center gap-2 px-2 py-1 rounded-md text-xs text-ink-2 hover:bg-paper-muted transition-colors"
               >
-                {/* 태그 이슈처럼 특정 노트에 속하지 않는 항목은 설명만 전체 폭으로 */}
                 {(issue.noteTitle ?? issue.todoTitle) ? (
                   <>
                     <span className="truncate flex-1">{issue.noteTitle ?? issue.todoTitle}</span>
                     <span className="text-ink-3 shrink-0">{issue.description}</span>
                   </>
+                ) : issue.tagA && issue.tagB ? (
+                  // 태그 중복: 태그 칩 클릭 → Notes 탭을 그 태그로 필터링해서
+                  // 어떤 노트들이 쓰는지 확인하고 정리할 수 있게
+                  <span className="flex-1 flex items-center gap-1.5 flex-wrap text-ink-2">
+                    {[issue.tagA, issue.tagB].map((tag) => (
+                      <span
+                        key={tag}
+                        role="button"
+                        onClick={(e) => { e.stopPropagation(); onClickTag(tag); }}
+                        className="px-1.5 py-0.5 rounded bg-chrome/15 text-ink hover:bg-chrome/30 transition-colors cursor-pointer"
+                      >
+                        #{tag}
+                      </span>
+                    ))}
+                    <span className="text-ink-3 text-[10px]">비슷한 태그 — 클릭해서 사용 노트 확인</span>
+                  </span>
                 ) : (
                   <span className="truncate flex-1 text-ink-2">{issue.description}</span>
                 )}
@@ -400,7 +415,7 @@ function StreakCard({ streak }: { streak: WritingStreak }) {
 }
 
 function DashboardPanel() {
-  const { dataDir, openNote } = useAppStore();
+  const { dataDir, openNote, filterByTag } = useAppStore();
   const [period, setPeriod] = useState<Period>('week');
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [health, setHealth] = useState<HealthIssue[]>([]);
@@ -674,7 +689,7 @@ function DashboardPanel() {
             <span className="ml-1.5 text-[10px] text-red-500 bg-red-50 px-1.5 py-0.5 rounded-full">{health.length} issues</span>
           )}
         </h3>
-        <HealthBanner issues={health} onClickIssue={handleClickIssue} />
+        <HealthBanner issues={health} onClickIssue={handleClickIssue} onClickTag={filterByTag} />
       </div>
     </div>
   );
