@@ -101,8 +101,15 @@ function HealthBanner({ issues, onClickIssue }: { issues: HealthIssue[]; onClick
                 onClick={() => onClickIssue(issue)}
                 className="w-full text-left flex items-center gap-2 px-2 py-1 rounded-md text-xs text-ink-2 hover:bg-paper-muted transition-colors"
               >
-                <span className="truncate flex-1">{issue.noteTitle ?? issue.todoTitle ?? 'Unknown'}</span>
-                <span className="text-ink-3 shrink-0">{issue.description}</span>
+                {/* 태그 이슈처럼 특정 노트에 속하지 않는 항목은 설명만 전체 폭으로 */}
+                {(issue.noteTitle ?? issue.todoTitle) ? (
+                  <>
+                    <span className="truncate flex-1">{issue.noteTitle ?? issue.todoTitle}</span>
+                    <span className="text-ink-3 shrink-0">{issue.description}</span>
+                  </>
+                ) : (
+                  <span className="truncate flex-1 text-ink-2">{issue.description}</span>
+                )}
               </button>
             ))}
             {items.length > 5 && (

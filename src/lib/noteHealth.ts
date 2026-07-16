@@ -155,7 +155,9 @@ export async function runHealthCheck(
     }
   }
 
-  // Tag duplicate check (Levenshtein distance <= 2)
+  // Tag duplicate check — 오타로 갈라진 태그 후보.
+  // 짧은 태그는 거리 2가 너무 관대해서 aocs↔docs, adcs↔ac 같은 정상
+  // 태그들이 전부 걸린다. 5자 미만은 거리 1(한 글자 오타)만, 그 이상은 2.
   const uniqueTags = new Set<string>();
   for (const note of notesMeta) {
     for (const tag of note.tags) {
@@ -167,7 +169,9 @@ export async function runHealthCheck(
     for (let j = i + 1; j < tagList.length; j++) {
       const tagA = tagList[i];
       const tagB = tagList[j];
-      if (tagA !== tagB && levenshtein(tagA.toLowerCase(), tagB.toLowerCase()) <= 2) {
+      if (tagA === tagB) continue;
+      const maxDist = Math.min(tagA.length, tagB.length) >= 5 ? 2 : 1;
+      if (levenshtein(tagA.toLowerCase(), tagB.toLowerCase()) <= maxDist) {
         issues.push({
           type: 'tag-duplicate',
           label: LABELS['tag-duplicate'],
