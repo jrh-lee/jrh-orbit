@@ -423,6 +423,8 @@ export const DragHandle = Extension.create({
     return {
       Tab: () => {
         if (indentSelectedBlock()) return true;
+        // 표 안(텍스트 커서)에서는 Table 확장의 다음 셀 이동이 처리하게 양보
+        if (this.editor.isActive('table')) return false;
         if (this.editor.can().sinkListItem('taskItem')) return this.editor.commands.sinkListItem('taskItem');
         if (this.editor.can().sinkListItem('listItem')) return this.editor.commands.sinkListItem('listItem');
         const { state, view } = this.editor;
@@ -449,6 +451,8 @@ export const DragHandle = Extension.create({
       },
       'Shift-Tab': () => {
         if (outdentSelectedBlock()) return true;
+        // 표 안에서는 Table 확장의 이전 셀 이동이 처리하게 양보
+        if (this.editor.isActive('table')) return false;
         // Count list ancestors: at nesting depth 1 the item is already at the
         // top level of its list — lifting there breaks the item out of the
         // list and drags surrounding blocks along with it. Consume the key

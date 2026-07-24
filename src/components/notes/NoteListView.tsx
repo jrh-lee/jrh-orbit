@@ -1033,6 +1033,15 @@ export function NoteListView() {
     const clone = editorEl.cloneNode(true) as HTMLElement;
     clone.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
     clone.querySelectorAll('.image-align-toolbar, .image-resize-handle, .react-renderer:not([data-type="image"])').forEach(el => el.remove());
+    // 인쇄에서 편집 전용 UI 제거: 접기/토글 화살표, 섹션 가이드, 숨긴 Task ID
+    clone.querySelectorAll('.heading-fold-arrow, .md-toggle-arrow, .section-guide-hint, .task-id-hidden, .block-id-marker').forEach(el => el.remove());
+    // 접힌 내용은 모두 펼쳐서 출력 (문서 전체가 나오는 게 맞다)
+    clone.querySelectorAll('.heading-fold-hidden, .heading-is-folded').forEach(el => {
+      el.classList.remove('heading-fold-hidden', 'heading-is-folded');
+    });
+    clone.querySelectorAll('[data-type="toggle"]').forEach(el => el.setAttribute('data-open', 'true'));
+    // 동기화 블록 카드: 헤더 버튼은 빼고 내용만
+    clone.querySelectorAll('.block-embed-header').forEach(el => el.remove());
     clone.querySelectorAll('.image-caption-input').forEach(el => {
       const span = document.createElement('span');
       span.style.cssText = 'display:block;text-align:center;font-style:italic;font-size:0.85em;color:#666;margin-top:4px;';
@@ -1065,25 +1074,37 @@ export function NoteListView() {
       ? `<div class="print-tags">${meta.tags.map(t => `<span class="tag">${esc(t)}</span>`).join(' ')}</div>`
       : '';
 
+    // 앱의 스타일시트를 그대로 가져와 화면과 동일한 렌더링(콜아웃/컬럼/KaTeX 등)을
+    // 유지하고, 아래 인쇄 오버라이드가 지면용 타이포그래피를 얹는다
+    const appStyles = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+      .map((el) => el.outerHTML)
+      .join('\n');
+
     const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>${esc(meta.title)}</title>
+<base href="${location.href}">
+${appStyles}
 <style>
 @page{size:A4;margin:2cm 1.8cm}
-body{font-family:'Malgun Gothic',system-ui,-apple-system,'Segoe UI',sans-serif;max-width:780px;margin:0 auto;padding:1cm;color:#222;font-size:10.5pt;line-height:1.7}
+html{background:#fff}
+body{font-family:'Malgun Gothic',system-ui,-apple-system,'Segoe UI',sans-serif;max-width:780px;margin:0 auto;padding:1cm;color:#222;font-size:10.5pt;line-height:1.7;background:#fff}
+.ProseMirror{padding:0 !important;min-height:0 !important;color:#222;caret-color:transparent}
 .print-header{margin-bottom:1.5rem;padding-bottom:1rem;border-bottom:2px solid #333}
 .print-header h1{font-size:17pt;font-weight:700;margin:0 0 .5rem;color:#111}
 .print-meta{display:flex;flex-wrap:wrap;gap:.4rem 1.2rem;font-size:8.5pt;color:#555}
 .meta-label{font-weight:600;color:#333;margin-right:2px}
 .print-tags{margin-top:.4rem}
 .tag{display:inline-block;padding:1px 6px;font-size:8pt;border:1px solid #ccc;border-radius:10px;color:#555;margin-right:4px}
-h2{font-size:13pt;font-weight:600;margin:1.2rem 0 .4rem;color:#111}
+h1{font-size:15pt;font-weight:700;margin:1.4rem 0 .5rem;color:#111}
+h2{font-size:13pt;font-weight:600;margin:1.2rem 0 .4rem;color:#111;padding-bottom:3pt;border-bottom:1px solid #ddd}
 h3{font-size:11.5pt;font-weight:600;margin:1rem 0 .3rem;color:#222}
 h4{font-size:10.5pt;font-weight:600;margin:.8rem 0 .3rem}
 table{border-collapse:collapse;width:100%;margin:.6rem 0;page-break-inside:avoid;font-size:9.5pt}
-td,th{border:1px solid #bbb;padding:4pt 6pt;vertical-align:top}
-th{background:#f0f0f0;font-weight:600;text-align:left}
+td,th{border:1px solid #ccc;padding:4pt 6pt;vertical-align:top}
+th{background:#f0f0f0 !important;font-weight:600;text-align:left;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+tbody tr:nth-child(even) td{background:#fafafa !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 img{max-width:100%;height:auto;border-radius:4px;page-break-inside:avoid}
-blockquote{border-left:3px solid #999;padding-left:10pt;color:#444;margin:0.5rem 0;margin-left:0;page-break-inside:avoid}
+blockquote{border-left:3px solid #b9aede;background:#f7f5fc !important;border-radius:0 4pt 4pt 0;padding:5pt 10pt;color:#444;margin:0.5rem 0;margin-left:0;page-break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 code{background:#f4f4f4;padding:1pt 3pt;border-radius:2pt;font-size:9pt;font-family:Consolas,'Courier New',monospace}
 pre{background:#f7f7f7;border:1px solid #ddd;padding:8pt 10pt;border-radius:4pt;overflow-x:auto;page-break-inside:avoid;margin:.5rem 0}
 pre code{background:none;padding:0;font-size:8.5pt;line-height:1.5}
@@ -1097,11 +1118,16 @@ mark{background:#fff3a8;padding:0 2px;border-radius:2px;-webkit-print-color-adju
 p{margin:.25rem 0}
 .md-columns{display:flex;gap:14pt;page-break-inside:avoid}
 .md-column{flex:1 1 0;min-width:0}
-.md-toggle-arrow{display:none}
-.md-toggle > *:nth-child(n+3){margin-left:14pt}
+.md-toggle-arrow,.heading-fold-arrow,.section-guide-hint,.block-id-marker{display:none !important}
+.md-toggle > *{display:block !important}
+.md-toggle > *:nth-child(n+2){margin-left:14pt}
+.heading-fold-hidden{display:block !important}
 .md-callout{position:relative;margin:6pt 0;padding:6pt 8pt 6pt 24pt;border-radius:6pt;background:#f4f4f4;page-break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .md-callout::before{content:attr(data-emoji);position:absolute;left:7pt;top:5pt}
+.block-embed-card{border:1px solid #ddd;border-radius:6pt;padding:6pt 8pt;margin:6pt 0;page-break-inside:avoid}
 .katex,.math-display{page-break-inside:avoid}
+.task-carry-badge{font-size:8pt}
+.task-scheduled{opacity:1}
 @media print{
   body{margin:0;padding:0}
   .print-header{border-bottom-color:#333;-webkit-print-color-adjust:exact;print-color-adjust:exact}

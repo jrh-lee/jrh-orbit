@@ -80,7 +80,9 @@ const TightListSerializer = Extension.create({
   },
 });
 
-const TASK_META_RE = /^(\\?\[[^\]\\]+\\?\]\s*)?(\\?\(이월[^)]*\\?\)\s*)?(\\?\(시작 [^)]*\\?\)\s*)?/;
+// 대괄호 그룹은 Task ID 형식만 매칭 — TASK-NNN(.M) 또는 자동생성 소문자+숫자 id.
+// `[O1C]`처럼 사용자가 쓴 대괄호 텍스트를 숨겨버리면 안 된다.
+const TASK_META_RE = /^(\\?\[(?:TASK-[\w.]+|(?=[a-z]*\d)[a-z0-9]{6,12})\\?\]\s*)?(\\?\(이월[^)]*\\?\)\s*)?(\\?\(시작 [^)]*\\?\)\s*)?/;
 
 /** 블록 링크의 영구 ID 마커(^abc123)를 화면에서 숨긴다 —
  *  마크다운에는 남아 링크 대상 식별에 쓰인다 (Obsidian block id 방식)
@@ -186,6 +188,33 @@ const HideTaskMeta = Extension.create({
         },
       }),
     ];
+  },
+});
+
+/** 인용구 안 Enter: 항상 인용구 안에서 새 문단 — 빈 문단에서 Enter를 치면
+ *  인용구 밖으로 탈출 (Notion 방식). 다른 핸들러가 가로채 빠져나가던 문제 방지. */
+const BlockquoteKeys = Extension.create({
+  name: 'blockquoteKeys',
+  priority: 1001,
+  addKeyboardShortcuts() {
+    return {
+      Enter: () => {
+        const { state } = this.editor;
+        const { $from, empty } = state.selection;
+        if (!empty) return false;
+        // 인용구 안 문단인지 확인
+        let inQuote = false;
+        for (let d = $from.depth; d >= 1; d--) {
+          if ($from.node(d).type.name === 'blockquote') { inQuote = true; break; }
+        }
+        if (!inQuote) return false;
+        if ($from.parent.type.name !== 'paragraph') return false;
+        // 빈 문단 → 인용구 탈출 (기본 동작에 위임)
+        if ($from.parent.content.size === 0) return false;
+        // 내용 있는 문단 → 인용구 안에서 분할
+        return this.editor.commands.splitBlock();
+      },
+    };
   },
 });
 
@@ -392,6 +421,7 @@ export function getExtensions(opts?: ExtensionOptions | string) {
       : []),
     HideTaskMeta,
     HideBlockIds,
+    BlockquoteKeys,
     DragHandle,
     HeadingFold,
     SlashCommand,

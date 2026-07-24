@@ -1,4 +1,5 @@
 import { useEditor, EditorContent, type Editor } from '@tiptap/react';
+import { migrateMathStrings } from '@tiptap/extension-mathematics';
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import type { MutableRefObject } from 'react';
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
@@ -1002,7 +1003,31 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
       } catch { /* selection restore is best-effort */ }
     }
     isLoadingContent.current = false;
+    // 붙여넣기/외부 작성으로 들어온 $...$ 텍스트를 수식 노드로 변환.
+    // hadUserInput 가드 덕에 이 변환만으로는 저장이 발생하지 않는다.
+    try { migrateMathStrings(editor); } catch { /* 변환 실패는 무시 */ }
   }, [editor, content, dataDir]);
+
+  // 최초 마운트 콘텐츠의 $...$도 변환
+  useEffect(() => {
+    if (!editor) return;
+    try { migrateMathStrings(editor); } catch { /* ignore */ }
+  }, [editor]);
+
+  // 붙여넣기 직후 $...$ → 수식 변환 (PM이 붙여넣기를 반영한 다음 틱에)
+  useEffect(() => {
+    if (!editor) return;
+    const dom = editor.view.dom;
+    const onPaste = () => {
+      setTimeout(() => {
+        if (!editor.isDestroyed) {
+          try { migrateMathStrings(editor); } catch { /* ignore */ }
+        }
+      }, 50);
+    };
+    dom.addEventListener('paste', onPaste);
+    return () => dom.removeEventListener('paste', onPaste);
+  }, [editor]);
 
   // 에디터 DOM에서의 직접 조작(키 입력, 클릭, 드롭, 붙여넣기)을 사용자 입력으로 마킹
   useEffect(() => {
