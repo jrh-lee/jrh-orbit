@@ -233,7 +233,32 @@ const ZWS = '​';
 function preprocessEmptyCheckboxes(md: string): string {
   // Indented (subtask) empty checkboxes need the ZWS too, or the markdown
   // parser renders them as literal "[ ]" text instead of a checkbox.
-  return md.replace(/^([ \t]*- \[[ xX]\])\s*$/gm, `$1 ${ZWS}`);
+  return separateMixedLists(md.replace(/^([ \t]*- \[[ xX]\])\s*$/gm, `$1 ${ZWS}`));
+}
+
+/** 같은 들여쓰기에서 불릿↔체크박스가 빈 줄 없이 붙어 있으면 파서가 하나의
+ *  리스트로 합치며 구조를 망가뜨린다(빈 taskItem 생성). 파싱 전에 종류가
+ *  바뀌는 지점마다 빈 줄을 넣어 별도 리스트로 분리한다 — 이미 오염된
+ *  파일도 열 때 자가 치유된다. 코드 펜스 안은 건드리지 않는다. */
+function separateMixedLists(md: string): string {
+  const lines = md.split('\n');
+  const out: string[] = [];
+  let inFence = false;
+  const indentOf = (l: string) => (l.match(/^[ \t]*/)?.[0].length ?? 0);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\s*(```|~~~)/.test(line)) inFence = !inFence;
+    if (!inFence && out.length > 0) {
+      const prev = out[out.length - 1];
+      const pk = listKind(prev);
+      const ck = listKind(line);
+      if (pk !== null && ck !== null && pk !== ck && indentOf(prev) === indentOf(line)) {
+        out.push('');
+      }
+    }
+    out.push(line);
+  }
+  return out.join('\n');
 }
 
 export { preprocessEmptyCheckboxes };

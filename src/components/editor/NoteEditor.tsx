@@ -121,6 +121,30 @@ function unescapeHtmlGt(md: string): string {
   }).join('\n');
 }
 
+/** 문단 전체가 $$...$$인 경우를 blockMath 노드로 변환 —
+ *  migrateMathStrings는 인라인($..$)만 처리하고, 여러 줄에 걸친
+ *  블록 수식($$\n...\n$$ → 한 문단으로 파싱됨)은 못 잡는다. */
+function convertDollarBlocks(editor: Editor) {
+  const { state } = editor;
+  const blockType = state.schema.nodes.blockMath;
+  if (!blockType) return;
+  const targets: { pos: number; size: number; latex: string }[] = [];
+  state.doc.descendants((node, pos) => {
+    if (!node.isTextblock) return true;
+    if (node.type.name !== 'paragraph') return false;
+    const m = node.textContent.match(/^\s*\$\$([\s\S]+?)\$\$\s*$/);
+    if (m && m[1].trim()) targets.push({ pos, size: node.nodeSize, latex: m[1].trim() });
+    return false;
+  });
+  if (targets.length === 0) return;
+  const tr = state.tr;
+  for (const t of targets.reverse()) {
+    tr.replaceWith(t.pos, t.pos + t.size, blockType.create({ latex: t.latex }));
+  }
+  tr.setMeta('addToHistory', false);
+  editor.view.dispatch(tr);
+}
+
 function stripLooseListItems(md: string): string {
   const listRe = /^[ \t]*(?:[-*+]|\d+\.) /;
   const lines = md.split('\n');
@@ -1005,13 +1029,13 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
     isLoadingContent.current = false;
     // 붙여넣기/외부 작성으로 들어온 $...$ 텍스트를 수식 노드로 변환.
     // hadUserInput 가드 덕에 이 변환만으로는 저장이 발생하지 않는다.
-    try { migrateMathStrings(editor); } catch { /* 변환 실패는 무시 */ }
+    try { migrateMathStrings(editor); convertDollarBlocks(editor); } catch { /* 변환 실패는 무시 */ }
   }, [editor, content, dataDir]);
 
   // 최초 마운트 콘텐츠의 $...$도 변환
   useEffect(() => {
     if (!editor) return;
-    try { migrateMathStrings(editor); } catch { /* ignore */ }
+    try { migrateMathStrings(editor); convertDollarBlocks(editor); } catch { /* ignore */ }
   }, [editor]);
 
   // 붙여넣기 직후 $...$ → 수식 변환 (PM이 붙여넣기를 반영한 다음 틱에)
@@ -1021,7 +1045,7 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
     const onPaste = () => {
       setTimeout(() => {
         if (!editor.isDestroyed) {
-          try { migrateMathStrings(editor); } catch { /* ignore */ }
+          try { migrateMathStrings(editor); convertDollarBlocks(editor); } catch { /* ignore */ }
         }
       }, 50);
     };

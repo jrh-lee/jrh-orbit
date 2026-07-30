@@ -1087,8 +1087,11 @@ ${appStyles}
 <style>
 @page{size:A4;margin:2cm 1.8cm}
 html{background:#fff}
-body{font-family:'Malgun Gothic',system-ui,-apple-system,'Segoe UI',sans-serif;max-width:780px;margin:0 auto;padding:1cm;color:#222;font-size:10.5pt;line-height:1.7;background:#fff}
-.ProseMirror{padding:0 !important;min-height:0 !important;color:#222;caret-color:transparent}
+body{font-family:'Malgun Gothic',system-ui,-apple-system,'Segoe UI',sans-serif;max-width:none;margin:0;padding:0;color:#222;font-size:10.5pt;line-height:1.7;background:#fff}
+.ProseMirror{padding:0 !important;min-height:0 !important;max-width:none !important;width:auto !important;color:#222;caret-color:transparent}
+/* KaTeX 접근성용 MathML이 같이 보이면 수식이 두 번 찍힌다 (앱 CSS 미로드 대비) */
+.katex-mathml{display:none !important}
+.katex{font-size:1.05em}
 .print-header{margin-bottom:1.5rem;padding-bottom:1rem;border-bottom:2px solid #333}
 .print-header h1{font-size:17pt;font-weight:700;margin:0 0 .5rem;color:#111}
 .print-meta{display:flex;flex-wrap:wrap;gap:.4rem 1.2rem;font-size:8.5pt;color:#555}

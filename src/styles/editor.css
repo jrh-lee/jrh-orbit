@@ -953,6 +953,12 @@ img.ProseMirror-separator {
 .dashboard-content th,
 .dashboard-content td { border: 1px solid var(--color-border); padding: 0.3rem 0.6rem; font-size: 0.8125rem; text-align: left; vertical-align: top; }
 .dashboard-content th { background: var(--color-paper-soft); font-weight: 600; }
+/* Tailwind 리셋이 h1~h4를 본문 크기로 만들어 헤딩이 일반 텍스트처럼 보인다 */
+.dashboard-content h1 { font-size: 1.25rem; font-weight: 700; margin: 1rem 0 0.4rem; color: var(--color-ink); }
+.dashboard-content h2 { font-size: 1.1rem; font-weight: 600; margin: 0.9rem 0 0.35rem; color: var(--color-ink); }
+.dashboard-content h3 { font-size: 1rem; font-weight: 600; margin: 0.75rem 0 0.3rem; color: var(--color-ink); }
+.dashboard-content h4 { font-size: 0.92rem; font-weight: 600; margin: 0.6rem 0 0.25rem; color: var(--color-ink-2); }
+.dashboard-content > :first-child { margin-top: 0; }
 .dashboard-content a.dash-doc-link,
 .dashboard-content a {
   color: var(--color-chrome);
