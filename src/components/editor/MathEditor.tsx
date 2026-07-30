@@ -21,6 +21,18 @@ export function MathEditor({ editor, node, pos, onClose }: MathEditorProps) {
     inputRef.current?.select();
   }, []);
 
+  // 입력 길이에 따라 최대 4줄까지 가변 확장 (그 이상은 스크롤) —
+  // 긴 블록 수식이 rows=1에 눌려 안 보이던 문제
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const lineH = 18; // text-xs mono 기준 줄 높이(px)
+    const maxH = lineH * 4 + 10;
+    el.style.height = `${Math.min(el.scrollHeight, maxH)}px`;
+    el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
+  }, [latex]);
+
   useEffect(() => {
     if (!previewRef.current) return;
     try {
@@ -55,7 +67,7 @@ export function MathEditor({ editor, node, pos, onClose }: MathEditorProps) {
   };
 
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-paper-soft shrink-0">
+    <div className="flex items-start gap-2 px-3 py-1.5 border-b border-border bg-paper-soft shrink-0">
       <span className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider">
         {isBlock ? 'Block' : 'Inline'} Math
       </span>

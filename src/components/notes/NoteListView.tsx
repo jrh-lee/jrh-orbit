@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { join } from '@tauri-apps/api/path';
-import { save } from '@tauri-apps/plugin-dialog';
+import { save, open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useAppStore } from '../../stores/useAppStore';
 import { useProjectStore } from '../../stores/useProjectStore';
 import { NoteEditor } from '../editor/NoteEditor';
@@ -1014,6 +1014,57 @@ export function NoteListView() {
     await loadNotes();
   }
 
+  /** 외부에서 작성한 .md 파일을 새 노트로 가져온다.
+   *  제목은 frontmatter > 첫 H1 > 파일명 순으로 결정하고, id/타입은 새로 부여. */
+  async function handleImportMd() {
+    if (!dataDir) return;
+    setShowTemplateMenu(false);
+    const sel = await openDialog({
+      multiple: true,
+      filters: [{ name: 'Markdown', extensions: ['md', 'markdown', 'txt'] }],
+    });
+    if (!sel) return;
+    const paths = Array.isArray(sel) ? sel : [sel];
+    const known = [...notes];
+    let lastPath: string | null = null;
+    try {
+      for (const p of paths) {
+        const raw = await invoke<string>('read_note', { path: p as string });
+        const { frontmatter, body } = splitFrontmatter(raw);
+        const fields = parseFrontmatterFields(frontmatter);
+        const h1 = body.match(/^#\s+(.+)$/m)?.[1]?.trim();
+        const fname = ((p as string).split(/[\\/]/).pop() ?? '').replace(/\.(md|markdown|txt)$/i, '');
+        const title = fields.title || h1 || fname;
+        const noteId = generateNoteId('analysis-note', known, typeAbbrevMap);
+        const iso = new Date().toISOString();
+        const fm = buildFrontmatter({
+          id: noteId,
+          type: 'analysis-note',
+          title,
+          date: todayKey(),
+          project: normalizeProject(fields.project),
+          topic: fields.topic ?? '',
+          experiment: '',
+          subsystem: Array.isArray(fields.subsystem) ? fields.subsystem : [],
+          tags: Array.isArray(fields.tags) ? fields.tags : [],
+          related: [],
+          status: 'in-progress',
+          created: iso,
+          updated: iso,
+        });
+        const fullPath = await join(dataDir, FOLDERS.research, `${noteId}.md`);
+        await invoke('write_note', { path: fullPath, content: fm + '\n' + body.trimStart() });
+        known.push({ path: fullPath, filename: `${noteId}.md`, id: noteId, title, noteType: 'analysis-note', updated: iso, created: iso, project: [], topic: '', experiment: '', subsystem: [], tags: [], status: 'in-progress', related: [] });
+        lastPath = fullPath;
+      }
+      window.dispatchEvent(new CustomEvent('notes-changed'));
+      await loadNotes();
+      if (lastPath) await handleSelectNote(lastPath);
+    } catch (e) {
+      setError(`가져오기 실패: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+
   const handleExportMd = useCallback(async () => {
     if (!activeNote) return;
     const content = joinFrontmatter(fmRef.current, body);
@@ -1316,6 +1367,14 @@ ${content}
                       {t.icon} {t.label}
                     </button>
                   ))}
+                  <div className="mx-2 my-0.5 border-t border-border/50" />
+                  <button
+                    onClick={handleImportMd}
+                    className="w-full text-left px-3 py-1.5 text-xs text-ink-2 hover:bg-paper-soft transition-colors"
+                    title="외부에서 작성한 마크다운 파일을 새 노트로 가져오기 (여러 개 선택 가능)"
+                  >
+                    📥 .md 가져오기
+                  </button>
                 </div>
               )}
             </div>

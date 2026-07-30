@@ -145,8 +145,16 @@ function convertDollarBlocks(editor: Editor) {
   editor.view.dispatch(tr);
 }
 
+/** 리스트 항목 종류 — 불릿과 체크박스 사이 빈 줄을 지우면 재파싱 때 하나로
+ *  합쳐지며 빈 taskItem이 생긴다. 같은 종류 사이의 빈 줄만 정리한다. */
+function looseListKind(line: string): string | null {
+  if (/^[ \t]*[-*+] \[[ xX]\]/.test(line)) return 'task';
+  if (/^[ \t]*[-*+] /.test(line)) return 'bullet';
+  if (/^[ \t]*\d+\. /.test(line)) return 'ordered';
+  return null;
+}
+
 function stripLooseListItems(md: string): string {
-  const listRe = /^[ \t]*(?:[-*+]|\d+\.) /;
   const lines = md.split('\n');
   const result: string[] = [];
 
@@ -162,7 +170,9 @@ function stripLooseListItems(md: string): string {
     let next = i + 1;
     while (next < lines.length && lines[next].trim() === '') next++;
 
-    if (prev >= 0 && next < lines.length && listRe.test(result[prev]) && listRe.test(lines[next])) {
+    const pk = prev >= 0 ? looseListKind(result[prev]) : null;
+    const nk = next < lines.length ? looseListKind(lines[next]) : null;
+    if (pk !== null && pk === nk) {
       while (result.length > 0 && result[result.length - 1].trim() === '') result.pop();
     } else {
       result.push(lines[i]);
@@ -200,18 +210,19 @@ function ensureMarkdownSpacing(md: string): string {
       const prevIsHeading = /^#{1,6} /.test(prevLine);
       const prevIsHr = /^-{3,}\s*$/.test(prevLine);
 
+      // 기본 여백 1줄만 보장 — 사용자가 늘리거나 유지한 여백은 건드리지 않는다
+      // (기존엔 여백을 전부 지우고 무조건 2줄을 강제했음)
+      const blanks = out.length - 1 - lastContentIdx;
       if (prevIsHr) {
         while (out.length > 0 && out[out.length - 1] === '') out.pop();
-      } else if (prevIsHeading) {
-        const prevLevel = (prevLine.match(/^(#{1,6}) /) || [])[1]?.length ?? 0;
-        const curLevel = (line.match(/^(#{1,6}) /) || [])[1]?.length ?? 0;
-        while (out.length > 0 && out[out.length - 1] === '') out.pop();
-        if (curLevel <= prevLevel) {
-          out.push('', '');
+      } else if (blanks === 0) {
+        if (prevIsHeading) {
+          const prevLevel = (prevLine.match(/^(#{1,6}) /) || [])[1]?.length ?? 0;
+          const curLevel = (line.match(/^(#{1,6}) /) || [])[1]?.length ?? 0;
+          if (curLevel <= prevLevel) out.push('');
+        } else {
+          out.push('');
         }
-      } else {
-        while (out.length > 0 && out[out.length - 1] === '') out.pop();
-        out.push('', '');
       }
     }
 
@@ -221,7 +232,8 @@ function ensureMarkdownSpacing(md: string): string {
   return out.join('\n');
 }
 
-export function insertBlankLinesBeforeHeadings(editor: { state: any; view: any } | null, count = 2) {
+// 기본 여백 1줄 — 사용자가 더 넣으면 그대로 유지(top-up 방식이라 초과분은 안 건드림)
+export function insertBlankLinesBeforeHeadings(editor: { state: any; view: any } | null, count = 1) {
   if (!editor) return;
   const { doc, schema } = editor.state;
   const emptyPara = schema.nodes.paragraph.create();
