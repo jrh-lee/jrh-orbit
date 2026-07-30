@@ -1165,6 +1165,7 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
       <EditorToolbar editor={editor} attachmentSubdir={attachmentSubdir} />
       {mathEdit && editor && (
         <MathEditor
+          key={mathEdit.pos} /* 다른 수식 클릭 시 편집창이 그 수식으로 전환되도록 리마운트 */
           editor={editor}
           node={mathEdit.node}
           pos={mathEdit.pos}

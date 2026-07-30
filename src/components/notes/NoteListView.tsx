@@ -1125,11 +1125,15 @@ export function NoteListView() {
       ? `<div class="print-tags">${meta.tags.map(t => `<span class="tag">${esc(t)}</span>`).join(' ')}</div>`
       : '';
 
-    // 앱의 스타일시트를 그대로 가져와 화면과 동일한 렌더링(콜아웃/컬럼/KaTeX 등)을
-    // 유지하고, 아래 인쇄 오버라이드가 지면용 타이포그래피를 얹는다
-    const appStyles = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
-      .map((el) => el.outerHTML)
-      .join('\n');
+    // 앱의 스타일 규칙을 CSSOM에서 통째로 인라인 — <link> 복사는 인쇄 창에서
+    // 로드가 안 돼 KaTeX 수식이 텍스트로 보였다. 인라인이면 확실히 적용된다.
+    let appCss = '';
+    for (const sheet of Array.from(document.styleSheets)) {
+      try {
+        for (const rule of Array.from(sheet.cssRules)) appCss += rule.cssText + '\n';
+      } catch { /* cross-origin sheet는 건너뜀 */ }
+    }
+    const appStyles = `<style>${appCss}</style>`;
 
     const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>${esc(meta.title)}</title>
@@ -1996,6 +2000,7 @@ ${content}
                   key={activeNote}
                   content={body}
                   onChange={handleChange}
+                  skipBlankLineInsertion /* 연구노트 여백은 사용자가 만든 그대로 — ZWS로 왕복 보존됨 */
                   placeholder="Start writing..."
                   sectionGuides={activeGuideMap}
                   noteId={activeNoteId || undefined}

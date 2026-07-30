@@ -48,6 +48,10 @@
 .ProseMirror h1 { font-size: 1.3rem; font-weight: 600; margin: 1.05rem 0 0.5rem; }
 .ProseMirror h2 { font-size: 1.15rem; font-weight: 600; margin: 0.85rem 0 0.4rem; }
 .ProseMirror h3 { font-size: 1rem; font-weight: 600; margin: 0.7rem 0 0.3rem; }
+/* 가져온 문서의 ####/##### 도 제목으로 보이게 (H4~H5 — 실무에서 보통 H4까지 쓰임) */
+.ProseMirror h4 { font-size: 0.95rem; font-weight: 600; margin: 0.6rem 0 0.25rem; }
+.ProseMirror h5 { font-size: 0.9rem; font-weight: 600; margin: 0.5rem 0 0.2rem; color: var(--color-ink-2); }
+.ProseMirror h6 { font-size: 0.875rem; font-weight: 600; margin: 0.45rem 0 0.2rem; color: var(--color-ink-3); }
 
 /* Inline code */
 .ProseMirror code {

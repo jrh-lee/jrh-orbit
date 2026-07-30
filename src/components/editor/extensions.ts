@@ -10,7 +10,7 @@ import { TableCell } from '@tiptap/extension-table-cell';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { Image } from '@tiptap/extension-image';
 import { Link } from '@tiptap/extension-link';
-import { Mathematics } from '@tiptap/extension-mathematics';
+import { InlineMath, BlockMath } from '@tiptap/extension-mathematics';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
 import { TextAlign } from '@tiptap/extension-text-align';
@@ -51,6 +51,38 @@ const TaskListWithTight = TaskList.extend({
   },
 });
 
+/** 수식을 $...$/$$...$$ 마크다운으로 직렬화 — 기본(HTML div)으로 저장되면
+ *  재로드 때 원문 텍스트로 노출된다. 파싱은 로드/붙여넣기 시
+ *  migrateMathStrings/convertDollarBlocks가 담당한다. */
+const InlineMathMd = InlineMath.extend({
+  addStorage() {
+    return {
+      ...this.parent?.(),
+      markdown: {
+        serialize(state: any, node: PmNode) {
+          state.write(`$${node.attrs.latex ?? ''}$`);
+        },
+        parse: {},
+      },
+    };
+  },
+});
+
+const BlockMathMd = BlockMath.extend({
+  addStorage() {
+    return {
+      ...this.parent?.(),
+      markdown: {
+        serialize(state: any, node: PmNode) {
+          state.write(`$$\n${node.attrs.latex ?? ''}\n$$`);
+          state.closeBlock(node);
+        },
+        parse: {},
+      },
+    };
+  },
+});
+
 /** 리스트 항목 종류 — 서로 다른 종류(불릿 vs 체크박스) 사이의 빈 줄을 지우면
  *  재파싱 때 하나의 리스트로 합쳐지며 빈 taskItem이 생기는 등 구조가 망가진다. */
 function listKind(line: string): string | null {
@@ -80,13 +112,39 @@ function stripBlanksInLists(md: string): string {
   return result.join('\n');
 }
 
+/** 빈 문단(사용자가 만든 여백)을 ZWS 줄로 보존 — 빈 문단 1개는 빈 줄 2개로
+ *  직렬화되는데, 그대로 두면 파서가 접어버려 여백이 사라진다. 초과 빈 줄을
+ *  ZWS 문단으로 바꿔 왕복시킨다. 코드 펜스 안은 제외. */
+function preserveBlankRuns(md: string): string {
+  const lines = md.split('\n');
+  const out: string[] = [];
+  let inFence = false;
+  let blanks = 0;
+  const flush = () => {
+    if (blanks === 0) return;
+    out.push('');
+    for (let i = 1; i < blanks; i++) out.push(ZWS, '');
+    blanks = 0;
+  };
+  for (const line of lines) {
+    if (/^\s*(```|~~~)/.test(line)) { flush(); inFence = !inFence; out.push(line); continue; }
+    if (inFence) { out.push(line); continue; }
+    if (line.trim() === '') { blanks++; continue; }
+    flush();
+    out.push(line);
+  }
+  flush();
+  return out.join('\n');
+}
+
 const TightListSerializer = Extension.create({
   name: 'tightListSerializer',
   onCreate() {
     const serializer = (this.editor.storage as Record<string, any>).markdown?.serializer;
     if (!serializer) return;
     const orig = serializer.serialize.bind(serializer);
-    serializer.serialize = (content: any) => stripBlanksInLists(orig(content));
+    serializer.serialize = (content: any) =>
+      separateMixedLists(preserveBlankRuns(stripBlanksInLists(orig(content))));
   },
 });
 
@@ -230,31 +288,60 @@ const BlockquoteKeys = Extension.create({
 
 const ZWS = '​';
 
+/** 예전 저장분: 수식이 HTML div로 직렬화된 경우 → $$ 마크다운으로 변환
+ *  (에디터에서 원문 텍스트로 노출되던 문제) */
+function htmlMathToDollars(md: string): string {
+  const decode = (s: string) =>
+    s.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  return md.replace(
+    /<div\b(?=[^>]*data-type="block-math")[^>]*data-latex="([^"]*)"[^>]*>\s*<\/div>/g,
+    (_m, latex) => `$$\n${decode(latex)}\n$$`,
+  ).replace(
+    /<span\b(?=[^>]*data-type="inline-math")[^>]*data-latex="([^"]*)"[^>]*>\s*<\/span>/g,
+    (_m, latex) => `$${decode(latex)}$`,
+  );
+}
+
 function preprocessEmptyCheckboxes(md: string): string {
   // Indented (subtask) empty checkboxes need the ZWS too, or the markdown
   // parser renders them as literal "[ ]" text instead of a checkbox.
-  return separateMixedLists(md.replace(/^([ \t]*- \[[ xX]\])\s*$/gm, `$1 ${ZWS}`));
+  return separateMixedLists(htmlMathToDollars(md).replace(/^([ \t]*- \[[ xX]\])\s*$/gm, `$1 ${ZWS}`));
 }
 
-/** 같은 들여쓰기에서 불릿↔체크박스가 빈 줄 없이 붙어 있으면 파서가 하나의
- *  리스트로 합치며 구조를 망가뜨린다(빈 taskItem 생성). 파싱 전에 종류가
- *  바뀌는 지점마다 빈 줄을 넣어 별도 리스트로 분리한다 — 이미 오염된
- *  파일도 열 때 자가 치유된다. 코드 펜스 안은 건드리지 않는다. */
+/** 불릿↔체크박스처럼 종류가 다른 리스트가 이어지면 파서가 하나의 리스트로
+ *  합치며 구조를 망가뜨린다(빈 taskItem 생성). **마크다운 규격상 같은 `-`
+ *  마커의 리스트는 빈 줄로도 분리되지 않으므로**, 사이에 ZWS 문단을 넣어야
+ *  확실히 두 리스트로 나뉜다. 이미 오염된 파일도 열 때 자가 치유된다.
+ *  코드 펜스 안은 건드리지 않는다. */
 function separateMixedLists(md: string): string {
   const lines = md.split('\n');
   const out: string[] = [];
   let inFence = false;
-  const indentOf = (l: string) => (l.match(/^[ \t]*/)?.[0].length ?? 0);
+  // 마지막으로 본 리스트 종류 — 사이에 빈 줄이 있어도 같은 리스트로 이어지므로
+  // 빈 줄을 건너뛰며 추적한다
+  let lastKind: string | null = null;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (/^\s*(```|~~~)/.test(line)) inFence = !inFence;
-    if (!inFence && out.length > 0) {
-      const prev = out[out.length - 1];
-      const pk = listKind(prev);
-      const ck = listKind(line);
-      if (pk !== null && ck !== null && pk !== ck && indentOf(prev) === indentOf(line)) {
-        out.push('');
+    if (/^\s*(```|~~~)/.test(line)) {
+      inFence = !inFence;
+      lastKind = null;
+      out.push(line);
+      continue;
+    }
+    if (inFence) { out.push(line); continue; }
+    const k = listKind(line);
+    if (k !== null) {
+      if (lastKind !== null && lastKind !== k) {
+        // 빈 줄만으로는 리스트가 안 나뉨 — 앞뒤 빈 줄로 감싼 ZWS 문단으로 강제 분리
+        if (out.length > 0 && out[out.length - 1].trim() === '') {
+          out.push(ZWS, '');
+        } else {
+          out.push('', ZWS, '');
+        }
       }
+      lastKind = k;
+    } else if (line.trim() !== '') {
+      lastKind = null; // 일반 내용이 끼면 리스트 연속성 끊김
     }
     out.push(line);
   }
@@ -446,10 +533,8 @@ export function getExtensions(opts?: ExtensionOptions | string) {
     TextAlign.configure({
       types: ['heading', 'paragraph'],
     }),
-    Mathematics.configure({
-      inlineOptions: { onClick: mathClickHandler },
-      blockOptions: { onClick: mathClickHandler },
-    }),
+    BlockMathMd.configure({ onClick: mathClickHandler }),
+    InlineMathMd.configure({ onClick: mathClickHandler }),
     ...(smartTransform ? [SmartTransform] : []),
     ...(sectionGuides && Object.keys(sectionGuides).length > 0
       ? [SectionGuide.configure({ guideMap: sectionGuides })]
