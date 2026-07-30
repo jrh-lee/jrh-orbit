@@ -51,8 +51,16 @@ const TaskListWithTight = TaskList.extend({
   },
 });
 
+/** 리스트 항목 종류 — 서로 다른 종류(불릿 vs 체크박스) 사이의 빈 줄을 지우면
+ *  재파싱 때 하나의 리스트로 합쳐지며 빈 taskItem이 생기는 등 구조가 망가진다. */
+function listKind(line: string): string | null {
+  if (/^[ \t]*[-*+] \[[ xX]\]/.test(line)) return 'task';
+  if (/^[ \t]*[-*+] /.test(line)) return 'bullet';
+  if (/^[ \t]*\d+\. /.test(line)) return 'ordered';
+  return null;
+}
+
 function stripBlanksInLists(md: string): string {
-  const listRe = /^[ \t]*(?:[-*+]|\d+\.) /;
   const lines = md.split('\n');
   const result: string[] = [];
   for (let i = 0; i < lines.length; i++) {
@@ -61,7 +69,9 @@ function stripBlanksInLists(md: string): string {
     while (prev >= 0 && result[prev].trim() === '') prev--;
     let next = i + 1;
     while (next < lines.length && lines[next].trim() === '') next++;
-    if (prev >= 0 && next < lines.length && listRe.test(result[prev]) && listRe.test(lines[next])) {
+    const pk = prev >= 0 ? listKind(result[prev]) : null;
+    const nk = next < lines.length ? listKind(lines[next]) : null;
+    if (pk !== null && pk === nk) {
       while (result.length > 0 && result[result.length - 1].trim() === '') result.pop();
     } else {
       result.push(lines[i]);

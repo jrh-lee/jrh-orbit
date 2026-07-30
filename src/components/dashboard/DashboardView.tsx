@@ -10,6 +10,10 @@ import { todayKey } from '../../lib/dateUtils';
 import { reindexNote } from '../../lib/searchIndex';
 import { findNotesForProject, getNoteByExactId, type HubNoteRow } from '../../lib/db';
 import { attachmentsToDisplay, resolveAttachmentHref } from '../../lib/attachmentUrls';
+import MarkdownIt from 'markdown-it';
+import container from 'markdown-it-container';
+import { setupColumnsMarkdownIt } from '../editor/extensions/Columns';
+import { setupCalloutMarkdownIt } from '../editor/extensions/Callout';
 import { smbToOpenTarget } from '../../lib/netPaths';
 import type { ProjectsFile } from '../../types/project';
 import '../../styles/editor.css';
@@ -22,82 +26,28 @@ const SECTIONS = [
   { key: 'attitude', label: '자세 모드', icon: '🧭', template: attitudeTemplate },
 ] as const;
 
-function escHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-function inlineFmt(s: string): string {
-  return s
-    // 라벨에 이스케이프된 대괄호(\[GOST-...\])가 있어도 매칭되도록 \\. 허용
-    .replace(/\[((?:\\.|[^\]\\])+)\]\(([^)\s]+)\)/g, '<a href="$2" class="dash-doc-link">$1</a>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/`(.+?)`/g, '<code>$1</code>')
-    // tiptap 직렬화가 붙인 마크다운 이스케이프 해제 (\[ \] \_ 등)
-    .replace(/\\([\\`*_{}[\]()#+\-.!>~|])/g, '$1');
-}
+/** 대시보드 인라인 렌더러 — 에디터가 HTML로 직렬화한 표(<table style=...>)까지
+ *  화면과 동일하게 렌더하도록 markdown-it(html:true)을 쓴다.
+ *  (수제 라인 파서는 raw HTML을 이스케이프해 원문이 그대로 보였다) */
+const dashMd = (() => {
+  const m = new MarkdownIt({ html: true, linkify: false });
+  setupColumnsMarkdownIt(m);
+  setupCalloutMarkdownIt(m);
+  m.use(container as any, 'toggle', {
+    render(tokens: any[], idx: number) {
+      return tokens[idx].nesting === 1 ? '<div class="md-toggle-static">\n' : '</div>\n';
+    },
+  });
+  return m;
+})();
 
 function mdToHtml(md: string): string {
   if (!md?.trim()) return '';
-  let src = md;
-  if (src.startsWith('---')) {
-    const end = src.indexOf('---', 3);
-    if (end !== -1) src = src.slice(end + 3);
-  }
-  const lines = src.split('\n');
-  const out: string[] = [];
-  let inTable = false;
-  let inCode = false;
-  let inList = false;
-  let tblRow = 0;
-
-  for (const line of lines) {
-    if (line.startsWith('```')) {
-      if (inList) { out.push('</ul>'); inList = false; }
-      if (inCode) { out.push('</code></pre>'); inCode = false; }
-      else { out.push('<pre><code>'); inCode = true; }
-      continue;
-    }
-    if (inCode) { out.push(escHtml(line) + '\n'); continue; }
-
-    const t = line.trim();
-    if (t.startsWith('|') && t.endsWith('|')) {
-      if (inList) { out.push('</ul>'); inList = false; }
-      if (!inTable) { out.push('<table>'); inTable = true; tblRow = 0; }
-      if (/^\|[\s\-:|]+\|$/.test(t)) continue;
-      const cells = t.split('|').slice(1, -1).map(c => c.trim());
-      const tag = tblRow === 0 ? 'th' : 'td';
-      out.push('<tr>' + cells.map(c => `<${tag}>${inlineFmt(escHtml(c))}</${tag}>`).join('') + '</tr>');
-      tblRow++;
-      continue;
-    }
-    if (inTable) { out.push('</table>'); inTable = false; }
-
-    const hm = line.match(/^(#{1,6})\s+(.+)$/);
-    if (hm) {
-      if (inList) { out.push('</ul>'); inList = false; }
-      const lvl = Math.min(hm[1].length + 1, 6);
-      out.push(`<h${lvl}>${inlineFmt(escHtml(hm[2]))}</h${lvl}>`);
-      continue;
-    }
-
-    if (line.match(/^\s*[-*+]\s+/)) {
-      if (!inList) { out.push('<ul>'); inList = true; }
-      const text = line.replace(/^\s*[-*+]\s+/, '');
-      if (text) out.push(`<li>${inlineFmt(escHtml(text))}</li>`);
-      continue;
-    }
-    if (inList && t === '') continue;
-    if (inList && !line.match(/^\s*[-*+]\s/)) { out.push('</ul>'); inList = false; }
-
-    if (t === '') continue;
-    out.push(`<p>${inlineFmt(escHtml(line))}</p>`);
-  }
-
-  if (inTable) out.push('</table>');
-  if (inCode) out.push('</code></pre>');
-  if (inList) out.push('</ul>');
-  return out.join('\n');
+  const src = stripFrontmatter(md)
+    .replace(/\s*\^[a-z0-9]{4,}(?![a-z0-9])/g, '')     // 블록 ID 마커
+    .replace(/^(\s*)- \[ \] /gm, '$1- ☐ ')             // 체크박스 → 기호
+    .replace(/^(\s*)- \[[xX]\] /gm, '$1- ☑ ');
+  return dashMd.render(src);
 }
 
 function stripFrontmatter(raw: string): string {
