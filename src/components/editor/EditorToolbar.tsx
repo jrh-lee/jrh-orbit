@@ -78,6 +78,24 @@ const headingButtons: ToolbarButton[] = [
     action: (e) => e.chain().focus().toggleHeading({ level: 3 }).run(),
     isActive: (e) => e.isActive('heading', { level: 3 }),
   },
+  {
+    label: 'Heading 4',
+    icon: 'H4',
+    action: (e) => e.chain().focus().toggleHeading({ level: 4 }).run(),
+    isActive: (e) => e.isActive('heading', { level: 4 }),
+  },
+  {
+    label: 'Heading 5',
+    icon: 'H5',
+    action: (e) => e.chain().focus().toggleHeading({ level: 5 }).run(),
+    isActive: (e) => e.isActive('heading', { level: 5 }),
+  },
+  {
+    label: 'Heading 6',
+    icon: 'H6',
+    action: (e) => e.chain().focus().toggleHeading({ level: 6 }).run(),
+    isActive: (e) => e.isActive('heading', { level: 6 }),
+  },
 ];
 
 function toggleTaskInPlace(editor: Editor) {
@@ -111,7 +129,15 @@ function toggleTaskInPlace(editor: Editor) {
     return;
   }
 
-  const listPos = $from.before(listDepth + 1);
+  // $from.before(d)는 "깊이 d에 있는 노드의 앞" — 리스트는 listDepth에 있으므로
+  // before(listDepth)가 리스트 시작이다. 기존의 before(listDepth+1)은 '항목 앞'을
+  // 리스트 시작으로 착각해, replaceWith가 리스트 밖 아래 내용까지 삼켜 삭제했다.
+  const listPos = $from.before(listDepth);
+  if (state.doc.nodeAt(listPos) !== parentList) {
+    // 위치 검증 실패 시 안전한 기본 토글로 폴백 — 절대 범위 교체를 하지 않는다
+    editor.chain().focus().toggleTaskList().run();
+    return;
+  }
 
   if (parentList.childCount === 1) {
     const tr = state.tr;
@@ -122,7 +148,7 @@ function toggleTaskInPlace(editor: Editor) {
     return;
   }
 
-  const itemStart = $from.before(itemDepth + 1);
+  const itemStart = $from.before(itemDepth);
 
   let itemIndex = -1;
   let offset = 0;
@@ -168,8 +194,13 @@ function toggleTaskInPlace(editor: Editor) {
   }
 
   const tr = state.tr;
-  tr.replaceWith(listPos, listPos + parentList.nodeSize, nodes);
-  view.dispatch(tr.scrollIntoView());
+  try {
+    tr.replaceWith(listPos, listPos + parentList.nodeSize, nodes);
+    view.dispatch(tr.scrollIntoView());
+  } catch {
+    // 교체 실패 시 문서를 건드리지 않고 기본 토글로 폴백
+    editor.chain().focus().toggleTaskList().run();
+  }
 }
 
 const blockButtons: ToolbarButton[] = [
