@@ -2000,7 +2000,6 @@ ${content}
                   key={activeNote}
                   content={body}
                   onChange={handleChange}
-                  skipBlankLineInsertion /* 연구노트 여백은 사용자가 만든 그대로 — ZWS로 왕복 보존됨 */
                   placeholder="Start writing..."
                   sectionGuides={activeGuideMap}
                   noteId={activeNoteId || undefined}

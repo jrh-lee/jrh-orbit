@@ -250,10 +250,15 @@ export function insertBlankLinesBeforeHeadings(editor: { state: any; view: any }
     if (node.type.name === 'heading' && index > 0) {
       if (inTaskSection && node.attrs.level === 3) return;
 
+      // ZWS만 담긴 문단(보존된 여백)도 빈 문단으로 취급 — 아니면 열 때마다
+      // 여백이 하나씩 불어난다
+      const isBlankPara = (n: any) =>
+        n.type.name === 'paragraph' &&
+        (n.content.size === 0 || n.textContent.replace(/[​\s]/g, '') === '');
       let prevContentIdx = index - 1;
       while (prevContentIdx >= 0) {
         const prev = doc.child(prevContentIdx);
-        if (prev.type.name === 'paragraph' && prev.content.size === 0) {
+        if (isBlankPara(prev)) {
           prevContentIdx--;
         } else {
           break;
@@ -274,7 +279,7 @@ export function insertBlankLinesBeforeHeadings(editor: { state: any; view: any }
       let existingEmpty = 0;
       for (let i = index - 1; i >= 0; i--) {
         const prev = doc.child(i);
-        if (prev.type.name === 'paragraph' && prev.content.size === 0) {
+        if (isBlankPara(prev)) {
           existingEmpty++;
         } else {
           break;
