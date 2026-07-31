@@ -32,6 +32,7 @@ import { common, createLowlight } from 'lowlight';
 import { CodeBlockView } from './CodeBlockView';
 import { ResizableImageView } from './ResizableImageView';
 import type { Node as PmNode } from '@tiptap/pm/model';
+import { isKnownTaskId } from '../../lib/taskIdRegistry';
 import 'katex/dist/katex.min.css';
 
 const TaskListWithTight = TaskList.extend({
@@ -148,10 +149,10 @@ const TightListSerializer = Extension.create({
   },
 });
 
-// 대괄호 그룹은 Task ID 형식만 매칭 — TASK-NNN(.M), 자동생성 id는 정확히
-// 8자리 소문자+숫자(ksyqnksp처럼 숫자가 없을 수도 있음) 또는 숫자 포함 6~12자.
-// `[O1C]`처럼 사용자가 쓴 대문자 대괄호 텍스트는 숨기지 않는다.
-const TASK_META_RE = /^(\\?\[(?:TASK-[\w.]+|[a-z0-9]{8}|(?=[a-z]*\d)[a-z0-9]{6,12})\\?\]\s*)?(\\?\(이월[^)]*\\?\)\s*)?(\\?\(시작 [^)]*\\?\)\s*)?/;
+// 대괄호 토큰은 폭넓게 매칭하되, 실제 숨김 여부는 todos.json에 존재하는
+// id인지로 판정한다(taskIdRegistry) — 패턴 추측은 [dfdf]/[O1C] 같은
+// 사용자 텍스트와 계속 충돌했다. TASK- 접두사는 형식만으로 신뢰.
+const TASK_META_RE = /^(\\?\[[A-Za-z0-9_.\-]+\\?\]\s*)?(\\?\(이월[^)]*\\?\)\s*)?(\\?\(시작 [^)]*\\?\)\s*)?/;
 
 /** 블록 링크의 영구 ID 마커(^abc123)를 화면에서 숨긴다 —
  *  마크다운에는 남아 링크 대상 식별에 쓰인다 (Obsidian block id 방식)
@@ -208,16 +209,20 @@ function buildTaskMetaDecos(doc: PmNode): DecorationSet {
               const m = text.match(TASK_META_RE);
               if (!m || m[0].length === 0) return;
 
-              // Hide the [TASK-xxx] id and the (이월) tag; show a badge instead
-              const hideLen = (m[1]?.length ?? 0) + (m[2]?.length ?? 0);
+              // 대괄호 토큰이 실제 Task id일 때만 숨긴다 — 아니면 사용자 텍스트
+              const idLen = m[1]?.length ?? 0;
+              const rawId = m[1] ? m[1].replace(/[\\[\]\s]/g, '') : '';
+              const idIsTask = idLen > 0 && (rawId.startsWith('TASK-') || isKnownTaskId(rawId));
+              const hideStart = pos + (idIsTask ? 0 : idLen);
+              const hideLen = (idIsTask ? idLen : 0) + (m[2]?.length ?? 0);
               if (hideLen > 0) {
                 decorations.push(
-                  Decoration.inline(pos, pos + hideLen, { class: 'task-id-hidden' }),
+                  Decoration.inline(hideStart, hideStart + hideLen, { class: 'task-id-hidden' }),
                 );
               }
               if (m[2]) {
                 decorations.push(
-                  Decoration.widget(pos, () => {
+                  Decoration.widget(hideStart, () => {
                     const span = document.createElement('span');
                     span.className = 'task-carry-badge';
                     span.textContent = '🔄';
@@ -228,8 +233,9 @@ function buildTaskMetaDecos(doc: PmNode): DecorationSet {
               }
               // (시작 M/D) — keep visible but subtle, and dim the whole item
               if (m[3]) {
+                const startFrom = pos + idLen + (m[2]?.length ?? 0);
                 decorations.push(
-                  Decoration.inline(pos + hideLen, pos + hideLen + m[3].length, { class: 'task-start-badge' }),
+                  Decoration.inline(startFrom, startFrom + m[3].length, { class: 'task-start-badge' }),
                 );
                 const itemPos = $pos.before($pos.depth - 1);
                 decorations.push(
@@ -248,7 +254,11 @@ const HideTaskMeta = Extension.create({
         key: hideTaskMetaKey,
         state: {
           init: (_cfg, state) => buildTaskMetaDecos(state.doc),
-          apply: (tr, old) => (tr.docChanged ? buildTaskMetaDecos(tr.doc) : old.map(tr.mapping, tr.doc)),
+          // taskMetaRefresh 메타: task id 레지스트리가 로드/갱신됐을 때 재판정
+          apply: (tr, old) =>
+            tr.docChanged || tr.getMeta('taskMetaRefresh')
+              ? buildTaskMetaDecos(tr.doc)
+              : old.map(tr.mapping, tr.doc),
         },
         props: {
           decorations(state) {

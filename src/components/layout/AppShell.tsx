@@ -8,6 +8,7 @@ import { buildIndex } from '../../lib/searchIndex';
 import { debugFts } from '../../lib/db';
 import { autoArchiveQuickMemos } from '../../lib/autoArchive';
 import { runDailyBackup } from '../../lib/backup';
+import { loadKnownTaskIds } from '../../lib/taskIdRegistry';
 import { processRecurringTodos } from '../../lib/recurringTodos';
 import { useConfigStore } from '../../stores/useConfigStore';
 import { TitleBar } from './TitleBar';
@@ -71,6 +72,15 @@ export function AppShell() {
         })
         .catch((e) => console.error('[AppShell] init failed:', e));
     }
+  }, [dataDir]);
+
+  // Task ID 숨김 판정용 레지스트리 — todos.json 기반 (패턴 추측 대신 실존 id만)
+  useEffect(() => {
+    if (!dataDir) return;
+    loadKnownTaskIds(dataDir).catch(() => {});
+    const handler = () => loadKnownTaskIds(dataDir).catch(() => {});
+    window.addEventListener('tasks-changed', handler);
+    return () => window.removeEventListener('tasks-changed', handler);
   }, [dataDir]);
 
   // 앱을 켜둔 채 날짜가 넘어가도 그날 백업이 생기도록 주기 재확인

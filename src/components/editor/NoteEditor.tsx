@@ -1070,6 +1070,23 @@ export function NoteEditor({ content, onChange, placeholder, skipBlankLineInsert
     return () => dom.removeEventListener('paste', onPaste);
   }, [editor]);
 
+  // Task id 레지스트리가 갱신되면 숨김 데코레이션 재판정 (문서 변경 없이도)
+  useEffect(() => {
+    if (!editor) return;
+    const refresh = () => {
+      if (editor.isDestroyed) return;
+      const tr = editor.state.tr.setMeta('taskMetaRefresh', true);
+      tr.setMeta('addToHistory', false);
+      editor.view.dispatch(tr);
+    };
+    window.addEventListener('task-ids-refreshed', refresh);
+    window.addEventListener('tasks-changed', refresh);
+    return () => {
+      window.removeEventListener('task-ids-refreshed', refresh);
+      window.removeEventListener('tasks-changed', refresh);
+    };
+  }, [editor]);
+
   // 에디터 DOM에서의 직접 조작(키 입력, 클릭, 드롭, 붙여넣기)을 사용자 입력으로 마킹
   useEffect(() => {
     if (!editor) return;
