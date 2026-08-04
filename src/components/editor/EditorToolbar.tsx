@@ -140,11 +140,18 @@ function toggleTaskInPlace(editor: Editor) {
   }
 
   if (parentList.childCount === 1) {
-    const tr = state.tr;
-    const itemPos = listPos + 1;
-    tr.setNodeMarkup(listPos, targetListType);
-    tr.setNodeMarkup(tr.mapping.map(itemPos), targetItemType, isTask ? {} : { checked: false });
-    view.dispatch(tr.scrollIntoView());
+    // setNodeMarkup 2연타 대신 검증된 범위를 새 리스트로 교체 — 역방향
+    // (불릿→체크박스) 전환이 조용히 실패하던 문제를 단일 경로로 통일
+    const item = parentList.child(0);
+    try {
+      const newItem = targetItemType.create(isTask ? {} : { checked: false }, item.content, item.marks);
+      const newList = targetListType.create(null, [newItem]);
+      const tr = state.tr;
+      tr.replaceWith(listPos, listPos + parentList.nodeSize, newList);
+      view.dispatch(tr.scrollIntoView());
+    } catch {
+      editor.chain().focus().toggleTaskList().run();
+    }
     return;
   }
 

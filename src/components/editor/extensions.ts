@@ -138,6 +138,32 @@ function preserveBlankRuns(md: string): string {
   return out.join('\n');
 }
 
+/** 같은 종류의 리스트 사이에 남은 ZWS 구분 문단은 제거 — 체크박스를 불릿으로
+ *  바꾸는 등 종류가 같아지면 구분자가 더는 필요 없고, 남겨두면 빈 줄이
+ *  계속 보인다. (다른 종류 사이의 구분자는 유지) */
+function dropStaleListSeparators(md: string): string {
+  const lines = md.split('\n');
+  const out: string[] = [];
+  let inFence = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; out.push(line); continue; }
+    if (inFence) { out.push(line); continue; }
+    if (line.trim() === ZWS) {
+      // 앞뒤 가장 가까운 내용 줄이 같은 종류의 리스트면 이 구분자는 불필요
+      let p = out.length - 1;
+      while (p >= 0 && out[p].trim() === '') p--;
+      let n = i + 1;
+      while (n < lines.length && lines[n].trim() === '') n++;
+      const pk = p >= 0 ? listKind(out[p]) : null;
+      const nk = n < lines.length ? listKind(lines[n]) : null;
+      if (pk !== null && pk === nk) continue; // ZWS 줄 삭제 (주변 빈 줄은 stripBlanksInLists가 정리)
+    }
+    out.push(line);
+  }
+  return out.join('\n');
+}
+
 const TightListSerializer = Extension.create({
   name: 'tightListSerializer',
   onCreate() {
@@ -145,7 +171,7 @@ const TightListSerializer = Extension.create({
     if (!serializer) return;
     const orig = serializer.serialize.bind(serializer);
     serializer.serialize = (content: any) =>
-      separateMixedLists(preserveBlankRuns(stripBlanksInLists(orig(content))));
+      separateMixedLists(dropStaleListSeparators(preserveBlankRuns(stripBlanksInLists(orig(content)))));
   },
 });
 
@@ -267,6 +293,29 @@ const HideTaskMeta = Extension.create({
         },
       }),
     ];
+  },
+});
+
+/** ZWS만 담긴 문단(리스트 구분/여백 보존용)은 Backspace 한 번에 통째로 삭제 —
+ *  기본 동작은 ZWS 글자 삭제 + 문단 삭제로 두 번 눌러야 했다. */
+const ZwsParagraphKeys = Extension.create({
+  name: 'zwsParagraphKeys',
+  priority: 1001,
+  addKeyboardShortcuts() {
+    return {
+      Backspace: () => {
+        const { state } = this.editor;
+        const { $from, empty } = state.selection;
+        if (!empty) return false;
+        if ($from.parent.type.name !== 'paragraph') return false;
+        if ($from.parent.textContent.replace(/[​\s]/g, '') !== '') return false;
+        if ($from.parent.content.size === 0) return false; // 진짜 빈 문단은 기본 동작
+        const from = $from.before($from.depth);
+        const to = from + $from.parent.nodeSize;
+        this.editor.view.dispatch(state.tr.delete(from, to).scrollIntoView());
+        return true;
+      },
+    };
   },
 });
 
@@ -553,6 +602,7 @@ export function getExtensions(opts?: ExtensionOptions | string) {
     HideTaskMeta,
     HideBlockIds,
     BlockquoteKeys,
+    ZwsParagraphKeys,
     DragHandle,
     HeadingFold,
     SlashCommand,
