@@ -138,32 +138,6 @@ function preserveBlankRuns(md: string): string {
   return out.join('\n');
 }
 
-/** 같은 종류의 리스트 사이에 남은 ZWS 구분 문단은 제거 — 체크박스를 불릿으로
- *  바꾸는 등 종류가 같아지면 구분자가 더는 필요 없고, 남겨두면 빈 줄이
- *  계속 보인다. (다른 종류 사이의 구분자는 유지) */
-function dropStaleListSeparators(md: string): string {
-  const lines = md.split('\n');
-  const out: string[] = [];
-  let inFence = false;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; out.push(line); continue; }
-    if (inFence) { out.push(line); continue; }
-    if (line.trim() === ZWS) {
-      // 앞뒤 가장 가까운 내용 줄이 같은 종류의 리스트면 이 구분자는 불필요
-      let p = out.length - 1;
-      while (p >= 0 && out[p].trim() === '') p--;
-      let n = i + 1;
-      while (n < lines.length && lines[n].trim() === '') n++;
-      const pk = p >= 0 ? listKind(out[p]) : null;
-      const nk = n < lines.length ? listKind(lines[n]) : null;
-      if (pk !== null && pk === nk) continue; // ZWS 줄 삭제 (주변 빈 줄은 stripBlanksInLists가 정리)
-    }
-    out.push(line);
-  }
-  return out.join('\n');
-}
-
 const TightListSerializer = Extension.create({
   name: 'tightListSerializer',
   onCreate() {
@@ -171,7 +145,7 @@ const TightListSerializer = Extension.create({
     if (!serializer) return;
     const orig = serializer.serialize.bind(serializer);
     serializer.serialize = (content: any) =>
-      separateMixedLists(dropStaleListSeparators(preserveBlankRuns(stripBlanksInLists(orig(content)))));
+      normalizeListSeparators(preserveBlankRuns(stripBlanksInLists(orig(content))));
   },
 });
 
@@ -365,46 +339,70 @@ function htmlMathToDollars(md: string): string {
 function preprocessEmptyCheckboxes(md: string): string {
   // Indented (subtask) empty checkboxes need the ZWS too, or the markdown
   // parser renders them as literal "[ ]" text instead of a checkbox.
-  return separateMixedLists(htmlMathToDollars(md).replace(/^([ \t]*- \[[ xX]\])\s*$/gm, `$1 ${ZWS}`));
+  return normalizeListSeparators(htmlMathToDollars(md).replace(/^([ \t]*- \[[ xX]\])\s*$/gm, `$1 ${ZWS}`));
 }
 
 /** 불릿↔체크박스처럼 종류가 다른 리스트가 이어지면 파서가 하나의 리스트로
- *  합치며 구조를 망가뜨린다(빈 taskItem 생성). **마크다운 규격상 같은 `-`
- *  마커의 리스트는 빈 줄로도 분리되지 않으므로**, 사이에 ZWS 문단을 넣어야
- *  확실히 두 리스트로 나뉜다. 이미 오염된 파일도 열 때 자가 치유된다.
- *  코드 펜스 안은 건드리지 않는다. */
-function separateMixedLists(md: string): string {
+ *  합치며 구조를 망가뜨린다(빈 taskItem 생성). 마크다운 규격상 같은 `-` 마커의
+ *  리스트는 빈 줄로도 분리되지 않으므로 사이에 HTML 주석(<!-- -->)을 넣는다 —
+ *  주석은 리스트를 확실히 끊으면서 에디터에는 아무것도 렌더되지 않아
+ *  "지워도 되살아나는 빈 줄"이 생기지 않는다. 레거시 ZWS 분리자는 주석으로
+ *  교체하고, 종류가 같아진 지점의 분리자는 제거해 자연 병합시킨다. */
+const LIST_SEP = '<!-- -->';
+function isListSepLine(line: string): boolean {
+  const t = line.trim();
+  return t === LIST_SEP || t === ZWS;
+}
+
+function normalizeListSeparators(md: string): string {
   const lines = md.split('\n');
   const out: string[] = [];
   let inFence = false;
-  // 마지막으로 본 리스트 종류 — 사이에 빈 줄이 있어도 같은 리스트로 이어지므로
-  // 빈 줄을 건너뛰며 추적한다
   let lastKind: string | null = null;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+  let gap: string[] = []; // 마지막 내용 줄 이후의 빈 줄/분리자 버퍼
+
+  const flushGap = (drop: 'all-seps' | 'comments-only' | 'none') => {
+    for (const g of gap) {
+      if (drop === 'all-seps' && isListSepLine(g)) continue;
+      if (drop === 'comments-only' && g.trim() === LIST_SEP) continue;
+      out.push(g);
+    }
+    gap = [];
+  };
+
+  for (const line of lines) {
     if (/^\s*(```|~~~)/.test(line)) {
+      flushGap('none');
       inFence = !inFence;
       lastKind = null;
       out.push(line);
       continue;
     }
     if (inFence) { out.push(line); continue; }
+    if (line.trim() === '' || isListSepLine(line)) { gap.push(line); continue; }
+
     const k = listKind(line);
     if (k !== null) {
       if (lastKind !== null && lastKind !== k) {
-        // 빈 줄만으로는 리스트가 안 나뉨 — 앞뒤 빈 줄로 감싼 ZWS 문단으로 강제 분리
-        if (out.length > 0 && out[out.length - 1].trim() === '') {
-          out.push(ZWS, '');
-        } else {
-          out.push('', ZWS, '');
-        }
+        // 종류가 다름: 기존 분리자(ZWS 포함)와 잉여 빈 줄을 정리하고
+        // 정확히 [빈줄, 주석, 빈줄] 형태로 삽입 (멱등 — 반복 적용해도 동일)
+        flushGap('all-seps');
+        while (out.length > 0 && out[out.length - 1].trim() === '') out.pop();
+        out.push('', LIST_SEP, '');
+      } else if (lastKind !== null) {
+        // 종류가 같음: 주석 분리자만 제거(병합), 사용자 여백(ZWS)은 유지
+        flushGap('comments-only');
+      } else {
+        flushGap('none');
       }
       lastKind = k;
-    } else if (line.trim() !== '') {
-      lastKind = null; // 일반 내용이 끼면 리스트 연속성 끊김
+    } else {
+      flushGap('none');
+      lastKind = null;
     }
     out.push(line);
   }
+  flushGap('none');
   return out.join('\n');
 }
 
