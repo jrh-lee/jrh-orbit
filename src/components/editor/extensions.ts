@@ -284,6 +284,26 @@ const ZwsParagraphKeys = Extension.create({
         if ($from.parent.type.name !== 'paragraph') return false;
         if ($from.parent.textContent.replace(/[​\s]/g, '') !== '') return false;
         if ($from.parent.content.size === 0) return false; // 진짜 빈 문단은 기본 동작
+
+        // 리스트 항목 안의 ZWS 문단(빈 체크박스 등): 문단만 지우면 빈 껍데기가
+        // 남아 커서가 이웃으로 튄다 — 항목(외동이면 리스트째)을 통째로 삭제
+        const itemDepth = $from.depth - 1;
+        if (itemDepth >= 1) {
+          const item = $from.node(itemDepth);
+          if (item.type.name === 'taskItem' || item.type.name === 'listItem') {
+            const listDepth = itemDepth - 1;
+            const list = listDepth >= 1 ? $from.node(listDepth) : null;
+            const delOnlyChild = list && list.childCount === 1 &&
+              (list.type.name === 'taskList' || list.type.name === 'bulletList' || list.type.name === 'orderedList');
+            const from = delOnlyChild ? $from.before(listDepth) : $from.before(itemDepth);
+            const to = from + (delOnlyChild ? list.nodeSize : item.nodeSize);
+            this.editor.view.dispatch(state.tr.delete(from, to).scrollIntoView());
+            return true;
+          }
+          return false; // 그 외 중첩 구조는 기본 동작
+        }
+
+        // 최상위 여백/구분 문단: 통째로 삭제 (기존 동작)
         const from = $from.before($from.depth);
         const to = from + $from.parent.nodeSize;
         this.editor.view.dispatch(state.tr.delete(from, to).scrollIntoView());
